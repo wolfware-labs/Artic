@@ -2,7 +2,7 @@
 
 Sep 23, 2026 · @Mariano
 
-This revision applies the v1 planning decisions D1 to D23 recorded in issue #1. Decision IDs appear next to the text they changed. Work is tracked in the milestones M0 to M8 (§13).
+This revision applies the v1 planning decisions D1 to D24 recorded in issue #1. Decision IDs appear next to the text they changed. Work is tracked in the milestones M0 to M8 (§13).
 
 ## 1. Overview and locked decisions
 
@@ -18,7 +18,7 @@ A cross-platform desktop and mobile UI framework where views are written in XAML
 
 ### Non-goals for v1
 
-- Web/WASM. The platform layer is abstracted so it can be added, but no v1 work targets it.
+- Web/WASM. No v1 work targets it, but a later version must be able to add it without changing app code (D24). App-facing APIs never name `wgpu`, `vello`, `skia-safe` or `winit` types, the app entry point works on hosts whose event loop cannot block, services that are async on the web (clipboard reads, file dialogs) are async from v1, and the portable crates are checked against `wasm32-unknown-unknown` in CI.
 - Native-looking widgets. Controls are templated and drawn by the framework; one default theme ships.
 - Full MS-XAML conformance. Unsupported constructs are listed in §4 and produce compile errors, not silent behavior.
 - DataGrid, TreeView, Menu bar controls, dialogs, `SplitView`, `Expander` (v2). A Rust-only view API (views built in code without XAML) is v2, but v1 must not preclude it: the control structs and `Property<T>` fields are the API. The v2 API is a builder (`Button::new().content("Hi").on_click(...)`); in v1 the derive already generates the builder methods and the XAML compiler emits builder calls (D8).
@@ -603,6 +603,8 @@ pub trait PlatformHost {
 }
 ```
 
+The trait is target-neutral (D24). `run` does not have to block: a host whose event loop cannot block, such as a future web host, returns control to its caller, and app code calls the same `App::run()` either way. `Renderer` backends receive the surface through a backend-neutral handle, and `SceneFragment` is a backend-neutral display list.
+
 Implementation: `winit` provides windows, input, DPI and lifecycle on all five targets; the trait wraps it plus per-OS crates (`muda`, `rfd`, `arboard`, `jni`/`ndk` on Android, `objc2` on iOS/macOS).
 
 ### Lifecycle events (delivered as `PlatformEvent`)
@@ -686,7 +688,7 @@ Accessibility, text editing, and input are cross-cutting: every control implemen
 - `TextBlock`: shaping, bidi, line breaking (UAX #14), `TextWrapping`, `TextTrimming`, `MaxLines`, `LineHeight`, inline runs with per-run brush/weight/style.
 - `TextBox` editing model: `TextEditor` service (in `artic-core::text`) owns the rope-like buffer, selection, undo/redo, and word/line navigation; `TextBox` is a thin control over it. Grapheme-cluster cursor movement, `Ctrl/Alt+Arrow` word jumps, platform shortcut mapping (`Cmd` on Apple).
 - IME: composition events (`ImeStart/Update/Commit`) from the platform draw the preedit inline with underline styling; the control reports the cursor rect through `set_ime` so candidate windows and the mobile keyboard position correctly. `InputScope` (`Email`, `Number`, `Url`) maps to keyboard types on mobile.
-- Clipboard: plain text in v1; rich text v2.
+- Clipboard: plain text in v1; rich text v2. Reading is async so a web host can implement it (D24).
 
 ### Input
 
@@ -771,3 +773,4 @@ All open questions are closed. Decision IDs refer to issue #1.
 - [x] Mobile navigation: a minimal page stack with push/pop, Android back and iOS swipe-back; no tab bar or drawer (D7, M6-14).
 - [x] Rust-only view API shape for v2: builder (`Button::new().content("Hi").on_click(…)`); the derive generates builder methods and the compiler emits builder calls in v1 (D8, M0-20).
 - [x] `runtime-xaml` in release builds: kept, opt-in, bindings limited to `#[view_model(expose)]` view-models (D23).
+- [x] Keeping a later web target possible without app changes: target-neutral app-facing APIs and a wasm32 check in CI (D24, M1-25).
