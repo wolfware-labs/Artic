@@ -2,6 +2,8 @@
 
 Sep 23, 2026 · @Mariano
 
+This revision applies the v1 planning decisions D1 to D23 recorded in issue #1. Decision IDs appear next to the text they changed. Work is tracked in the milestones M0 to M8 (§13).
+
 ## 1. Overview and locked decisions
 
 A cross-platform desktop and mobile UI framework where views are written in XAML (a defined subset of [MS-XAML 2012](https://learn.microsoft.com/en-us/openspecs/microsoft_domain_specific_languages/MS-MSDLLP/69a08c4f-e943-4729-be0d-1b33d4ad967e) with an Avalonia-style vocabulary) and all logic is Rust. **The framework is named artic (artic.rs); crates are prefixed artic-**.
@@ -19,7 +21,7 @@ A cross-platform desktop and mobile UI framework where views are written in XAML
 - Web/WASM. The platform layer is abstracted so it can be added, but no v1 work targets it.
 - Native-looking widgets. Controls are templated and drawn by the framework; one default theme ships.
 - Full MS-XAML conformance. Unsupported constructs are listed in §4 and produce compile errors, not silent behavior.
-- DataGrid, TreeView, Menu bar controls, dialogs (v2). A Rust-only view API (views built in code without XAML) is v2, but v1 must not preclude it: the control structs and \`Property\<T>\` fields are the API, and the XAML compiler emits calls to it.
+- DataGrid, TreeView, Menu bar controls, dialogs, `SplitView`, `Expander` (v2). A Rust-only view API (views built in code without XAML) is v2, but v1 must not preclude it: the control structs and `Property<T>` fields are the API. The v2 API is a builder (`Button::new().content("Hi").on_click(...)`); in v1 the derive already generates the builder methods and the XAML compiler emits builder calls (D8).
 
 ### Locked decisions
 
@@ -28,14 +30,17 @@ A cross-platform desktop and mobile UI framework where views are written in XAML
 | XAML dialect | MS-XAML 2012 syntax; Avalonia-style vocabulary and CSS-like selectors |
 | Rendering | Own GPU renderer: `wgpu` + `vello` behind a `Renderer` trait; `skia-safe` as an optional second backend |
 | Windowing | `winit` on all five targets behind a `PlatformHost` trait; mobile lifecycle (suspend/resume, surface loss, safe areas) is part of that trait |
-| Platforms v1 | Windows 10+, macOS 12+, Linux (X11 + Wayland), iOS 15+, Android 8+ (API 26); one app crate, one binary per target |
-| XAML loading | Both: build-time compiler (`build.rs`) and runtime loader, both driven by one generated type registry |
-| Reactivity | Signals (fine-grained, synchronous, glitch-free) as the primitive; `#[derive(ViewModel)]` and `{Binding}` on top |
-| Styling | Avalonia-style selectors (`Button.primary:pointerover > TextBlock`) with `Setter`s; no WPF triggers |
-| Control set v1 | Panels, TextBlock, TextBox, Button, ToggleButton, CheckBox, RadioButton, Slider, ScrollViewer, ItemsControl, ListBox, ComboBox, TabControl, Border, Image, ContentControl |
+| Platforms v1 | Windows 10+, macOS 12+, Linux (X11 + Wayland), iOS 15+, Android 8+ (API 26) with Vulkan 1.1; one app crate, one binary per target |
+| XAML loading | Both: build-time compiler (`build.rs`) and runtime loader, both driven by one generated type registry. The loader ships in release only with the opt-in `runtime-xaml` feature (D23) |
+| Reactivity | Signals (fine-grained, synchronous, glitch-free) as the primitive and public API; `#[derive(ViewModel)]` and typed `{Binding}` on top, with no reflection in any build (D1, D6) |
+| Styling | Avalonia-style selectors (`Button.primary:pointerover > TextBlock`) with `Setter`s, matching exact Rust types; no WPF triggers (D3) |
+| Default theme | `artic-theme` (`<ArticTheme/>`): token based, with color, spacing, radius, shadow and type scales (D18) |
+| Control set v1 | Panels, TextBlock, TextBox, Button, ToggleButton, CheckBox, RadioButton, Slider, ScrollViewer, ItemsControl, ListBox, ComboBox, TabControl, Border, Image, ContentControl, page-stack navigation (D7) |
 | Events | Both `x:Class` code-behind handlers and MVVM commands/bindings |
 | Async | Runtime-agnostic: framework owns a single-threaded UI executor; `spawn_blocking`/background work goes to whatever the app chooses |
-| Accessibility | `accesskit` from day one; every control exposes a node |
+| Accessibility | `accesskit` from day one; every control exposes a node (desktop adapter in M1, mobile in M7, D10) |
+| Tooling | `cargo artic` CLI and the `artic-lsp` language server with a VS Code extension, both working from Rust source without a build (D21, D22) |
+| License | `MIT OR Apache-2.0` (D13) |
 | Minimum Rust | Stable, edition 2024 |
 
 ## 2. Architecture and crate layout
@@ -71,7 +76,12 @@ Arrows point from dependent to dependency. The app crate depends on the compiler
 | `artic-style` | Selector parser and matcher, `Style`, `Setter`, pseudo-classes, resource dictionaries, theme switching | `Selector`, `Style`, `ResourceDictionary` |
 | `artic-render` | `Renderer` trait, scene graph (display list), `vello` backend; text via `parley` | `Renderer`, `Scene`, `DrawingContext` |
 | `artic-platform` | Window creation, event loop, DPI, clipboard, `accesskit` adapter, native menus and dialogs via `muda`/`rfd` | `Window`, `AppBuilder`, `PlatformEvent` |
-| `artic` | Facade re-exporting the public API with feature flags (`hot-reload`, `skia`) | `App`, `prelude` |
+| `artic` | Facade re-exporting the public API with feature flags (`hot-reload`, `runtime-xaml`, `skia`) | `App`, `prelude` |
+| `artic-theme` | Default theme: token dictionaries (light, dark, touch density) and the default `ControlTemplate` for every v1 control (D18) | `ArticTheme` |
+| `artic-i18n` | Optional fluent-rs implementation of the `Localizer` trait (D6) | `FluentLocalizer` |
+| `artic-test` | Dev-dependency test utilities: `TestHost`, headless arena helpers, tree serializer (D14) | `TestHost` |
+| `artic-cli` | `cargo-artic` binary: `check`, `new`, `schema`, `inspect`, `ios`, `android`, `lsp` (D15) | CLI |
+| `artic-lsp` | Language server: source-based type index, diagnostics, completion, hover, navigation, formatting, rename (D21, D22) | `Server` |
 
 ### Object model in one paragraph
 
@@ -122,7 +132,7 @@ The derive emits a `TypeInfo` const and registers it with `linkme` (distributed 
 | `EventInfo` | name, args type path, `subscribe: fn(&mut Arena, NodeId, HandlerId)` | both |
 | `MarkupExtensionInfo` | name, positional/named arg schema, `expand` | both |
 
-`Value` is a small enum (`Str`, `Num`, `Bool`, `Node(NodeId)`, `Parsed(TypeId, Box<dyn Any>)`) used only by the loader path; the compiled path never constructs one.
+The loader path needs a runtime value representation for converted attribute values. The original `Value` enum with a `Parsed(TypeId, Box<dyn Any>)` variant is rejected (D9); the typed replacement is specified in the M0-19 design and implemented in M2-01. Values written as object elements (brushes, `RowDefinition`, `KeyBinding`) are covered by the M0-31 design. The compiled path never constructs a loader value.
 
 ### Rules
 
@@ -132,16 +142,18 @@ The derive emits a `TypeInfo` const and registers it with `linkme` (distributed 
 4. `inherits` marks properties (`FontSize`, `Foreground`, `IsEnabled`) that flow down the logical tree when unset.
 5. Adding a type from any crate needs only the derive; no registration call.
 6. Nothing in the registry is required for a Rust-only view API (v2): the same structs and `Property<T>` fields are the API; XAML is one front end to them.
+7. Attached properties and markup extensions are declared with the same derive on their owner type (M0-30). `const` and `static` items become visible to `x:Static` with `#[xaml_static]` (D23).
+8. The registry is assembled with `linkme` distributed slices; M0-05 verifies them on iOS, Android and with LTO (D11).
 
 ### Namespaces
 
 - `https://artic.rs/ui` — default vocabulary (`xmlns="…"`).
-- `http://schemas.microsoft.com/winfx/2006/xaml` — the `x:` language namespace, as in MS-XAML, so editors and existing tooling recognize the file.
+- `https://artic.rs/markup`: the `x:` language namespace (D19). The directives follow MS-XAML, but the URI is artic's own. The Microsoft URI (`http://schemas.microsoft.com/winfx/2006/xaml`) is rejected with a hint showing the replacement. Editor support comes from the generated XSD and the language server.
 - `using:my_crate::views` — maps a Rust module path to a prefix; resolved through the registry's recorded Rust paths.
 
 ### Open question
 
-- [ ] Should the registry also carry doc comments and default-value text for an editor/LSP (larger binary, better tooling)? Proposed: yes, behind a `registry-docs` feature.
+- [x] Should the registry also carry doc comments and default-value text for an editor/LSP (larger binary, better tooling)? Decided: yes, behind a `registry-docs` feature (D6). The language server reads docs from source (D22).
 
 ## 4. XAML language: supported subset of MS-XAML
 
@@ -163,7 +175,7 @@ The parser implements MS-XAML 2012 §5 (XML → XAML Infoset) for the constructs
 | `x:Key` | on resource children | Required in `ResourceDictionary` unless `x:Type`-keyed styles |
 | `x:Class` | root only | Binds to `#[xaml_class]` struct |
 | `x:Type` | `{x:Type Button}` | Yields a `TypeInfo` reference |
-| `x:Static` | `{x:Static local::CONSTANTS::MAX}` | Rust path to a `const`/`static`; compile-time only in v1 |
+| `x:Static` | `{x:Static local::CONSTANTS::MAX}` | Rust path to a `const`/`static` registered with `#[xaml_static]`; resolves in both paths (D23) |
 | `x:Null` | `{x:Null}` |  |
 | `x:Uid`, `x:FieldModifier` |  | Accepted, no v1 semantics beyond `pub`/`pub(crate)` on generated fields |
 | Primitives | `<x:String>`, `<x:Int32>`, `<x:Double>`, `<x:Boolean>` | XAML 2009 primitives |
@@ -175,7 +187,7 @@ The parser implements MS-XAML 2012 §5 (XML → XAML Infoset) for the constructs
 - `x:Code`, `x:Subclass`, `x:Shared`, `x:Arguments`, `x:FactoryMethod`, `x:TypeArguments` (no generics from XAML in v1).
 - `x:Reference` (use `ElementName` binding instead).
 - WPF `Trigger`, `DataTrigger`, `EventTrigger` (selectors + pseudo-classes replace them).
-- `clr-namespace:` prefixes (use `using:`).
+- `clr-namespace:` prefixes (use `using:`) and the Microsoft `x:` namespace URI (use `https://artic.rs/markup`, D19).
 - Loose-XAML loading of arbitrary Rust types not marked `XamlType`.
 
 ### Infoset shape
@@ -200,7 +212,7 @@ MS-XAML default: leading/trailing whitespace in text content is trimmed, interna
 
 ```xml
 <UserControl xmlns="https://artic.rs/ui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:x="https://artic.rs/markup"
              x:Class="app::views::LoginView"
              x:DataType="app::vm::LoginVm">
   <UserControl.Resources>
@@ -234,15 +246,15 @@ flowchart LR
 1. `build.rs` calls `artic_xaml_compiler::compile_dir("src/views")`; every `.xaml` becomes `$OUT_DIR/views/<name>.rs`, included via `include!` by the `#[xaml_class]` macro.
 2. Type and property names resolve against the registry of all dependency crates. Because the registry is link-time, the compiler runs in a build script that links `artic-controls` and the app's own control crates as build-dependencies.
 3. Output is plain Rust: `let b = arena.alloc(Button::default()); b.content.set("Sign in".into()); …`. No string lookups survive to runtime.
-4. Bindings with `x:DataType` compile to typed closures (`|vm: &LoginVm| vm.email.get()`); without it, to path-based reflective bindings (§6). Unknown property on a known `x:DataType` is a compile error.
+4. Bindings compile to typed closures (`|vm: &LoginVm| vm.email.get()`) over the `x:DataType` in scope, whether declared, inherited or inferred (§6, D2). A binding with no resolvable `x:DataType` is a compile error that names the attribute to add and where. Unknown property on a known `x:DataType` is a compile error. There is no reflective fallback (D1).
 5. Generated code is deterministic and gitignored; diagnostics point at the `.xaml` line/column via `#[track_caller]`-style span tables so `cargo build` errors read like `views/login.xaml:12:9: unknown property 'Foo' on Button`.
 
 ### Runtime loader (dev path)
 
 1. `XamlLoader::load(&registry, source) -> Result<NodeId, Diagnostics>` walks the infoset, constructs each object via `TypeInfo::new`, converts values via `TypeConverter`, and sets properties via `set_any`.
-2. Bindings become reflective bindings: paths resolve at bind time through the `ViewModel` trait's `get_property(&str)` (§6). Same semantics, slower.
+2. Bindings resolve at bind time through the accessor tables generated by `#[derive(ViewModel)]` (§6). Same semantics and the same `x:DataType` rules as the compiled path, slower (D1).
 3. Event handlers named in XAML (`Click="on_click"`) resolve through a handler table the `#[xaml_class]` macro generates (`fn __handler(name: &str) -> Option<HandlerFn>`), so code-behind still works in interpreted mode.
-4. Also the path for user-supplied XAML at runtime (themes, plugins) when the `runtime-xaml` feature is on.
+4. Also the path for XAML that did not exist at build time (user skins, server-driven screens, data-only plugin UIs) when the opt-in `runtime-xaml` feature is on (D23). Apps without the feature pay nothing. Loaded files are untrusted input: the parser is fuzzed and enforces size and depth limits (M2-17). Bindings in loaded files reach only view-models marked `#[view_model(expose)]` and their `pub` members (M3-33).
 
 ### Hot reload
 
@@ -256,17 +268,23 @@ flowchart LR
 | Build | Views | Bindings | Hot reload |
 | --- | --- | --- | --- |
 | `cargo run` (debug, default features) | compiled | typed | off |
-| `cargo run --features hot-reload` | interpreted for files under watch; compiled fallback | reflective | on |
-| `cargo build --release` | compiled | typed | off; `runtime-xaml` can still load external files |
+| `cargo run --features hot-reload` | interpreted for files under watch; compiled fallback | accessor tables, all view-models | on |
+| `cargo build --release` | compiled | typed | off; `runtime-xaml` can still load external files, binding only to exposed view-models |
 
 ### Open questions
 
-- [ ] Should debug builds default to interpreted XAML so hot reload is on with no flag? Proposed: no — keep debug behavior identical to release unless asked, to avoid "works in dev only" bugs.
-- [ ] Compiler as a `build.rs` library only, or also a `cargo artic check` subcommand for editor diagnostics? Proposed: both; the subcommand is thin.
+- [x] Should debug builds default to interpreted XAML so hot reload is on with no flag? Decided: no. Debug behavior stays identical to release unless asked, to avoid "works in dev only" bugs (D6).
+- [x] Compiler as a `build.rs` library only, or also a `cargo artic check` subcommand for editor diagnostics? Decided: both (D6). `cargo artic check` runs the compiler checks against the source-based type index, so it needs no build (D22, M8-18).
 
 ## 6. Reactivity: signals, properties, bindings, MVVM
 
-Signals are the only change-propagation mechanism; `Property<T>`, bindings, styles, and view-models are built on them, so there is one invalidation path. Bindings are typed end to end: `x:DataType` is required wherever `{Binding}` appears, and there is no string-path reflection in any build.
+Signals are the only change-propagation mechanism; `Property<T>`, bindings, styles, and view-models are built on them, so there is one invalidation path. Bindings are typed end to end: `x:DataType` is required wherever `{Binding}` appears, and there is no string-path reflection in any build (D1).
+
+### `x:DataType` scope (D2)
+
+- `x:DataType` on the root or on a `DataTemplate` applies to every descendant until another `x:DataType` or `DataTemplate` starts a new scope.
+- A `DataTemplate` used as an `ItemTemplate` infers its item type from the bound `ObservableVec<T>`, so item templates rarely need the attribute.
+- When no type can be found, the compiler, the loader and the language server report the same diagnostic: the file, line and column, and the attribute to add.
 
 ### Signal core (`artic-core::reactive`)
 
@@ -316,7 +334,7 @@ bind_two_way(&mut arena, tb, |vm: &LoginVm| vm.email, |tb| &tb.text);
 
 ### Hot-reload bindings
 
-The runtime loader cannot compile a closure, so `#[derive(ViewModel)]` also emits a static accessor table for the type: `path name → typed accessor` (an enum over the field's signal handle kinds). The loader looks up the path in the table for the declared `x:DataType`; a missing path is a load error shown in the overlay. Same semantics as the compiled binding, no reflection, no `Box<dyn Any>`; the table is only linked when the `hot-reload` feature is on.
+The runtime loader cannot compile a closure, so `#[derive(ViewModel)]` also emits a static accessor table for the type: `path name → typed accessor` (an enum over the field's signal handle kinds). The loader looks up the path in the table for the `x:DataType` in scope; a missing path is a load error shown in the overlay. Same semantics as the compiled binding, no reflection, no `Box<dyn Any>`. Tables for every view-model are linked with the `hot-reload` feature. With `runtime-xaml`, only view-models marked `#[view_model(expose)]` get a table, covering their `pub` members; a binding to anything else is a load error that names the attribute to add (D23).
 
 ### MVVM layer
 
@@ -342,7 +360,7 @@ impl LoginVm {
 
 ### Open question
 
-- [ ] Should signals be the *public* API for app code too (Leptos style `let count = signal(0)` in a Rust-only view)? Proposed: yes; it is the same API the view-model fields use.
+- [x] Should signals be the *public* API for app code too (Leptos style `let count = signal(0)` in a Rust-only view)? Decided: yes; it is the same API the view-model fields use (D6).
 
 ## 7. Visual tree, layout, and controls
 
@@ -434,8 +452,8 @@ Every `TemplatedControl` ships a default `ControlTemplate` in the theme dictiona
 
 ### Open questions
 
-- [ ] `Grid` short syntax only, or also the `<Grid.ColumnDefinitions>` element form? Proposed: both (the element form is what the spec allows; the string form is a type converter).
-- [ ] Ship `SplitView`/`Expander` in v1 or defer? Proposed: defer.
+- [x] `Grid` short syntax only, or also the `<Grid.ColumnDefinitions>` element form? Decided: both (the element form is what the spec allows; the string form is a type converter) (D6).
+- [x] Ship `SplitView`/`Expander` in v1 or defer? Decided: defer to v2 (D6).
 
 ## 8. Styling, resources, templates, themes
 
@@ -445,7 +463,7 @@ Styling is Avalonia's model: `Style` objects with a CSS-like `Selector` and a li
 
 | Selector | Matches |
 | --- | --- |
-| `Button` | type, including derived types (`:is()` not needed) |
+| `Button` | the exact Rust type; `ToggleButton` does not match `Button` (D3) |
 | `Button.primary` | element whose `Classes` contains `primary` |
 | `Button#submit` | `x:Name`/`Name` = `submit` |
 | `Button:pointerover`, `:pressed`, `:focus`, `:focus-visible`, `:disabled`, `:checked`, `:selected` | pseudo-classes set by the control (`PseudoClasses::set`) |
@@ -492,14 +510,15 @@ Templates are instantiated per use from their infoset (runtime) or from a genera
 
 ### Themes
 
-- `artic-theme-fluent` ships light and dark dictionaries plus the default `ControlTemplate` for every v1 control; the app picks with `<Application.Styles><FluentTheme Mode="System"/></Application.Styles>`.
+- `artic-theme` ships light and dark dictionaries plus the default `ControlTemplate` for every v1 control; the app picks with `<Application.Styles><ArticTheme Mode="System"/></Application.Styles>` (D18). The earlier plan for a Microsoft Fluent theme (`FluentTheme`, `artic-theme-fluent`) is dropped.
+- The theme is token based. Scale tokens cover color (50 to 950 per hue), spacing, radius, shadow and type; semantic tokens (accent, surface, text, border) map onto the scales per light and dark mode. Controls reference semantic tokens only. v1 has no utility classes.
 - `Mode="System"` follows the OS setting via `PlatformHost::color_scheme` and swaps dictionaries through `DynamicResource`.
-- Mobile-specific sizing (44 px touch targets, larger fonts) is a second variant dictionary, `FluentTheme Density="Touch"`, selected automatically when the primary input is touch (§12) or forced.
+- Mobile-specific sizing (44 px touch targets, larger fonts) is a second variant dictionary, `ArticTheme Density="Touch"`, selected automatically when the primary input is touch (§12) or forced.
 
 ### Open questions
 
-- [ ] Style inline in code-behind (`Style::new("Button.primary").setter(…)`) as a supported builder API in v1? Proposed: yes; it is what the compiler emits anyway.
-- [ ] Media-style queries (`:screen(compact)` pseudo-class from window width) for adaptive layouts across desktop and phone? Proposed: yes, as pseudo-classes on the root set by the platform layer.
+- [x] Style inline in code-behind (`Style::new("Button.primary").setter(…)`) as a supported builder API in v1? Decided: yes; it is what the compiler emits anyway (D6).
+- [x] Media-style queries (`:screen(compact)` pseudo-class from window width) for adaptive layouts across desktop and phone? Decided: yes, as pseudo-classes on the root set by the platform layer (D6, M4-14).
 
 ## 9. Events, routing, commands, code-behind
 
@@ -548,7 +567,7 @@ impl LoginView {
 
 ### Open question
 
-- [ ] Async handlers (`async fn on_click`) allowed directly, spawned on the UI executor? Proposed: yes, same as async commands; the handler gets `&mut self` only until its first await, so it takes an owned `ViewHandle` instead.
+- [x] Async handlers (`async fn on_click`) allowed directly, spawned on the UI executor? Decided: yes, same as async commands; the handler takes an owned `ViewHandle` because it cannot hold `&mut self` across an await (D6).
 
 ## 10. Rendering, windowing, platform layer
 
@@ -560,7 +579,7 @@ One `Renderer` implementation (`vello` on `wgpu`) draws every platform; the plat
 - Retained `Scene`: each element owns a `SceneFragment` (a `vello::Scene`); `render()` is called only for render-dirty nodes and the root composes fragments with transforms, clips, and opacity groups. Untouched subtrees cost nothing per frame.
 - Primitives: paths (fill/stroke), rounded rects, images, text runs, linear/radial gradients, box shadows (blurred rect), clip (rect, rounded rect, path), layers with opacity and blend mode `Normal` only.
 - Text: `parley` for shaping and line breaking, `skrifa` for glyph outlines, system font discovery via `fontique`; glyph cache is per renderer. Emoji: `COLRv1` via `vello` where supported, bitmap fallback.
-- `wgpu` backends: DX12 on Windows, Metal on macOS and iOS, Vulkan on Linux and Android (GLES 3 fallback on Android devices without Vulkan 1.1 — falls back to the `skia` backend if `vello`'s compute pipeline is unavailable).
+- `wgpu` backends: DX12 on Windows, Metal on macOS and iOS, Vulkan on Linux and Android. Android requires Vulkan 1.1; GLES-only devices are not supported in v1 and the app reports the missing capability instead of starting (D6, M6-03).
 - Frame pacing: render only when dirty or an animation is running; VSync via surface present mode `Fifo`; animations tick from the platform's frame callback (`CADisplayLink`, `Choreographer`, `DwmFlush`, Wayland frame callbacks).
 
 ### `PlatformHost` trait
@@ -612,19 +631,19 @@ Implementation: `winit` provides windows, input, DPI and lifecycle on all five t
 
 ### Open questions
 
-- [ ] Rely on `winit` for iOS/Android in v1, or own the platform glue there (winit's mobile support has gaps around IME and safe areas)? Proposed: winit with patches, own glue only for IME.
-- [ ] Support GLES-only Android devices at all in v1 (needs the `skia` backend or a `vello` CPU fallback)? Proposed: require Vulkan 1.1 (API 26+ devices mostly qualify) and document the gap.
+- [x] Rely on `winit` for iOS/Android in v1, or own the platform glue there (winit's mobile support has gaps around IME and safe areas)? Decided: winit with patches, own glue only for IME (D6).
+- [x] Support GLES-only Android devices at all in v1 (needs the `skia` backend or a `vello` CPU fallback)? Decided: no. Require Vulkan 1.1 and document the gap (D6).
 
 ## 11. Threading and async
 
-The UI is single-threaded by construction: the tree, signals, and view-models are `!Send`, and the only way in from another thread is `Dispatcher::post`. Async is runtime-agnostic: the framework ships a small single-threaded executor for UI futures and never spawns threads of its own except the render thread.
+The UI is single-threaded by construction: the tree, signals, and view-models are `!Send`, and the only way in from another thread is `Dispatcher::post`. Async is runtime-agnostic: the framework ships a small single-threaded executor for UI futures and spawns no threads of its own in v1.
 
 ### Threads
 
 | Thread | Owns | Notes |
 | --- | --- | --- |
 | UI thread (main) | event loop, arena, signals, layout, scene building, `accesskit` | must be the OS main thread on macOS/iOS/Android |
-| Render thread | `wgpu` device/queue, surface present | receives a finished `Scene` per frame over a channel; double-buffered so the UI thread never waits on present |
+| Render thread (post-v1) | `wgpu` device/queue, surface present | v1 renders on the UI thread after layout (D6). The `Scene` is still handed over through a channel boundary so a render thread can be enabled later without an API change |
 | App threads | whatever the app runs (tokio, rayon, std) | talk back only via `Dispatcher` |
 
 ### Dispatcher
@@ -648,7 +667,7 @@ The UI is single-threaded by construction: the tree, signals, and view-models ar
 
 ### Open question
 
-- [ ] Render thread in v1, or render on the UI thread after layout (simpler; costs \~1–3 ms per frame of UI-thread time)? Proposed: UI-thread rendering for v1 with the channel boundary already in the design so a render thread can be enabled later without API change.
+- [x] Render thread in v1, or render on the UI thread after layout (simpler; costs about 1 to 3 ms per frame of UI-thread time)? Decided: UI-thread rendering for v1 with the channel boundary already in the design so a render thread can be enabled later without API change (D6).
 
 ## 12. Accessibility, text, and input
 
@@ -657,7 +676,7 @@ Accessibility, text editing, and input are cross-cutting: every control implemen
 ### Accessibility
 
 - `accesskit` on all five targets (Windows UIA, macOS/iOS NSAccessibility/UIAccessibility, Linux AT-SPI, Android via `accesskit_android`). Each element's `accessibility()` returns a node with role, name, value, state, bounds, and actions; the tree is rebuilt incrementally from render-dirty nodes and pushed once per frame.
-- Attached properties: `AutomationProperties.Name`, `.HelpText`, `.LabeledBy`, `.LiveRegion`, `.AccessibilityRole` override.
+- Attached properties: `Accessibility.Name`, `.HelpText`, `.LabeledBy`, `.LiveRegion`, `.Role` override (D20, renamed from the WPF `AutomationProperties`).
 - Actions (`Click`, `Focus`, `SetValue`, `ScrollIntoView`) arrive as `PlatformEvent::AccessAction` and are routed to the element like input.
 - Reduced-motion and high-contrast OS settings surface as root pseudo-classes (`:reduced-motion`, `:high-contrast`) so themes react through selectors.
 
@@ -687,11 +706,11 @@ Accessibility, text editing, and input are cross-cutting: every control implemen
 
 ### Localization
 
-- `x:Uid` reserved for it; v1 offers `{Localize Key}` markup extension backed by a `Localizer` trait (default: Fluent `.ftl` files via `fluent-rs`) and RTL flow (`FlowDirection`) that mirrors layout in panels and `Margin`.
+- `x:Uid` reserved for it; v1 offers `{Localize Key}` markup extension backed by a `Localizer` trait and RTL flow (`FlowDirection`) that mirrors layout in panels and `Margin`. The fluent-rs implementation (`.ftl` files) ships in the optional `artic-i18n` crate (D6).
 
 ### Open question
 
-- [ ] Ship the Fluent-based localizer in v1, or only the trait and the markup extension? Proposed: trait + extension in core, `fluent` implementation as an optional crate.
+- [x] Ship the fluent-rs localizer in v1, or only the trait and the markup extension? Decided: trait + extension in core, the fluent-rs implementation as the optional `artic-i18n` crate (D6).
 
 ## 13. Tooling, testing, milestones, open questions
 
@@ -699,8 +718,8 @@ Build order follows the dependency graph in §2: nothing above a layer starts un
 
 ### Developer tooling
 
-- `cargo artic` subcommand: `check` (XAML diagnostics without a full build), `new` (app template with a view, a view-model, and the theme), `ios`/`android` (shell projects), `inspect` (attach to a running debug app over a local socket to browse the visual tree, effective property values, and matched styles).
-- Editor support: an XSD generated from the registry (`cargo artic schema`) gives completion in any XML-aware editor; an LSP is v2.
+- `cargo artic` subcommand: `check` (XAML diagnostics from the source-based index, no build), `new` (app template with a view, a view-model, and the theme), `ios`/`android` (shell projects), `schema` (XSD from the registry), `lsp` (starts the language server), `inspect` (attach to a running debug app over a local socket to browse the visual tree, effective property values, and matched styles).
+- Editor support: `artic-lsp` ships in v1 with an official VS Code extension and documented setup for Neovim, Helix and Zed (D21). It indexes controls and view-models from Rust source with `syn`, sharing the analysis code of the derive macros, so a new control is usable in the editor as soon as it is saved, without a build (D22). It provides diagnostics, completion (including binding paths), hover, go-to-definition, formatting and rename. An XSD generated from the registry (`cargo artic schema`) covers other XML-aware editors.
 - Debug overlay (`F12` / three-finger tap): layout bounds, dirty-region flashes, frame time, hot-reload diagnostics.
 
 ### Testing
@@ -719,32 +738,36 @@ Build order follows the dependency graph in §2: nothing above a layer starts un
 
 | # | Milestone | Exit criteria |
 | --- | --- | --- |
-| M0 | Foundations | `artic-core` signals + arena + `Property<T>`; registry derive; parser with full fixture corpus |
-| M1 | First pixels | `winit` + `vello` window on the three desktops; `Border`, `TextBlock`, `StackPanel`; compiled XAML only |
-| M2 | Both paths | runtime loader, tree-diff test green, hot reload working on desktop |
-| M3 | Interaction | routed events, focus, `Button`, `TextBox` with IME, `ScrollViewer`, code-behind and commands |
-| M4 | Styling | selectors, setters, resources, `ControlTemplate`, Fluent light/dark theme, `Transitions` |
-| M5 | Data | bindings (typed + reflective), `ViewModel` derive, `ItemsControl`/`ListBox` with virtualization, `ComboBox`, `TabControl`, `Slider`, check/radio |
-| M6 | Mobile | iOS and Android shells, lifecycle, safe areas, soft keyboard, touch gestures, touch theme variant |
-| M7 | Accessibility + polish | `accesskit` on all targets, `cargo artic inspect`, docs, sample apps (todo, settings, master-detail) |
+| M0 | Foundations | Workspace, CI and repo policy; `artic-core` signals, arena, `Property<T>` and trees; registry derive verified on iOS, Android and with LTO; parser with full fixture corpus; builder API, loader value and value object designs |
+| M1 | First pixels | `winit` + `vello` window on the three desktops; `Border`, `TextBlock`, `StackPanel`; compiled XAML; layout protocol, golden images, desktop `accesskit` adapter |
+| M2 | Both paths | runtime loader, tree-diff test green, hot reload on desktop, `runtime-xaml` with hardened input, remaining panels and `Image` |
+| M3 | Interaction | routed events, focus, dispatcher and async, code-behind, `ControlTemplate`, `ContentControl`, `Button`, `TextBox` with desktop IME, `ScrollViewer`; minimal MVVM: typed bindings, `ViewModel` derive, commands, key bindings, app services, exposed view-models (D4, D5) |
+| M4 | Styling | selectors, setters, resources, `Application` object, `Transitions`, builder styles, screen-size pseudo-classes, `ArticTheme` light/dark |
+| M5 | Data | full typed binding surface, converters, `ObservableVec`, `ItemsControl`/`ListBox` with virtualization, `ComboBox`, `TabControl`, `Slider`, toggle/check/radio, `ToolTip` |
+| M6 | Mobile | iOS and Android shells, lifecycle, safe areas, soft keyboard with own IME glue, touch gestures, touch density theme, page-stack navigation, mobile CI |
+| M7 | Accessibility + polish | `accesskit` on all targets, `Accessibility.*` attached properties, `cargo artic inspect`/`new`/`schema`, debug overlay, localization and RTL, `skia` backend, desktop OS services, multi-window, docs, sample apps (todo, settings, master-detail) |
+| M8 | Language server | `artic-lsp` with source-based index, diagnostics, completion, hover, navigation, formatting, rename; VS Code extension; `cargo artic check` |
 
 ### Risks
 
 - `vello` is pre-1.0 and its text stack (`parley`) is moving; pin versions and keep the `skia` backend buildable as insurance.
 - `winit` mobile gaps (IME, safe areas, Android lifecycle) may force platform-specific glue earlier than planned (§10 open question).
-- Compile-time registry across crates depends on `inventory`/`linkme`, which need care on iOS (no dynamic linking) and with LTO; verify in M0.
+- The compile-time registry across crates depends on `linkme` distributed slices, which need care on iOS (no dynamic linking), Android `cdylib` builds and with LTO; verified by the M0-05 spike (D11).
 - Two XAML paths double the surface for subtle divergence; the tree-diff test is the mitigation and must stay in CI.
 
 ### Consolidated open questions
 
-- [ ] Registry carries docs for tooling (§3).
-- [ ] Debug builds interpreted by default; `cargo artic check` (§5).
-- [ ] Signals as public API (§6).
-- [ ] Grid definition syntaxes; `SplitView`/`Expander` (§7).
-- [ ] Builder-style styles; screen-size pseudo-classes (§8).
-- [ ] Async code-behind handlers (§9).
-- [ ] Own mobile glue vs winit; GLES-only Android (§10).
-- [ ] Render thread in v1 (§11).
-- [ ] Fluent localizer in v1 (§12).
-- [ ] Mobile navigation: a `NavigationView`/page stack with back handling in v1, or leave navigation to apps? Not decided above; needed before M6.
-- [ ] Rust-only view API shape for v2: builder (`Button::new().content("Hi").on_click(…)`) or a `view!` macro mirroring XAML? Design in v1 so the compiler targets it.
+All open questions are closed. Decision IDs refer to issue #1.
+
+- [x] Registry carries docs for tooling (§3): yes, `registry-docs` feature (D6).
+- [x] Debug builds interpreted by default: no. `cargo artic check`: yes, on the source index (§5, D6, D22).
+- [x] Signals as public API: yes (§6, D6).
+- [x] Grid definition syntaxes: both. `SplitView`/`Expander`: v2 (§7, D6).
+- [x] Builder-style styles and screen-size pseudo-classes: both in v1 (§8, D6).
+- [x] Async code-behind handlers: yes, with `ViewHandle` (§9, D6).
+- [x] Mobile glue: winit with own IME glue. GLES-only Android: not supported (§10, D6).
+- [x] Render thread in v1: no, UI-thread rendering with a channel boundary (§11, D6).
+- [x] fluent-rs localizer in v1: optional `artic-i18n` crate (§12, D6).
+- [x] Mobile navigation: a minimal page stack with push/pop, Android back and iOS swipe-back; no tab bar or drawer (D7, M6-14).
+- [x] Rust-only view API shape for v2: builder (`Button::new().content("Hi").on_click(…)`); the derive generates builder methods and the compiler emits builder calls in v1 (D8, M0-20).
+- [x] `runtime-xaml` in release builds: kept, opt-in, bindings limited to `#[view_model(expose)]` view-models (D23).
