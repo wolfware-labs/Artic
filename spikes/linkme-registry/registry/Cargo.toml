@@ -1,0 +1,9 @@
+[package]
+name = "spike-registry"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+linkme.workspace = true

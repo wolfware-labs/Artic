@@ -1,0 +1,10 @@
+[package]
+name = "spike-entries-b"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+spike-registry.workspace = true
+linkme.workspace = true
