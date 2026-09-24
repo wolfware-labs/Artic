@@ -1,0 +1,32 @@
+# Throwaway workspace for the linkme registry spike (issue #6).
+# Not part of the artic workspace. See docs/spikes/linkme-registry.md.
+[workspace]
+resolver = "3"
+members = ["registry", "entries-a", "entries-b", "app", "ffi"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+linkme = "=0.3.37"
+spike-registry = { path = "registry" }
+spike-entries-a = { path = "entries-a" }
+spike-entries-b = { path = "entries-b" }
+
+[profile.release]
+debug = false
+
+[profile.fat]
+inherits = "release"
+lto = "fat"
+
+[profile.thin]
+inherits = "release"
+lto = "thin"
+
+[profile.cgu1]
+inherits = "release"
+codegen-units = 1

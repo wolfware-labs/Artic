@@ -1,0 +1,68 @@
+name: Spike linkme registry
+
+# Reproduces every row of docs/spikes/linkme-registry.md. Runs only when the
+# spike changes, or manually.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - spikes/linkme-registry/**
+      - .github/workflows/spike-linkme.yml
+  pull_request:
+    paths:
+      - spikes/linkme-registry/**
+      - .github/workflows/spike-linkme.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  desktop:
+    name: Desktop (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install && rustc --version && cargo tree -p spike-registry --manifest-path spikes/linkme-registry/Cargo.toml -i linkme --depth 0
+      - run: bash spikes/linkme-registry/run-desktop.sh | tee -a "$GITHUB_STEP_SUMMARY"
+
+  ios:
+    name: iOS simulator
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install && rustc --version
+      - run: xcodebuild -version | tee -a "$GITHUB_STEP_SUMMARY"
+      - run: bash spikes/linkme-registry/run-ios.sh | tee -a "$GITHUB_STEP_SUMMARY"
+
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install && rustc --version
+      - name: NDK version
+        run: grep Pkg.Revision "${ANDROID_NDK_LATEST_HOME}/source.properties" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Build and check sections
+        run: ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" bash spikes/linkme-registry/run-android-build.sh | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 26
+          arch: x86_64
+          script: bash spikes/linkme-registry/run-android-device.sh | tee -a "$GITHUB_STEP_SUMMARY"
