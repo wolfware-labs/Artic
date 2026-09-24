@@ -48,20 +48,17 @@ A cross-platform desktop and mobile UI framework where views are written in XAML
 The framework is a Cargo workspace of layered crates; each layer depends only on the ones below it, and the XAML pipeline sits beside the runtime, not inside it.
 
 ```mermaid
-flowchart TD
-  A[artic-xaml-compiler<br/>build.rs codegen] --> R[artic-registry<br/>type metadata]
-  B[artic-xaml-runtime<br/>loader + hot reload] --> R
-  R --> C[artic-core<br/>signals, properties, tree]
-  C --> L[artic-layout]
-  L --> K[artic-controls]
-  K --> S[artic-style]
-  K --> P[artic-platform<br/>winit, accesskit, clipboard]
-  K --> G[artic-render<br/>Renderer trait, vello backend]
-  APP[app crate] --> K
-  APP --> A
+flowchart BT
+  L0["Layer 0: artic-core, artic-macros, artic-xaml"]
+  L1["Layer 1: artic-registry, artic-layout, artic-i18n"]
+  L2["Layer 2: artic-render, artic-style, artic-xaml-compiler, artic-xaml-runtime"]
+  L3["Layer 3: artic-controls, artic-platform, artic-cli, artic-lsp"]
+  L4["Layer 4: artic-theme, artic-test"]
+  L5["Layer 5: artic"]
+  L0 --> L1 --> L2 --> L3 --> L4 --> L5
 ```
 
-Arrows point from dependent to dependency. The app crate depends on the compiler only as a build-dependency.
+Each layer builds on the ones below it. The exact dependency edges and the rules behind them (for example, `artic-controls` never depends on `artic-platform`) are in [docs/architecture.md](../architecture.md). The app crate depends on the compiler only as a build-dependency.
 
 | Crate | Responsibility | Key public types |
 | --- | --- | --- |

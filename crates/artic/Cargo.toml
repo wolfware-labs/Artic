@@ -1,0 +1,30 @@
+[package]
+name = "artic"
+description = "Cross-platform UI framework with XAML views and Rust logic."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+hot-reload = ["dep:artic-xaml-runtime"]
+runtime-xaml = ["dep:artic-xaml-runtime"]
+skia = []
+
+[dependencies]
+artic-core.workspace = true
+artic-registry.workspace = true
+artic-macros.workspace = true
+artic-layout.workspace = true
+artic-render.workspace = true
+artic-style.workspace = true
+artic-platform.workspace = true
+artic-controls.workspace = true
+artic-theme.workspace = true
+artic-xaml-runtime = { workspace = true, optional = true }
+
+[lints]
+workspace = true

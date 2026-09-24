@@ -1,0 +1,14 @@
+[package]
+name = "artic-xaml"
+description = "XAML parser producing the artic infoset, with spanned diagnostics."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

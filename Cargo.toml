@@ -1,0 +1,55 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/artic",
+    "crates/artic-cli",
+    "crates/artic-controls",
+    "crates/artic-core",
+    "crates/artic-i18n",
+    "crates/artic-layout",
+    "crates/artic-lsp",
+    "crates/artic-macros",
+    "crates/artic-platform",
+    "crates/artic-registry",
+    "crates/artic-render",
+    "crates/artic-style",
+    "crates/artic-test",
+    "crates/artic-theme",
+    "crates/artic-xaml",
+    "crates/artic-xaml-compiler",
+    "crates/artic-xaml-runtime",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+authors = ["Wolfware LLC"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/wolfware-labs/artic"
+
+[workspace.dependencies]
+artic = { path = "crates/artic", version = "0.1.0" }
+artic-cli = { path = "crates/artic-cli", version = "0.1.0" }
+artic-controls = { path = "crates/artic-controls", version = "0.1.0" }
+artic-core = { path = "crates/artic-core", version = "0.1.0" }
+artic-i18n = { path = "crates/artic-i18n", version = "0.1.0" }
+artic-layout = { path = "crates/artic-layout", version = "0.1.0" }
+artic-lsp = { path = "crates/artic-lsp", version = "0.1.0" }
+artic-macros = { path = "crates/artic-macros", version = "0.1.0" }
+artic-platform = { path = "crates/artic-platform", version = "0.1.0" }
+artic-registry = { path = "crates/artic-registry", version = "0.1.0" }
+artic-render = { path = "crates/artic-render", version = "0.1.0" }
+artic-style = { path = "crates/artic-style", version = "0.1.0" }
+artic-test = { path = "crates/artic-test", version = "0.1.0" }
+artic-theme = { path = "crates/artic-theme", version = "0.1.0" }
+artic-xaml = { path = "crates/artic-xaml", version = "0.1.0" }
+artic-xaml-compiler = { path = "crates/artic-xaml-compiler", version = "0.1.0" }
+artic-xaml-runtime = { path = "crates/artic-xaml-runtime", version = "0.1.0" }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }

@@ -1,0 +1,16 @@
+[package]
+name = "artic-xaml-compiler"
+description = "Build-time compiler that turns XAML views into Rust."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+artic-xaml.workspace = true
+artic-registry.workspace = true
+
+[lints]
+workspace = true
