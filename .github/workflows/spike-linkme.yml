@@ -20,6 +20,12 @@ concurrency:
 env:
   CARGO_TERM_COLOR: never
 
+# Explicit bash runs steps with -eo pipefail, so a failing script is not
+# hidden by the tee into the step summary.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   desktop:
     name: Desktop (${{ matrix.os }})
@@ -28,9 +34,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install && rustc --version && cargo tree -p spike-registry --manifest-path spikes/linkme-registry/Cargo.toml -i linkme --depth 0

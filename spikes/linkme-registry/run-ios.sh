@@ -28,7 +28,7 @@ for profile in dev release fat thin cgu1; do
     flags=(); [ "$strip" = dead_strip ] && flags=(-Wl,-dead_strip)
     exe="out/ios-$profile-$strip"
     xcrun -sdk iphonesimulator clang -target arm64-apple-ios15.0-simulator \
-      harness/static_main.c "$lib" "${flags[@]}" -o "$exe"
+      harness/static_main.c "$lib" ${flags[@]+"${flags[@]}"} -o "$exe"
     out="$(xcrun simctl spawn "$udid" "$PWD/$exe" || true)"
     n="$(sed -nE 's/^entries=([0-9]+).*/\1/p' <<<"$out")"; n="${n:-0}"
     result="pass"; [ "$n" = "5" ] || result="FAIL"
