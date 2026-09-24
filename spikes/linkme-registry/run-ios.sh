@@ -24,9 +24,14 @@ for profile in dev release fat thin cgu1; do
   cargo build -q -p spike-ffi --target "$target" --profile "$profile"
   dir="$profile"; [ "$profile" = dev ] && dir=debug
   lib="target/$target/$dir/libspike_ffi.a"
-  for strip in none dead_strip; do
-    flags=(); [ "$strip" = dead_strip ] && flags=(-Wl,-dead_strip)
-    exe="out/ios-$profile-$strip"
+  for strip in none dead_strip force_load force_load+dead_strip; do
+    flags=()
+    case "$strip" in
+      dead_strip) flags=(-Wl,-dead_strip) ;;
+      force_load) flags=(-Wl,-force_load,"$lib") ;;
+      force_load+dead_strip) flags=(-Wl,-force_load,"$lib" -Wl,-dead_strip) ;;
+    esac
+    exe="out/ios-$profile-${strip/+/-}"
     xcrun -sdk iphonesimulator clang -target arm64-apple-ios15.0-simulator \
       harness/static_main.c "$lib" ${flags[@]+"${flags[@]}"} -o "$exe"
     out="$(xcrun simctl spawn "$udid" "$PWD/$exe" || true)"
