@@ -1,0 +1,16 @@
+[package]
+name = "artic-render"
+description = "Renderer trait, retained scene and rendering backends for artic."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+artic-core.workspace = true
+artic-layout.workspace = true
+
+[lints]
+workspace = true

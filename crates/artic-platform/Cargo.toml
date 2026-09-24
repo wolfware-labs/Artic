@@ -1,0 +1,17 @@
+[package]
+name = "artic-platform"
+description = "Platform hosts: windowing, input, lifecycle, OS services and accessibility."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+artic-core.workspace = true
+artic-layout.workspace = true
+artic-render.workspace = true
+
+[lints]
+workspace = true

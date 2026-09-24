@@ -1,0 +1,16 @@
+[package]
+name = "artic-theme"
+description = "Default token-based theme and control templates for artic."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+artic-controls.workspace = true
+artic-style.workspace = true
+
+[lints]
+workspace = true

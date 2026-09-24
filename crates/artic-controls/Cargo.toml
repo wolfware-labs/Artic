@@ -1,0 +1,20 @@
+[package]
+name = "artic-controls"
+description = "Templated controls and primitives for artic."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+artic-core.workspace = true
+artic-registry.workspace = true
+artic-layout.workspace = true
+artic-render.workspace = true
+artic-style.workspace = true
+artic-macros.workspace = true
+
+[lints]
+workspace = true

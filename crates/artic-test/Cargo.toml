@@ -1,0 +1,18 @@
+[package]
+name = "artic-test"
+description = "Test utilities for artic: headless host, arena helpers and tree serialization."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+artic-core.workspace = true
+artic-layout.workspace = true
+artic-render.workspace = true
+artic-platform.workspace = true
+
+[lints]
+workspace = true

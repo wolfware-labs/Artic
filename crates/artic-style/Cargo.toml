@@ -1,0 +1,16 @@
+[package]
+name = "artic-style"
+description = "Selectors, styles, setters and resource dictionaries for artic."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+artic-core.workspace = true
+artic-registry.workspace = true
+
+[lints]
+workspace = true

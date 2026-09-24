@@ -1,0 +1,11 @@
+# Build output, including generated view code under OUT_DIR
+target/
+
+# IDE settings
+.idea/
+.vscode/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
