@@ -12,7 +12,7 @@ The code is in [`spikes/linkme-registry/`](../../spikes/linkme-registry/), a sep
 | --- | --- |
 | `spike-registry` | Defines `ENTRIES: [Entry]` with `#[distributed_slice]` and adds one entry of its own |
 | `spike-entries-a`, `spike-entries-b` | Each adds two entries, the way a control crate adds `TypeInfo` entries |
-| `spike-app` | Desktop binaries. `linked` names both entry crates with `extern crate`. `unreferenced` only lists them in `Cargo.toml` |
+| `spike-app` | Desktop binaries. `linked` names both entry crates with `extern crate`, `use_underscore` with `use name as _;`, and `unreferenced` only lists them in `Cargo.toml` |
 | `spike-ffi` | `staticlib` and `cdylib` exposing `spike_report()` to the C harnesses in `harness/` |
 
 Every configuration should see 5 entries. Profiles: `dev`, `release`, and three release variants with `lto = "fat"`, `lto = "thin"` and `codegen-units = 1`.
@@ -24,29 +24,29 @@ Every configuration should see 5 entries. Profiles: `dev`, `release`, and three 
 | Xcode | 26.6 (build 17F113), iOS simulator on `macos-latest` (arm64) |
 | Android NDK | r29 (29.0.14206865), API level 26 |
 | Android emulator | API 26, x86_64, on `ubuntu-latest` |
-| CI run | [35945553205](https://github.com/wolfware-labs/artic/actions/runs/35945553205) |
+| CI run | [35950488249](https://github.com/wolfware-labs/artic/actions/runs/35950488249) |
 
 ## Results
 
 ### Desktop
 
-| OS | Profile | `linked` binary | `unreferenced` binary |
-| --- | --- | --- | --- |
-| Windows | dev | 5/5 | 1/5 |
-| Windows | release | 5/5 | 1/5 |
-| Windows | release + `lto = "fat"` | 5/5 | 1/5 |
-| Windows | release + `lto = "thin"` | 5/5 | 1/5 |
-| Windows | release + `codegen-units = 1` | 5/5 | 1/5 |
-| macOS | dev | 5/5 | 1/5 |
-| macOS | release | 5/5 | 1/5 |
-| macOS | release + `lto = "fat"` | 5/5 | 1/5 |
-| macOS | release + `lto = "thin"` | 5/5 | 1/5 |
-| macOS | release + `codegen-units = 1` | 5/5 | 1/5 |
-| Linux | dev | 5/5 | 1/5 |
-| Linux | release | 5/5 | 1/5 |
-| Linux | release + `lto = "fat"` | 5/5 | 1/5 |
-| Linux | release + `lto = "thin"` | 5/5 | 1/5 |
-| Linux | release + `codegen-units = 1` | 5/5 | 1/5 |
+| OS | Profile | `extern crate` | `use name as _;` | Not referenced |
+| --- | --- | --- | --- | --- |
+| Windows | dev | 5/5 | 5/5 | 1/5 |
+| Windows | release | 5/5 | 5/5 | 1/5 |
+| Windows | release + `lto = "fat"` | 5/5 | 5/5 | 1/5 |
+| Windows | release + `lto = "thin"` | 5/5 | 5/5 | 1/5 |
+| Windows | release + `codegen-units = 1` | 5/5 | 5/5 | 1/5 |
+| macOS | dev | 5/5 | 5/5 | 1/5 |
+| macOS | release | 5/5 | 5/5 | 1/5 |
+| macOS | release + `lto = "fat"` | 5/5 | 5/5 | 1/5 |
+| macOS | release + `lto = "thin"` | 5/5 | 5/5 | 1/5 |
+| macOS | release + `codegen-units = 1` | 5/5 | 5/5 | 1/5 |
+| Linux | dev | 5/5 | 5/5 | 1/5 |
+| Linux | release | 5/5 | 5/5 | 1/5 |
+| Linux | release + `lto = "fat"` | 5/5 | 5/5 | 1/5 |
+| Linux | release + `lto = "thin"` | 5/5 | 5/5 | 1/5 |
+| Linux | release + `codegen-units = 1` | 5/5 | 5/5 | 1/5 |
 
 ### iOS simulator, static library
 
@@ -76,7 +76,7 @@ Section check: the size of the `linkme_ENTRIES` section in `libspike_ffi.so` div
 
 1. `linkme` itself holds up. Whenever a crate is part of the link, its entries survive fat LTO, thin LTO, `codegen-units = 1`, `--gc-sections` on Android and `-dead_strip` on Apple targets. The entries are emitted with the `no_dead_strip` attribute on Mach-O and stay in the `linkme_ENTRIES` section on ELF.
 
-2. rustc does not link a crate that nothing references. The `unreferenced` binary sees only the registry's own entry on every OS and every profile. The entry crates are dropped before the linker runs, so no linker flag can recover them. `extern crate name;` is enough to keep a crate in the link, even when nothing else from it is used.
+2. rustc does not link a crate that nothing references. The `unreferenced` binary sees only the registry's own entry on every OS and every profile. The entry crates are dropped before the linker runs, so no linker flag can recover them. Naming the crate once is enough to keep it in the link, even when nothing else from it is used. `use name as _;` and `extern crate name;` give the same result in every profile. `use name as _;` is the form to prefer. Ordinary dependencies have not needed `extern crate` since the 2018 edition.
 
 3. A static library loses entries at the final link. `ld` only loads archive members that resolve a symbol it needs, and nothing references the objects that hold the entries. The `-why_load` output and the link map confirm that those members are never loaded. Fat LTO avoids this by merging all crates into one object, so everything is loaded together. `-force_load` (or `-all_load`) loads every member and keeps all entries, including with `-dead_strip`.
 
@@ -90,7 +90,7 @@ Keep `linkme` (D11). No fallback mechanism is needed, but two rules must hold, a
 
 1. Every crate that contributes registry entries must be linked.
    - The `artic` facade references its own crates, so built-in controls are always present.
-   - For app and third-party crates, the XAML compiler's `build.rs` (#49) finds every dependency that depends on `artic-registry` through `cargo metadata` and emits an `extern crate` line for each into the generated code. Library authors still write only the derive.
+   - For app and third-party crates, the XAML compiler's `build.rs` (#49) finds every dependency that depends on `artic-registry` through `cargo metadata` and emits a `use name as _;` line for each into the generated code. Library authors still write only the derive.
    - Cost: a `cargo metadata` call in the build script, and crates that register types but are never used stay in the binary. Only crates that depend on the registry are affected.
    - Without this, a control that only appears in hot-reloaded or `runtime-xaml` views would be missing from the registry, and the loader would report it as an unknown type.
 
@@ -102,7 +102,7 @@ Keep `linkme` (D11). No fallback mechanism is needed, but two rules must hold, a
 Changes to fold into existing issues once this is accepted:
 
 - #17: document the two rules next to the slice definition.
-- #49: generate the `extern crate` lines for registry dependencies.
+- #49: generate the `use name as _;` lines for registry dependencies.
 - #144: pass `-force_load` for the Rust static library, once.
 - #141: confirm the same result on a physical device build (this spike used the simulator).
 
