@@ -2,8 +2,6 @@
 
 A cross-platform UI framework for Rust. Views are written in XAML, all logic is Rust, and one GPU renderer draws the same pixels on Windows, macOS, Linux, iOS and Android.
 
-> **Status:** early development. The workspace is set up but nothing is usable yet. The v1 plan is tracked in the [milestones](https://github.com/wolfware-labs/artic/milestones).
-
 ## Goals
 
 - Views use XAML syntax (a defined subset of MS-XAML 2012) with CSS-like style selectors.
@@ -41,8 +39,6 @@ impl LoginVm {
     }
 }
 ```
-
-This is the planned API. None of it is implemented yet.
 
 ## Project structure
 
@@ -111,7 +107,7 @@ flowchart BT
 | iOS | 15 |
 | Android | 8 (API 26) with Vulkan 1.1 |
 
-Web is not a v1 target. App-facing APIs are kept target-neutral so it can be added later without app changes.
+App-facing APIs are target-neutral, so new targets such as the web can be added without changes to app code.
 
 ## Building
 
@@ -125,9 +121,20 @@ cargo clippy --workspace --all-targets
 
 ## Documentation
 
-- [Technical spec](docs/spec/technical_spec.md): the full v1 design.
+- [Technical spec](docs/spec/technical_spec.md): the design of the framework.
 - [Architecture](docs/architecture.md): crate layers and dependency rules.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, the checks CI runs and the pull request process.
 
 ## License
 
-Licensed under either of the Apache License, Version 2.0 or the MIT license, at your option.
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <https://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or <https://opensource.org/licenses/MIT>)
+
+at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
