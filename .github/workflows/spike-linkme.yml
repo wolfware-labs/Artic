@@ -47,6 +47,8 @@ jobs:
       - run: rustup toolchain install && rustc --version
       - run: xcodebuild -version | tee -a "$GITHUB_STEP_SUMMARY"
       - run: bash spikes/linkme-registry/run-ios.sh | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Inspect the static library
+        run: bash spikes/linkme-registry/diag-ios.sh
 
   android:
     name: Android
