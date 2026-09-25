@@ -88,6 +88,7 @@ impl TreeArena {
   /// Creates an empty arena.
   ///
   /// It doesn't allocate until the first node is added.
+  #[must_use]
   pub const fn new() -> Self {
     Self {
       slots: Vec::new(),
@@ -119,6 +120,7 @@ impl TreeArena {
   /// assert!(arena.get(id).is_some());
   /// assert_eq!(arena.len(), 1);
   /// ```
+  #[must_use = "this returns the node ID. It's needed to get or free the node from the arena"]
   pub fn alloc(&mut self, value: Box<dyn Object>) -> NodeId {
     if let Some(Slot::Free { next_free, generation }) = self.first_free.map(|i| &self.slots[i as usize]) {
       let index = self.first_free.unwrap();
@@ -190,6 +192,7 @@ impl TreeArena {
   /// Returns a reference to the node referred to by `id`, or `None` if `id` is stale.
   ///
   /// Use [`get_as`](TreeArena::get_as) to get the node as its concrete type.
+  #[must_use]
   pub fn get(&self, id: NodeId) -> Option<&dyn Object> {
     let Slot::Occupied { generation, value } = self.slots.get(id.index as usize)? else {
       return None;
@@ -225,6 +228,7 @@ impl TreeArena {
   /// assert_eq!(arena.get_as::<Label>(id).map(|label| label.0), Some("hello"));
   /// assert!(arena.get_as::<Button>(id).is_none()); // wrong type
   /// ```
+  #[must_use]
   pub fn get_as<T>(&self, id: NodeId) -> Option<&T>
   where
     T: Object,
@@ -236,6 +240,7 @@ impl TreeArena {
   /// Returns a mutable reference to the node referred to by `id`, or `None` if `id` is stale.
   ///
   /// Use [`get_as_mut`](TreeArena::get_as_mut) to get the node as its concrete type.
+  #[must_use]
   pub fn get_mut(&mut self, id: NodeId) -> Option<&mut dyn Object> {
     let Slot::Occupied { generation, value } = self.slots.get_mut(id.index as usize)? else {
       return None;
@@ -269,6 +274,7 @@ impl TreeArena {
   /// }
   /// assert_eq!(arena.get_as::<Counter>(id).map(|counter| counter.0), Some(1));
   /// ```
+  #[must_use]
   pub fn get_as_mut<T>(&mut self, id: NodeId) -> Option<&mut T>
   where
     T: Object,
@@ -280,11 +286,13 @@ impl TreeArena {
   /// Returns the number of live nodes in the arena.
   ///
   /// Freed slots waiting to be reused aren't counted.
+  #[must_use]
   pub fn len(&self) -> usize {
     self.occupied_slots
   }
 
   /// Returns `true` if the arena holds no live nodes.
+  #[must_use]
   pub fn is_empty(&self) -> bool {
     self.occupied_slots == 0
   }
