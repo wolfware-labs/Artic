@@ -43,11 +43,17 @@ type NodeGeneration = NonZeroU32;
 /// arena.free(id);
 /// assert!(arena.get(id).is_none());
 /// ```
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct TreeArena {
   slots: Vec<Slot>,
   first_free: Option<NodeIndex>,
   occupied_slots: usize,
+}
+
+impl Default for TreeArena {
+  fn default() -> Self {
+    Self::new()
+  }
 }
 
 /// A handle to a node stored in a [`TreeArena`].
@@ -82,8 +88,12 @@ impl TreeArena {
   /// Creates an empty arena.
   ///
   /// It doesn't allocate until the first node is added.
-  pub fn new() -> Self {
-    Self::default()
+  pub const fn new() -> Self {
+    Self {
+      slots: Vec::new(),
+      occupied_slots: 0,
+      first_free: None,
+    }
   }
 
   /// Moves `value` into the arena and returns the id that refers to it.
