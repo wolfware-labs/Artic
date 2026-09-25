@@ -288,6 +288,33 @@ impl TreeArena {
   pub fn is_empty(&self) -> bool {
     self.occupied_slots == 0
   }
+
+  /// Returns `true` if `id` refers to a live node in this arena.
+  ///
+  /// This is `false` once the node has been freed, even if its slot has since been reused by another node.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use artic_core::{Object, TreeArena};
+  ///
+  /// #[derive(Debug)]
+  /// struct Label;
+  /// impl Object for Label {}
+  ///
+  /// let mut arena = TreeArena::new();
+  /// let id = arena.alloc(Box::new(Label));
+  /// assert!(arena.contains(id));
+  ///
+  /// arena.free(id);
+  /// let reused = arena.alloc(Box::new(Label)); // takes the freed slot
+  /// assert!(!arena.contains(id));
+  /// assert!(arena.contains(reused));
+  /// ```
+  #[must_use]
+  pub fn contains(&self, id: NodeId) -> bool {
+    self.get(id).is_some()
+  }
 }
 
 #[cfg(test)]
