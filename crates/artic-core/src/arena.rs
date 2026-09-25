@@ -120,13 +120,12 @@ impl TreeArena {
   /// assert_eq!(arena.len(), 1);
   /// ```
   pub fn alloc(&mut self, value: Box<dyn Object>) -> NodeId {
-    self.occupied_slots += 1;
-
     if let Some(Slot::Free { next_free, generation }) = self.first_free.map(|i| &self.slots[i as usize]) {
       let index = self.first_free.unwrap();
       let generation = *generation;
       self.first_free = *next_free;
       let _ = replace(&mut self.slots[index as usize], Slot::Occupied { generation, value });
+      self.occupied_slots += 1;
       NodeId { index, generation }
     } else {
       let Ok(index) = self.slots.len().try_into() else {
@@ -135,6 +134,7 @@ impl TreeArena {
       let generation = NodeGeneration::MIN;
       let new_slot = Slot::Occupied { generation, value };
       self.slots.push(new_slot);
+      self.occupied_slots += 1;
       NodeId { index, generation }
     }
   }
