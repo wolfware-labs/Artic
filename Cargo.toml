@@ -48,6 +48,9 @@ artic-xaml = { path = "crates/artic-xaml", version = "0.1.0" }
 artic-xaml-compiler = { path = "crates/artic-xaml-compiler", version = "0.1.0" }
 artic-xaml-runtime = { path = "crates/artic-xaml-runtime", version = "0.1.0" }
 
+pretty_assertions = "1.4.1"
+static_assertions = "1.1.0"
+
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"
 missing_debug_implementations = "warn"
