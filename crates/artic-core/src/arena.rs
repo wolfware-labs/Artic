@@ -339,48 +339,120 @@ mod tests {
   struct Control;
 
   #[derive(Debug, PartialEq, Eq)]
-  struct Control2;
+  struct OtherControl;
 
   impl Object for Control {}
 
-  impl Object for Control2 {}
+  impl Object for OtherControl {}
 
   #[test]
   fn stale_id_after_free_returns_none() {
     let mut arena = TreeArena::new();
-    let node_id = arena.alloc(Box::new(Control));
-    arena.free(node_id);
-    assert!(arena.get(node_id).is_none());
+    let n1 = arena.alloc(Box::new(Control));
+    arena.free(n1);
+    assert!(arena.get(n1).is_none());
   }
 
   #[test]
   fn generation_distinguishes_reused_slots() {
     let mut arena = TreeArena::new();
     let mut control: Box<dyn Object> = Box::new(Control);
-    let first_node_id = arena.alloc(control);
-    control = arena.free(first_node_id).unwrap();
-    let second_node_id = arena.alloc(control);
-    assert!(arena.get(first_node_id).is_none());
-    assert_eq!(arena.get_as::<Control>(second_node_id), Some(&Control));
-    assert_eq!(first_node_id.index, second_node_id.index);
-    assert_ne!(second_node_id.generation, first_node_id.generation);
+    let n1 = arena.alloc(control);
+    control = arena.free(n1).unwrap();
+    let n2 = arena.alloc(control);
+    assert!(arena.get(n1).is_none());
+    assert_eq!(arena.get_as::<Control>(n2), Some(&Control));
+    assert_eq!(n1.index, n2.index);
+    assert_ne!(n2.generation, n1.generation);
   }
 
   #[test]
   fn get_as_wrong_type_returns_none() {
     let mut arena = TreeArena::new();
     let control = Box::new(Control);
-    let node_id = arena.alloc(control);
-    assert_eq!(arena.get_as::<Control>(node_id), Some(&Control));
-    assert!(arena.get_as::<Control2>(node_id).is_none())
+    let n1 = arena.alloc(control);
+    assert_eq!(arena.get_as::<Control>(n1), Some(&Control));
+    assert!(arena.get_as::<OtherControl>(n1).is_none());
   }
 
   #[test]
-  fn len_returns_to_zero_after_freeing_all_nodes() {
+  fn stale_id_does_not_resolve_after_slot_reuse() {
     let mut arena = TreeArena::new();
-    let control = Box::new(Control);
-    let node_id = arena.alloc(control);
-    arena.free(node_id).unwrap();
+    let n1 = arena.alloc(Box::new(Control));
+    arena.free(n1).unwrap();
+    let _ = arena.alloc(Box::new(Control));
+    assert!(arena.get(n1).is_none());
+  }
+
+  #[test]
+  fn len_tracks_allocs_and_frees() {
+    let mut arena = TreeArena::new();
     assert_eq!(arena.len(), 0);
+    let n1 = arena.alloc(Box::new(Control));
+    assert_eq!(arena.len(), 1);
+    let n2 = arena.alloc(Box::new(Control));
+    assert_eq!(arena.len(), 2);
+    assert!(arena.free(n1).is_some());
+    assert_eq!(arena.len(), 1);
+    assert!(arena.free(n2).is_some());
+    assert_eq!(arena.len(), 0);
+  }
+
+  #[test]
+  fn double_free_returns_none_and_keeps_len() {
+    let mut arena = TreeArena::new();
+    let n1 = arena.alloc(Box::new(Control));
+    assert!(arena.free(n1).is_some());
+    assert!(arena.free(n1).is_none());
+    assert_eq!(arena.len(), 0);
+  }
+
+  #[test]
+  fn generation_wraps_from_max_to_min() {
+    let mut arena = TreeArena::new();
+    let mut n1 = arena.alloc(Box::new(Control));
+    n1.generation = NodeGeneration::MAX;
+    if let Slot::Occupied { generation, .. } = &mut arena.slots[n1.index as usize] {
+      *generation = NodeGeneration::MAX;
+    }
+    assert!(arena.free(n1).is_some());
+    n1 = arena.alloc(Box::new(Control));
+    assert_eq!(n1.generation, NodeGeneration::MIN);
+  }
+
+  #[test]
+  fn out_of_range_id_returns_none() {
+    let mut arena = TreeArena::new();
+    let mut n1 = arena.alloc(Box::new(Control));
+    n1.index = 1;
+    assert!(arena.free(n1).is_none());
+    assert!(arena.get(n1).is_none());
+    assert!(arena.get_as::<Control>(n1).is_none());
+    assert!(arena.get_mut(n1).is_none());
+    assert!(arena.get_as_mut::<Control>(n1).is_none());
+  }
+
+  #[test]
+  fn get_as_mut_wrong_type_returns_none() {
+    let mut arena = TreeArena::new();
+    let n1 = arena.alloc(Box::new(Control));
+    assert!(arena.get_as_mut::<OtherControl>(n1).is_none());
+  }
+
+  #[test]
+  fn occupied_slots_should_match() {
+    let mut arena = TreeArena::new();
+    let n1 = arena.alloc(Box::new(Control));
+    let _ = arena.alloc(Box::new(Control));
+    arena.free(n1);
+    let _ = arena.alloc(Box::new(Control));
+    assert_eq!(arena.occupied_slots, 2);
+  }
+
+  #[test]
+  fn is_empty_should_be_false() {
+    let mut arena = TreeArena::new();
+    let _ = arena.alloc(Box::new(Control));
+    assert!(!arena.is_empty());
   }
 }
