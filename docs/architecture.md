@@ -2,7 +2,7 @@
 
 artic is a Cargo workspace of layered crates. This document is the reference for which crate may depend on which. The design behind each crate is in the [technical spec](spec/technical_spec.md).
 
-## Layers
+## <a id="arch-layers"></a>Layers
 
 A crate depends only on crates in lower layers. Crates in the same layer never depend on each other.
 
@@ -15,7 +15,7 @@ A crate depends only on crates in lower layers. Crates in the same layer never d
 | 4 | `artic-theme`, `artic-test` | The default theme and test utilities |
 | 5 | `artic` | The facade that apps depend on |
 
-## Dependency graph
+## <a id="arch-dependency-graph"></a>Dependency graph
 
 Arrows point from a crate to its dependency.
 
@@ -77,18 +77,18 @@ The graph omits edges that a lower edge already implies (for example `artic-cont
 | `artic-test` | `artic-core`, `artic-layout`, `artic-render`, `artic-platform` |
 | `artic` | every app-facing crate; `artic-xaml-runtime` only with the `hot-reload` or `runtime-xaml` feature |
 
-## Rules
+## <a id="arch-rules"></a>Rules
 
 - `artic-controls` does not depend on `artic-platform`. Input event types live in `artic-core`, and the facade connects the platform host to the tree. Controls stay testable without a window and portable to future targets.
 - `artic-xaml` does not depend on the registry. Type references stay unresolved in the infoset, so parser tests need no registry.
 - Release builds link `artic-xaml-runtime` only when the app enables `runtime-xaml`. Compiled views never touch the loader.
 - App-facing crates stay free of native-only dependencies, so a web target can be added later without app changes (D24 in the spec).
 
-## Why this differs from the original §2 diagram
+## <a id="arch-why-this-differs-from-the-original-2-diagram"></a>Why this differs from the original §2 diagram
 
 The first version of the spec drew `artic-core -> artic-layout -> artic-controls -> artic-style/platform/render`. Read with the stated arrow direction, that makes the core depend on layout and layout depend on controls, which contradicts "each layer depends only on the ones below it". The graph above is the corrected version, and the spec now points here.
 
-## Checking the graph
+## <a id="arch-checking-the-graph"></a>Checking the graph
 
 ```sh
 cargo tree -e normal --workspace --depth 1

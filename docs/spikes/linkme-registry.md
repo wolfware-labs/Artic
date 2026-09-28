@@ -4,7 +4,7 @@ Issue: #6. Time box: 2 days.
 
 The registry (§3 of the spec) is a `linkme` distributed slice that each crate fills through `#[derive(XamlType)]`. Linkers can drop data that no code references, so this spike checks whether entries from several crates survive LTO, dead-code stripping, an iOS static library and an Android shared library.
 
-## Setup
+## <a id="spike-linkme-setup"></a>Setup
 
 The code is in [`spikes/linkme-registry/`](../../spikes/linkme-registry/), a separate Cargo workspace outside the artic workspace.
 
@@ -26,9 +26,9 @@ Every configuration should see 5 entries. Profiles: `dev`, `release`, and three 
 | Android emulator | API 26, x86_64, on `ubuntu-latest` |
 | CI run | [35950488249](https://github.com/wolfware-labs/artic/actions/runs/35950488249) |
 
-## Results
+## <a id="spike-linkme-results"></a>Results
 
-### Desktop
+### <a id="spike-linkme-desktop"></a>Desktop
 
 | OS | Profile | `extern crate` | `use name as _;` | Not referenced |
 | --- | --- | --- | --- | --- |
@@ -48,7 +48,7 @@ Every configuration should see 5 entries. Profiles: `dev`, `release`, and three 
 | Linux | release + `lto = "thin"` | 5/5 | 5/5 | 1/5 |
 | Linux | release + `codegen-units = 1` | 5/5 | 5/5 | 1/5 |
 
-### iOS simulator, static library
+### <a id="spike-linkme-ios-simulator-static-library"></a>iOS simulator, static library
 
 The C harness links `libspike_ffi.a` with `xcrun clang -target arm64-apple-ios15.0-simulator` and runs in a booted simulator with `simctl spawn`. The linker flags are the ones an Xcode project passes.
 
@@ -60,7 +60,7 @@ The C harness links `libspike_ffi.a` with `xcrun clang -target arm64-apple-ios15
 | release + `lto = "thin"` | 1/5 | 1/5 | 5/5 | 5/5 |
 | release + `codegen-units = 1` | 1/5 | 1/5 | 5/5 | 5/5 |
 
-### Android, shared library
+### <a id="spike-linkme-android-shared-library"></a>Android, shared library
 
 Section check: the size of the `linkme_ENTRIES` section in `libspike_ffi.so` divided by the 32-byte entry size. Runtime: a native executable built with the NDK loads the library with `dlopen` on the emulator and calls `spike_report()`.
 
@@ -72,7 +72,7 @@ Section check: the size of the `linkme_ENTRIES` section in `libspike_ffi.so` div
 | release + `lto = "thin"` | 5/5 | 5/5 | 5/5 |
 | release + `codegen-units = 1` | 5/5 | 5/5 | 5/5 |
 
-## Findings
+## <a id="spike-linkme-findings"></a>Findings
 
 1. `linkme` itself holds up. Whenever a crate is part of the link, its entries survive fat LTO, thin LTO, `codegen-units = 1`, `--gc-sections` on Android and `-dead_strip` on Apple targets. The entries are emitted with the `no_dead_strip` attribute on Mach-O and stay in the `linkme_ENTRIES` section on ELF.
 
@@ -84,7 +84,7 @@ Section check: the size of the `linkme_ENTRIES` section in `libspike_ffi.so` div
 
 4. The Android `cdylib` needs nothing extra. rustc drives that link itself and passes the crates so their sections are kept.
 
-## Recommendation
+## <a id="spike-linkme-recommendation"></a>Recommendation
 
 Keep `linkme` (D11). No fallback mechanism is needed, but two rules must hold, and both can be enforced without adding a registration call for library authors (§3 rule 5).
 
@@ -106,12 +106,12 @@ Changes to fold into existing issues once this is accepted:
 - #144: pass `-force_load` for the Rust static library, once.
 - #141: confirm the same result on a physical device build (this spike used the simulator).
 
-## Limits
+## <a id="spike-linkme-limits"></a>Limits
 
 - iOS was tested on the simulator only. Device builds use the same linker, so the same behavior is expected.
 - The `aarch64-linux-android` library was checked by section size, not run. GitHub-hosted runners cannot run an arm64 emulator. The x86_64 library, built and linked the same way, was run on an emulator.
 
-## Reproducing
+## <a id="spike-linkme-reproducing"></a>Reproducing
 
 ```sh
 cd spikes/linkme-registry

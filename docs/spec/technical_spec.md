@@ -4,11 +4,11 @@ Sep 23, 2026 · @Mariano
 
 This revision applies the v1 planning decisions D1 to D24 recorded in issue #1. Decision IDs appear next to the text they changed. Work is tracked in the milestones M0 to M8 (§13).
 
-## 1. Overview and locked decisions
+## <a id="spec-1"></a>1. Overview and locked decisions
 
 A cross-platform desktop and mobile UI framework where views are written in XAML (a defined subset of [MS-XAML 2012](https://learn.microsoft.com/en-us/openspecs/microsoft_domain_specific_languages/MS-MSDLLP/69a08c4f-e943-4729-be0d-1b33d4ad967e) with an Avalonia-style vocabulary) and all logic is Rust. **The framework is named artic (artic.rs); crates are prefixed artic-**.
 
-### Goals
+### <a id="spec-1-goals"></a>Goals
 
 - XAML that a WPF/Avalonia developer can read and mostly write without retraining.
 - Rust-native, not .NET-on-Rust: composition and traits instead of class hierarchies, generics and concrete enums instead of \`dyn Any\`, std traits (\`FromStr\`, \`TryFrom\`, \`Result\`) instead of framework-specific converter and exception APIs, arena ids instead of shared mutable references. String-keyed lookup exists only where XAML markup needs it and only in the hot-reload loader.
@@ -16,14 +16,14 @@ A cross-platform desktop and mobile UI framework where views are written in XAML
 - Compiled XAML for release (type-checked, zero parse cost at startup) and interpreted XAML in development (hot reload).
 - Fine-grained reactivity underneath; MVVM ergonomics (observable view-models, `{Binding}`) on top.
 
-### Non-goals for v1
+### <a id="spec-1-non-goals-for-v1"></a>Non-goals for v1
 
 - Web/WASM. No v1 work targets it, but a later version must be able to add it without changing app code (D24). App-facing APIs never name `wgpu`, `vello`, `skia-safe` or `winit` types, the app entry point works on hosts whose event loop cannot block, services that are async on the web (clipboard reads, file dialogs) are async from v1, and the portable crates are checked against `wasm32-unknown-unknown` in CI.
 - Native-looking widgets. Controls are templated and drawn by the framework; one default theme ships.
 - Full MS-XAML conformance. Unsupported constructs are listed in §4 and produce compile errors, not silent behavior.
 - DataGrid, TreeView, Menu bar controls, dialogs, `SplitView`, `Expander` (v2). A Rust-only view API (views built in code without XAML) is v2, but v1 must not preclude it: the control structs and `Property<T>` fields are the API. The v2 API is a builder (`Button::new().content("Hi").on_click(...)`); in v1 the derive already generates the builder methods and the XAML compiler emits builder calls (D8).
 
-### Locked decisions
+### <a id="spec-1-locked-decisions"></a>Locked decisions
 
 | Area | Decision |
 | --- | --- |
@@ -43,7 +43,7 @@ A cross-platform desktop and mobile UI framework where views are written in XAML
 | License | `MIT OR Apache-2.0` (D13) |
 | Minimum Rust | Stable, edition 2024 |
 
-## 2. Architecture and crate layout
+## <a id="spec-2"></a>2. Architecture and crate layout
 
 The framework is a Cargo workspace of layered crates; each layer depends only on the ones below it, and the XAML pipeline sits beside the runtime, not inside it.
 
@@ -80,11 +80,11 @@ Each layer builds on the ones below it. The exact dependency edges and the rules
 | `artic-cli` | `cargo-artic` binary: `check`, `new`, `schema`, `inspect`, `ios`, `android`, `lsp` (D15) | CLI |
 | `artic-lsp` | Language server: source-based type index, diagnostics, completion, hover, navigation, formatting, rename (D21, D22) | `Server` |
 
-### Object model in one paragraph
+### <a id="spec-2-object-model-in-one-paragraph"></a>Object model in one paragraph
 
 Every UI element is a Rust struct stored in a generational arena (`TreeArena`) and referenced by a `NodeId`; there is no `Rc<RefCell<>>` in the tree. Element structs implement the `Object` trait (registry lookup, property bag access) and `Element` (layout, render, input). Properties are `Property<T>` fields (§6) whose values are signals, so a binding, a style setter, and a direct set all write through the same path and invalidate the same dependents.
 
-### Frame pipeline
+### <a id="spec-2-frame-pipeline"></a>Frame pipeline
 
 ```mermaid
 flowchart LR
@@ -98,11 +98,11 @@ flowchart LR
 
 Each stage runs only on nodes marked dirty by the previous one; a frame with no dirty nodes is skipped and the loop waits on the OS event queue.
 
-## 3. Type system and registry
+## <a id="spec-3"></a>3. Type system and registry
 
 XAML needs to name types and properties by string; Rust does not. The registry exists only to serve the markup side, is generated entirely by derive macros, and is consumed at build time by the compiler, where every lookup turns into a direct, typed Rust call. The runtime loader (hot reload) is the only consumer that keeps string keys alive at runtime.
 
-### Declaring a XAML type
+### <a id="spec-3-declaring-a-xaml-type"></a>Declaring a XAML type
 
 ```rust
 #[derive(XamlType, Default)]
@@ -119,7 +119,7 @@ pub struct Border {
 
 The derive emits a `TypeInfo` const and registers it with `linkme` (distributed slice) so the registry is assembled at link time. Field types decide everything: a `Property<T>` is a settable XAML property if `T: FromStr` or `T: XamlType`; an `Event<A>` is a XAML event; a field of a type implementing `XamlCollection` accepts child elements.
 
-### What the registry records
+### <a id="spec-3-what-the-registry-records"></a>What the registry records
 
 | Item | Fields | Consumer |
 | --- | --- | --- |
@@ -131,7 +131,7 @@ The derive emits a `TypeInfo` const and registers it with `linkme` (distributed 
 
 The loader path needs a runtime value representation for converted attribute values. The original `Value` enum with a `Parsed(TypeId, Box<dyn Any>)` variant is rejected (D9); the typed replacement is specified in the M0-19 design and implemented in M2-01. Values written as object elements (brushes, `RowDefinition`, `KeyBinding`) are covered by the M0-31 design. The compiled path never constructs a loader value.
 
-### Rules
+### <a id="spec-3-rules"></a>Rules
 
 1. XAML type names map 1:1 to Rust types; lookup is exact and case-sensitive (MS-XAML).
 2. Value types use std traits, not a custom converter API: `FromStr` for text (`Thickness`, `Brush`, `Color`, `GridLength`, `Duration`), `TryFrom` for typed conversions; `#[derive(XamlEnum)]` generates case-insensitive `FromStr` for enums.
@@ -142,21 +142,21 @@ The loader path needs a runtime value representation for converted attribute val
 7. Attached properties and markup extensions are declared with the same derive on their owner type (M0-30). `const` and `static` items become visible to `x:Static` with `#[xaml_static]` (D23).
 8. The registry is assembled with `linkme` distributed slices; M0-05 verifies them on iOS, Android and with LTO (D11).
 
-### Namespaces
+### <a id="spec-3-namespaces"></a>Namespaces
 
 - `https://artic.rs/ui` — default vocabulary (`xmlns="…"`).
 - `https://artic.rs/markup`: the `x:` language namespace (D19). The directives follow MS-XAML, but the URI is artic's own. The Microsoft URI (`http://schemas.microsoft.com/winfx/2006/xaml`) is rejected with a hint showing the replacement. Editor support comes from the generated XSD and the language server.
 - `using:my_crate::views` — maps a Rust module path to a prefix; resolved through the registry's recorded Rust paths.
 
-### Open question
+### <a id="spec-3-open-question"></a>Open question
 
 - [x] Should the registry also carry doc comments and default-value text for an editor/LSP (larger binary, better tooling)? Decided: yes, behind a `registry-docs` feature (D6). The language server reads docs from source (D22).
 
-## 4. XAML language: supported subset of MS-XAML
+## <a id="spec-4"></a>4. XAML language: supported subset of MS-XAML
 
 The parser implements MS-XAML 2012 §5 (XML → XAML Infoset) for the constructs below and rejects everything else with a spanned error. The infoset is the contract between the parser and both back ends.
 
-### Supported
+### <a id="spec-4-supported"></a>Supported
 
 | Construct | Syntax | Notes |
 | --- | --- | --- |
@@ -179,7 +179,7 @@ The parser implements MS-XAML 2012 §5 (XML → XAML Infoset) for the constructs
 | `x:DataType` | on `DataTemplate` and root | Enables compiled bindings (§6) |
 | XML comments, CDATA, `xml:space="preserve"` |  | Per MS-XAML whitespace rules |
 
-### Not supported (compile error, with the reason)
+### <a id="spec-4-not-supported"></a>Not supported (compile error, with the reason)
 
 - `x:Code`, `x:Subclass`, `x:Shared`, `x:Arguments`, `x:FactoryMethod`, `x:TypeArguments` (no generics from XAML in v1).
 - `x:Reference` (use `ElementName` binding instead).
@@ -187,7 +187,7 @@ The parser implements MS-XAML 2012 §5 (XML → XAML Infoset) for the constructs
 - `clr-namespace:` prefixes (use `using:`) and the Microsoft `x:` namespace URI (use `https://artic.rs/markup`, D19).
 - Loose-XAML loading of arbitrary Rust types not marked `XamlType`.
 
-### Infoset shape
+### <a id="spec-4-infoset-shape"></a>Infoset shape
 
 ```rust
 pub enum XamlNode {
@@ -201,11 +201,11 @@ pub enum MemberKey { Property(String), Attached { owner: TypeRef, name: String }
 
 Type references stay unresolved (`TypeRef { prefix, name }`) in the infoset; resolution against the registry is the first step of each back end, so parser tests need no registry.
 
-### Whitespace
+### <a id="spec-4-whitespace"></a>Whitespace
 
 MS-XAML default: leading/trailing whitespace in text content is trimmed, internal runs collapse to one space, and whitespace-only text between object elements is dropped. `xml:space="preserve"` and `#[xaml(whitespace = "significant")]` on a type (e.g. `TextBlock` inline collection) turn this off.
 
-### Example view
+### <a id="spec-4-example-view"></a>Example view
 
 ```xml
 <UserControl xmlns="https://artic.rs/ui"
@@ -223,7 +223,7 @@ MS-XAML default: leading/trailing whitespace in text content is trimmed, interna
 </UserControl>
 ```
 
-## 5. XAML pipeline: compiler, runtime loader, hot reload
+## <a id="spec-5"></a>5. XAML pipeline: compiler, runtime loader, hot reload
 
 One parser, one infoset, two back ends that must produce identical object trees; a conformance test suite (§13) loads every sample both ways and diffs the trees.
 
@@ -238,7 +238,7 @@ flowchart LR
   RS --> OT2[object tree]
 ```
 
-### Build-time compiler (release path)
+### <a id="spec-5-build-time-compiler"></a>Build-time compiler (release path)
 
 1. `build.rs` calls `artic_xaml_compiler::compile_dir("src/views")`; every `.xaml` becomes `$OUT_DIR/views/<name>.rs`, included via `include!` by the `#[xaml_class]` macro.
 2. Type and property names resolve against the registry of all dependency crates. Because the registry is link-time, the compiler runs in a build script that links `artic-controls` and the app's own control crates as build-dependencies.
@@ -246,21 +246,21 @@ flowchart LR
 4. Bindings compile to typed closures (`|vm: &LoginVm| vm.email.get()`) over the `x:DataType` in scope, whether declared, inherited or inferred (§6, D2). A binding with no resolvable `x:DataType` is a compile error that names the attribute to add and where. Unknown property on a known `x:DataType` is a compile error. There is no reflective fallback (D1).
 5. Generated code is deterministic and gitignored; diagnostics point at the `.xaml` line/column via `#[track_caller]`-style span tables so `cargo build` errors read like `views/login.xaml:12:9: unknown property 'Foo' on Button`.
 
-### Runtime loader (dev path)
+### <a id="spec-5-runtime-loader"></a>Runtime loader (dev path)
 
 1. `XamlLoader::load(&registry, source) -> Result<NodeId, Diagnostics>` walks the infoset, constructs each object via `TypeInfo::new`, converts values via `TypeConverter`, and sets properties via `set_any`.
 2. Bindings resolve at bind time through the accessor tables generated by `#[derive(ViewModel)]` (§6). Same semantics and the same `x:DataType` rules as the compiled path, slower (D1).
 3. Event handlers named in XAML (`Click="on_click"`) resolve through a handler table the `#[xaml_class]` macro generates (`fn __handler(name: &str) -> Option<HandlerFn>`), so code-behind still works in interpreted mode.
 4. Also the path for XAML that did not exist at build time (user skins, server-driven screens, data-only plugin UIs) when the opt-in `runtime-xaml` feature is on (D23). Apps without the feature pay nothing. Loaded files are untrusted input: the parser is fuzzed and enforces size and depth limits (M2-17). Bindings in loaded files reach only view-models marked `#[view_model(expose)]` and their `pub` members (M3-33).
 
-### Hot reload
+### <a id="spec-5-hot-reload"></a>Hot reload
 
 - With `--features hot-reload`, the app watches its `views/` directory (`notify` crate). On change, the loader parses the file; on success it rebuilds only that view's subtree, re-attaches the same view-model instance and `x:Name` bindings, restores focus and scroll offsets where the named element still exists, and swaps the subtree in place. On parse/resolve failure the old subtree stays and the diagnostic is shown in an overlay.
 - Reload is view-scoped, not tree-scoped: parent state (navigation, other views) is untouched.
 - Rust logic changes still require a rebuild; the design does not attempt code hot-swapping.
 - Styles in a reloaded `ResourceDictionary` re-run the style pass on the whole window (cheap; selectors are indexed).
 
-### Choosing the path
+### <a id="spec-5-choosing-the-path"></a>Choosing the path
 
 | Build | Views | Bindings | Hot reload |
 | --- | --- | --- | --- |
@@ -268,22 +268,22 @@ flowchart LR
 | `cargo run --features hot-reload` | interpreted for files under watch; compiled fallback | accessor tables, all view-models | on |
 | `cargo build --release` | compiled | typed | off; `runtime-xaml` can still load external files, binding only to exposed view-models |
 
-### Open questions
+### <a id="spec-5-open-questions"></a>Open questions
 
 - [x] Should debug builds default to interpreted XAML so hot reload is on with no flag? Decided: no. Debug behavior stays identical to release unless asked, to avoid "works in dev only" bugs (D6).
 - [x] Compiler as a `build.rs` library only, or also a `cargo artic check` subcommand for editor diagnostics? Decided: both (D6). `cargo artic check` runs the compiler checks against the source-based type index, so it needs no build (D22, M8-18).
 
-## 6. Reactivity: signals, properties, bindings, MVVM
+## <a id="spec-6"></a>6. Reactivity: signals, properties, bindings, MVVM
 
 Signals are the only change-propagation mechanism; `Property<T>`, bindings, styles, and view-models are built on them, so there is one invalidation path. Bindings are typed end to end: `x:DataType` is required wherever `{Binding}` appears, and there is no string-path reflection in any build (D1).
 
-### `x:DataType` scope (D2)
+### <a id="spec-6-x-datatype-scope"></a>`x:DataType` scope (D2)
 
 - `x:DataType` on the root or on a `DataTemplate` applies to every descendant until another `x:DataType` or `DataTemplate` starts a new scope.
 - A `DataTemplate` used as an `ItemTemplate` infers its item type from the bound `ObservableVec<T>`, so item templates rarely need the attribute.
 - When no type can be found, the compiler, the loader and the language server report the same diagnostic: the file, line and column, and the attribute to add.
 
-### Signal core (`artic-core::reactive`)
+### <a id="spec-6-signal-core"></a>Signal core (`artic-core::reactive`)
 
 - `Signal<T>`: reactive cell; `get()` records a dependency when read inside an effect, `set()` marks dependents dirty. `Copy` handle into a runtime-owned arena; `!Send`, UI-thread only.
 - `Memo<T>`: derived signal, recomputed lazily when a dependency changes and its value is read.
@@ -292,7 +292,7 @@ Signals are the only change-propagation mechanism; `Property<T>`, bindings, styl
 - Ownership: signals and effects belong to a `Scope`; disposing a scope (a view subtree) disposes everything created in it. No leaks when a view is unloaded, no manual unsubscribe.
 - `set()` skips propagation when `T: PartialEq` and the value is unchanged.
 
-### `Property<T>`
+### <a id="spec-6-property-t"></a>`Property<T>`
 
 A `Property<T>` is a signal plus a value-precedence stack, so several sources can write the same property without fighting:
 
@@ -307,7 +307,7 @@ A `Property<T>` is a signal plus a value-precedence stack, so several sources ca
 
 The effective value is a `Memo` over the stack. `affects` metadata marks the node layout- or render-dirty when the effective value changes.
 
-### Bindings
+### <a id="spec-6-bindings"></a>Bindings
 
 `{Binding Path, Mode, Converter, FallbackValue, ElementName, Source, RelativeSource}` — Avalonia's surface minus `StringFormat`. Every binding compiles to a typed closure over the declared `x:DataType`:
 
@@ -329,11 +329,11 @@ bind_two_way(&mut arena, tb, |vm: &LoginVm| vm.email, |tb| &tb.text);
 - Path grammar: `A.B.C`, indexers `Items[0]`, `.` for the context itself. No method calls.
 - `DataContext` is `Property<Option<NodeId>>` pointing at a view-model node in the arena, typed through `x:DataType`; downcast happens once at bind time, never per read.
 
-### Hot-reload bindings
+### <a id="spec-6-hot-reload-bindings"></a>Hot-reload bindings
 
 The runtime loader cannot compile a closure, so `#[derive(ViewModel)]` also emits a static accessor table for the type: `path name → typed accessor` (an enum over the field's signal handle kinds). The loader looks up the path in the table for the `x:DataType` in scope; a missing path is a load error shown in the overlay. Same semantics as the compiled binding, no reflection, no `Box<dyn Any>`. Tables for every view-model are linked with the `hot-reload` feature. With `runtime-xaml`, only view-models marked `#[view_model(expose)]` get a table, covering their `pub` members; a binding to anything else is a load error that names the attribute to add (D23).
 
-### MVVM layer
+### <a id="spec-6-mvvm-layer"></a>MVVM layer
 
 ```rust
 #[derive(ViewModel, Default)]
@@ -355,15 +355,15 @@ impl LoginVm {
 - `ObservableVec<T>`: signal-backed list emitting `Inserted/Removed/Moved/Reset` diffs so `ItemsControl` updates rows without rebuilding.
 - View-models are UI-thread objects; background work returns results via `Dispatcher::post` (§11). `VmCx` gives access to the dispatcher and to services registered on the `App`.
 
-### Open question
+### <a id="spec-6-open-question"></a>Open question
 
 - [x] Should signals be the *public* API for app code too (Leptos style `let count = signal(0)` in a Rust-only view)? Decided: yes; it is the same API the view-model fields use (D6).
 
-## 7. Visual tree, layout, and controls
+## <a id="spec-7"></a>7. Visual tree, layout, and controls
 
 Two trees, as in WPF/Avalonia: the **logical tree** (what the XAML declared; scope for `DataContext`, resources, names) and the **visual tree** (what is measured and drawn, including template expansions). Both live in the same arena; each node stores its logical parent and visual parent separately.
 
-### Element traits and composition
+### <a id="spec-7-element-traits-and-composition"></a>Element traits and composition
 
 There is no control class hierarchy. A control is a struct that embeds the state it needs and implements the traits for the behavior it has; `#[derive(Element)]` delegates the shared parts to the embedded `ElementBase`.
 
@@ -396,7 +396,7 @@ pub struct Button {
 - App-defined controls are the same derive on the same traits; nothing in the framework is special-cased.
 - `Content` is an enum, not `Box<dyn Any>`: `Text(String)`, `Node(NodeId)`, `Data(DataRef)` (a view-model node plus a `DataTemplate` lookup).
 
-### Layout protocol
+### <a id="spec-7-layout-protocol"></a>Layout protocol
 
 WPF two-pass measure/arrange with these rules:
 
@@ -407,7 +407,7 @@ WPF two-pass measure/arrange with these rules:
 5. Units are logical pixels (`f32`); the platform layer supplies the scale factor; rounding to device pixels happens in `arrange` (`UseLayoutRounding` on by default).
 6. Layout is synchronous and single-threaded; a `LayoutManager` runs it once per frame after effects.
 
-### Panels (v1)
+### <a id="spec-7-panels"></a>Panels (v1)
 
 | Panel | Semantics |
 | --- | --- |
@@ -419,7 +419,7 @@ WPF two-pass measure/arrange with these rules:
 | `UniformGrid` | `Rows`, `Columns` |
 | `Panel` | base; `Children` collection, `Background` |
 
-### Control set (v1)
+### <a id="spec-7-control-set"></a>Control set (v1)
 
 | Control | Composed of | Template parts (`PART_*`) | Notes |
 | --- | --- | --- | --- |
@@ -443,20 +443,20 @@ WPF two-pass measure/arrange with these rules:
 
 Every `TemplatedControl` ships a default `ControlTemplate` in the theme dictionary (§8) and looks up `PART_*` names after the template is applied (`on_apply_template`). Missing required parts are an error in debug.
 
-### Virtualization
+### <a id="spec-7-virtualization"></a>Virtualization
 
 `ListBox` and `ItemsControl` with `VirtualizingStackPanel` realize only items intersecting the viewport plus a buffer, recycle containers, and support variable item heights with an estimated-size scroll extent. `ObservableVec` diffs map to container insert/remove without a full reset.
 
-### Open questions
+### <a id="spec-7-open-questions"></a>Open questions
 
 - [x] `Grid` short syntax only, or also the `<Grid.ColumnDefinitions>` element form? Decided: both (the element form is what the spec allows; the string form is a type converter) (D6).
 - [x] Ship `SplitView`/`Expander` in v1 or defer? Decided: defer to v2 (D6).
 
-## 8. Styling, resources, templates, themes
+## <a id="spec-8"></a>8. Styling, resources, templates, themes
 
 Styling is Avalonia's model: `Style` objects with a CSS-like `Selector` and a list of `Setter`s, collected in `Styles` on any element or in a theme; matching is indexed and incremental, so a pseudo-class change re-evaluates only styles whose selector mentions that class.
 
-### Selector grammar (v1)
+### <a id="spec-8-selector-grammar"></a>Selector grammar (v1)
 
 | Selector | Matches |
 | --- | --- |
@@ -481,20 +481,20 @@ Specificity: (id, class+pseudo+attr, type), CSS rules; later styles in the same 
 </Style>
 ```
 
-### Setters
+### <a id="spec-8-setters"></a>Setters
 
 - `Setter` writes at precedence 4 (§6) through the property's `set_any`; removal (selector stops matching) reverts to the next value in the stack — no need to "unset".
 - `Setter Property="Template"` sets a `ControlTemplate`; `Setter Property="Theme"` (v2) is out.
 - Animations: `Transitions` (`<DoubleTransition Property="Opacity" Duration="0:0:0.15"/>`) animate a property between its old and new effective value; keyframe `Animation` is v2.
 
-### Resources
+### <a id="spec-8-resources"></a>Resources
 
 - `ResourceDictionary` on any element (`Resources` property), on `Application`, and via `MergedDictionaries` (`Source="avares://…"`-style URIs replaced by `Source="crate://my_crate/themes/dark.xaml"` resolved at build time, or a file path with the runtime loader).
 - `{StaticResource Key}`: resolved once at load, walking logical parents then application then theme; missing key is a compile error in the compiled path.
 - `{DynamicResource Key}`: resolved through a signal; swapping a dictionary (theme change) updates every consumer.
 - Resource values are any registry type; converters apply to string values by target property type.
 
-### Templates
+### <a id="spec-8-templates"></a>Templates
 
 | Template | Sets | Special bindings |
 | --- | --- | --- |
@@ -505,23 +505,23 @@ Specificity: (id, class+pseudo+attr, type), CSS rules; later styles in the same 
 
 Templates are instantiated per use from their infoset (runtime) or from a generated factory `fn` (compiled). A template instance is a new name scope; `x:Name` inside it does not collide with the view's names.
 
-### Themes
+### <a id="spec-8-themes"></a>Themes
 
 - `artic-theme` ships light and dark dictionaries plus the default `ControlTemplate` for every v1 control; the app picks with `<Application.Styles><ArticTheme Mode="System"/></Application.Styles>` (D18). The earlier plan for a Microsoft Fluent theme (`FluentTheme`, `artic-theme-fluent`) is dropped.
 - The theme is token based. Scale tokens cover color (50 to 950 per hue), spacing, radius, shadow and type; semantic tokens (accent, surface, text, border) map onto the scales per light and dark mode. Controls reference semantic tokens only. v1 has no utility classes.
 - `Mode="System"` follows the OS setting via `PlatformHost::color_scheme` and swaps dictionaries through `DynamicResource`.
 - Mobile-specific sizing (44 px touch targets, larger fonts) is a second variant dictionary, `ArticTheme Density="Touch"`, selected automatically when the primary input is touch (§12) or forced.
 
-### Open questions
+### <a id="spec-8-open-questions"></a>Open questions
 
 - [x] Style inline in code-behind (`Style::new("Button.primary").setter(…)`) as a supported builder API in v1? Decided: yes; it is what the compiler emits anyway (D6).
 - [x] Media-style queries (`:screen(compact)` pseudo-class from window width) for adaptive layouts across desktop and phone? Decided: yes, as pseudo-classes on the root set by the platform layer (D6, M4-14).
 
-## 9. Events, routing, commands, code-behind
+## <a id="spec-9"></a>9. Events, routing, commands, code-behind
 
 Input becomes routed events (tunnel then bubble through the visual tree, as in WPF), and app code receives them either as `x:Class` handler methods or as `Command` bindings; both are first-class and can coexist in one view.
 
-### Routed events
+### <a id="spec-9-routed-events"></a>Routed events
 
 - `RoutedEvent<A>` is a static descriptor (name, routing strategy `Tunnel | Bubble | Direct`, args type). Raising one walks the visual tree from root to target (tunnel, `Preview*`) then target to root (bubble); any handler sets `args.handled = true` to stop.
 - Handlers are stored per node in a small vec keyed by event id; `handled_events_too: bool` lets a handler see already-handled events.
@@ -529,7 +529,7 @@ Input becomes routed events (tunnel then bubble through the visual tree, as in W
 - Gesture recognition (`Tapped`, `DoubleTapped`, `Holding`, pan/pinch via `GestureRecognizer` attached collection) runs on raw pointer events in the platform layer and raises the gesture event at the hit-test target, so mouse and touch produce the same high-level events.
 - Control-level events (`Button.Click`, `SelectionChanged`, `TextChanged`, `Checked`) are ordinary routed events raised by the control.
 
-### Code-behind (`x:Class`)
+### <a id="spec-9-code-behind"></a>Code-behind (`x:Class`)
 
 ```rust
 #[xaml_class("views/login.xaml")]   // includes the generated file
@@ -550,27 +550,27 @@ impl LoginView {
 - A handler name that does not exist is a compile error in the compiled path, a load error in the runtime path.
 - Code-behind and view-model are both available: `self.view_model::<LoginVm>()` returns the `DataContext` downcast.
 
-### Commands
+### <a id="spec-9-commands"></a>Commands
 
 - `Command` is a concrete value produced by `#[command]` on a view-model method (§6): `execute(&self, param: P)`, `enabled: Memo<bool>`, `running: Signal<bool>`. No trait object; the parameter type `P` is checked at compile time against `CommandParameter`.
 - `Button`, `MenuItem` (v2), and `KeyBinding` consume commands; `IsEnabled` follows `enabled` unless a local value overrides it.
 - `KeyBindings`: `<UserControl.KeyBindings><KeyBinding Gesture="Ctrl+S" Command="{Binding Save}"/></UserControl.KeyBindings>`; `Cmd` on macOS maps from `Ctrl` via `PlatformModifier`.
 - Handlers return `Handled::Yes | No` rather than mutating a flag on the event; routing stops on `Yes`. `HandledEventsToo` becomes `subscribe_all(…)`.
 
-### Focus and keyboard navigation
+### <a id="spec-9-focus-and-keyboard-navigation"></a>Focus and keyboard navigation
 
 - One focused element per window; `Focusable=true` opts in. `Tab`/`Shift+Tab` follow visual order with `TabIndex` overrides; arrow keys within `SelectingItemsControl`. `:focus-visible` is set only after keyboard navigation, so touch/mouse do not draw focus rings.
 - On mobile, focusing a `TextBox` requests the soft keyboard through `PlatformHost::set_ime(…)`; `Window` content scrolls to keep the focused element above the keyboard inset (§10).
 
-### Open question
+### <a id="spec-9-open-question"></a>Open question
 
 - [x] Async handlers (`async fn on_click`) allowed directly, spawned on the UI executor? Decided: yes, same as async commands; the handler takes an owned `ViewHandle` because it cannot hold `&mut self` across an await (D6).
 
-## 10. Rendering, windowing, platform layer
+## <a id="spec-10"></a>10. Rendering, windowing, platform layer
 
 One `Renderer` implementation (`vello` on `wgpu`) draws every platform; the platform layer's job is only to give it a surface, deliver input, and expose OS services through one `PlatformHost` trait.
 
-### Renderer
+### <a id="spec-10-renderer"></a>Renderer
 
 - `Renderer` trait: `begin_frame(surface, scale) -> Frame`, `render(&Scene)`, `resize`, `create_image`, `measure_text`. Backends: `vello` (default), `skia-safe` (feature `skia`, for platforms where compute shaders are missing or for A/B testing).
 - Retained `Scene`: each element owns a `SceneFragment` (a `vello::Scene`); `render()` is called only for render-dirty nodes and the root composes fragments with transforms, clips, and opacity groups. Untouched subtrees cost nothing per frame.
@@ -579,7 +579,7 @@ One `Renderer` implementation (`vello` on `wgpu`) draws every platform; the plat
 - `wgpu` backends: DX12 on Windows, Metal on macOS and iOS, Vulkan on Linux and Android. Android requires Vulkan 1.1; GLES-only devices are not supported in v1 and the app reports the missing capability instead of starting (D6, M6-03).
 - Frame pacing: render only when dirty or an animation is running; VSync via surface present mode `Fifo`; animations tick from the platform's frame callback (`CADisplayLink`, `Choreographer`, `DwmFlush`, Wayland frame callbacks).
 
-### `PlatformHost` trait
+### <a id="spec-10-platformhost-trait"></a>`PlatformHost` trait
 
 ```rust
 pub trait PlatformHost {
@@ -604,7 +604,7 @@ The trait is target-neutral (D24). `run` does not have to block: a host whose ev
 
 Implementation: `winit` provides windows, input, DPI and lifecycle on all five targets; the trait wraps it plus per-OS crates (`muda`, `rfd`, `arboard`, `jni`/`ndk` on Android, `objc2` on iOS/macOS).
 
-### Lifecycle events (delivered as `PlatformEvent`)
+### <a id="spec-10-lifecycle-events"></a>Lifecycle events (delivered as `PlatformEvent`)
 
 | Event | Desktop | Mobile |
 | --- | --- | --- |
@@ -616,28 +616,28 @@ Implementation: `winit` provides windows, input, DPI and lifecycle on all five t
 | `OrientationChanged` | — | yes (surfaces as `SizeChanged` + root pseudo-class) |
 | `BackPressed` | — | Android; routed as a `Back` key event first, then `App::on_back` |
 
-### Windows and popups
+### <a id="spec-10-windows-and-popups"></a>Windows and popups
 
 - Desktop: multiple top-level windows, each with its own root, focus, and render surface; popups (`ComboBox`, tooltips) are an overlay layer inside the owning window, not OS windows, so they render identically on all targets.
 - Mobile: exactly one `Window`, sized to the screen; `Window.Content` gets `Padding` = safe area by default (`RespectSafeArea="True"`).
 - Window chrome: OS decorations by default; `ExtendClientAreaToDecorations` (custom title bar) supported on Windows and macOS in v1, Linux v2.
 
-### Packaging
+### <a id="spec-10-packaging"></a>Packaging
 
 - Desktop: plain executables; `cargo bundle`-style packaging is out of scope for v1 (documented, not automated).
 - iOS: static lib linked into an Xcode-generated app shell; `cargo artic ios` writes the shell project and `Info.plist`.
 - Android: `cargo-ndk` + a Gradle shell project with a `NativeActivity` (via `android-activity` crate); `cargo artic android` writes the shell.
 
-### Open questions
+### <a id="spec-10-open-questions"></a>Open questions
 
 - [x] Rely on `winit` for iOS/Android in v1, or own the platform glue there (winit's mobile support has gaps around IME and safe areas)? Decided: winit with patches, own glue only for IME (D6).
 - [x] Support GLES-only Android devices at all in v1 (needs the `skia` backend or a `vello` CPU fallback)? Decided: no. Require Vulkan 1.1 and document the gap (D6).
 
-## 11. Threading and async
+## <a id="spec-11"></a>11. Threading and async
 
 The UI is single-threaded by construction: the tree, signals, and view-models are `!Send`, and the only way in from another thread is `Dispatcher::post`. Async is runtime-agnostic: the framework ships a small single-threaded executor for UI futures and spawns no threads of its own in v1.
 
-### Threads
+### <a id="spec-11-threads"></a>Threads
 
 | Thread | Owns | Notes |
 | --- | --- | --- |
@@ -645,41 +645,41 @@ The UI is single-threaded by construction: the tree, signals, and view-models ar
 | Render thread (post-v1) | `wgpu` device/queue, surface present | v1 renders on the UI thread after layout (D6). The `Scene` is still handed over through a channel boundary so a render thread can be enabled later without an API change |
 | App threads | whatever the app runs (tokio, rayon, std) | talk back only via `Dispatcher` |
 
-### Dispatcher
+### <a id="spec-11-dispatcher"></a>Dispatcher
 
 - `Dispatcher::post(f: impl FnOnce() + Send + 'static)` and `Dispatcher::post_local(f: impl FnOnce())` enqueue onto the UI thread; posting wakes the event loop (`EventLoopProxy`).
 - Priorities: `Input > Render > Normal > Background` (background runs only when idle; used for virtualization prefetch).
 - `Dispatcher::spawn(fut: impl Future + 'static)` runs a `!Send` future on the UI executor: polled inside the event loop, wakes via the proxy. This is where async commands and async handlers run.
 - `Dispatcher::spawn_blocking(f) -> Task<T>` runs on a caller-supplied `BlockingPool` (`trait BlockingSpawner`); default implementation is a tiny std-thread pool, replaceable at `App` build time with tokio's or rayon's.
 
-### Runtime-agnostic contract
+### <a id="spec-11-runtime-agnostic-contract"></a>Runtime-agnostic contract
 
 - Framework futures use only `std::future` + `Waker`; no `tokio::` types in public APIs.
 - Integration with tokio: `App::new().with_blocking(TokioSpawner(handle))`; app code awaits tokio futures from a UI future by `spawn_blocking`-ing a `block_on`, or uses `tokio::task::spawn` and posts the result. Both patterns are shown in the docs; the second is preferred.
 - Timers: `Dispatcher::timer(Duration) -> impl Future` driven by the event loop's `ControlFlow::WaitUntil`, so no timer thread.
 
-### Rules for app code
+### <a id="spec-11-rules-for-app-code"></a>Rules for app code
 
 1. Touch the tree only from the UI thread; the arena's `NodeId` is `Send` but `Arena` methods require `&mut Arena` obtained from `ViewCx`/`Dispatcher`, which only exist there.
 2. Signals are `!Send`; to publish from a worker, send the value and let the posted closure call `set()`.
 3. A long computation in an effect or handler blocks input; the debug build warns on any dispatcher task over 16 ms.
 
-### Open question
+### <a id="spec-11-open-question"></a>Open question
 
 - [x] Render thread in v1, or render on the UI thread after layout (simpler; costs about 1 to 3 ms per frame of UI-thread time)? Decided: UI-thread rendering for v1 with the channel boundary already in the design so a render thread can be enabled later without API change (D6).
 
-## 12. Accessibility, text, and input
+## <a id="spec-12"></a>12. Accessibility, text, and input
 
 Accessibility, text editing, and input are cross-cutting: every control implements them through shared services rather than its own code, so a new control gets screen-reader support and IME for free by filling in a few traits.
 
-### Accessibility
+### <a id="spec-12-accessibility"></a>Accessibility
 
 - `accesskit` on all five targets (Windows UIA, macOS/iOS NSAccessibility/UIAccessibility, Linux AT-SPI, Android via `accesskit_android`). Each element's `accessibility()` returns a node with role, name, value, state, bounds, and actions; the tree is rebuilt incrementally from render-dirty nodes and pushed once per frame.
 - Attached properties: `Accessibility.Name`, `.HelpText`, `.LabeledBy`, `.LiveRegion`, `.Role` override (D20, renamed from the WPF `AutomationProperties`).
 - Actions (`Click`, `Focus`, `SetValue`, `ScrollIntoView`) arrive as `PlatformEvent::AccessAction` and are routed to the element like input.
 - Reduced-motion and high-contrast OS settings surface as root pseudo-classes (`:reduced-motion`, `:high-contrast`) so themes react through selectors.
 
-### Text
+### <a id="spec-12-text"></a>Text
 
 - Fonts: `FontFamily` accepts a list (`"Inter, Segoe UI, sans-serif"`); resolution through `fontique` with per-platform default stacks; app fonts bundled via `Source="crate://…"`.
 - `TextBlock`: shaping, bidi, line breaking (UAX #14), `TextWrapping`, `TextTrimming`, `MaxLines`, `LineHeight`, inline runs with per-run brush/weight/style.
@@ -687,7 +687,7 @@ Accessibility, text editing, and input are cross-cutting: every control implemen
 - IME: composition events (`ImeStart/Update/Commit`) from the platform draw the preedit inline with underline styling; the control reports the cursor rect through `set_ime` so candidate windows and the mobile keyboard position correctly. `InputScope` (`Email`, `Number`, `Url`) maps to keyboard types on mobile.
 - Clipboard: plain text in v1; rich text v2. Reading is async so a web host can implement it (D24).
 
-### Input
+### <a id="spec-12-input"></a>Input
 
 | Source | Normalized to |
 | --- | --- |
@@ -703,25 +703,25 @@ Accessibility, text editing, and input are cross-cutting: every control implemen
 - Scrolling: `ScrollViewer` handles wheel, precise trackpad deltas, touch pan with inertia and overscroll bounce (iOS style, off by default on desktop), and keyboard.
 - Keyboard shortcuts: `KeyGesture` type converter parses `"Ctrl+Shift+S"`; `Cmd` is written `Ctrl` in XAML and mapped per platform unless the gesture uses the explicit `Meta` modifier.
 
-### Localization
+### <a id="spec-12-localization"></a>Localization
 
 - `x:Uid` reserved for it; v1 offers `{Localize Key}` markup extension backed by a `Localizer` trait and RTL flow (`FlowDirection`) that mirrors layout in panels and `Margin`. The fluent-rs implementation (`.ftl` files) ships in the optional `artic-i18n` crate (D6).
 
-### Open question
+### <a id="spec-12-open-question"></a>Open question
 
 - [x] Ship the fluent-rs localizer in v1, or only the trait and the markup extension? Decided: trait + extension in core, the fluent-rs implementation as the optional `artic-i18n` crate (D6).
 
-## 13. Tooling, testing, milestones, open questions
+## <a id="spec-13"></a>13. Tooling, testing, milestones, open questions
 
 Build order follows the dependency graph in §2: nothing above a layer starts until that layer's tests pass, and the two XAML paths are diffed against each other from the first control onward.
 
-### Developer tooling
+### <a id="spec-13-developer-tooling"></a>Developer tooling
 
 - `cargo artic` subcommand: `check` (XAML diagnostics from the source-based index, no build), `new` (app template with a view, a view-model, and the theme), `ios`/`android` (shell projects), `schema` (XSD from the registry), `lsp` (starts the language server), `inspect` (attach to a running debug app over a local socket to browse the visual tree, effective property values, and matched styles).
 - Editor support: `artic-lsp` ships in v1 with an official VS Code extension and documented setup for Neovim, Helix and Zed (D21). It indexes controls and view-models from Rust source with `syn`, sharing the analysis code of the derive macros, so a new control is usable in the editor as soon as it is saved, without a build (D22). It provides diagnostics, completion (including binding paths), hover, go-to-definition, formatting and rename. An XSD generated from the registry (`cargo artic schema`) covers other XML-aware editors.
 - Debug overlay (`F12` / three-finger tap): layout bounds, dirty-region flashes, frame time, hot-reload diagnostics.
 
-### Testing
+### <a id="spec-13-testing"></a>Testing
 
 | Layer | Method |
 | --- | --- |
@@ -733,7 +733,7 @@ Build order follows the dependency graph in §2: nothing above a layer starts un
 | Controls | headless input simulation (`TestHost` implements `PlatformHost`): click, type, tab, touch gestures; asserts on tree state and `accesskit` tree |
 | Platforms | CI matrix: Windows, macOS, Ubuntu (X11 + Wayland via `weston` headless), iOS simulator, Android emulator (API 26 and latest) |
 
-### Milestones
+### <a id="spec-13-milestones"></a>Milestones
 
 | # | Milestone | Exit criteria |
 | --- | --- | --- |
@@ -747,14 +747,14 @@ Build order follows the dependency graph in §2: nothing above a layer starts un
 | M7 | Accessibility + polish | `accesskit` on all targets, `Accessibility.*` attached properties, `cargo artic inspect`/`new`/`schema`, debug overlay, localization and RTL, `skia` backend, desktop OS services, multi-window, docs, sample apps (todo, settings, master-detail) |
 | M8 | Language server | `artic-lsp` with source-based index, diagnostics, completion, hover, navigation, formatting, rename; VS Code extension; `cargo artic check` |
 
-### Risks
+### <a id="spec-13-risks"></a>Risks
 
 - `vello` is pre-1.0 and its text stack (`parley`) is moving; pin versions and keep the `skia` backend buildable as insurance.
 - `winit` mobile gaps (IME, safe areas, Android lifecycle) may force platform-specific glue earlier than planned (§10 open question).
 - The compile-time registry across crates depends on `linkme` distributed slices, which need care on iOS (no dynamic linking), Android `cdylib` builds and with LTO; verified by the M0-05 spike (D11).
 - Two XAML paths double the surface for subtle divergence; the tree-diff test is the mitigation and must stay in CI.
 
-### Consolidated open questions
+### <a id="spec-13-consolidated-open-questions"></a>Consolidated open questions
 
 All open questions are closed. Decision IDs refer to issue #1.
 
