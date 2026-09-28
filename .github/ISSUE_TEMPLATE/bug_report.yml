@@ -1,0 +1,50 @@
+name: Bug report
+description: Something in artic behaves differently from the docs or the spec.
+labels: ["type:bug", "needs-triage"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: A minimal example is the fastest way to a fix. Include the XAML and Rust code if they are involved.
+      render: rust
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: artic version or commit
+      placeholder: 0.1.0 or a commit hash
+    validations:
+      required: true
+  - type: dropdown
+    id: platforms
+    attributes:
+      label: Platforms
+      multiple: true
+      options:
+        - Windows
+        - macOS
+        - Linux (X11)
+        - Linux (Wayland)
+        - iOS
+        - Android
+    validations:
+      required: true
+  - type: input
+    id: rust
+    attributes:
+      label: Rust version
+      description: Output of `rustc --version`.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error output
+      render: text
