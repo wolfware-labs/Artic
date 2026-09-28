@@ -436,7 +436,7 @@ mod tests {
     if let Slot::Occupied { generation, .. } = &mut arena.slots[n1.index as usize] {
       *generation = NodeGeneration::MAX;
     } else {
-      unreachable!();
+      panic!("test setup: the new node's slot should be occupied");
     }
     assert!(arena.free(n1).is_some());
     let n2 = arena.alloc(Box::new(Control));
