@@ -35,7 +35,7 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: rustup toolchain install && rustc --version && cargo tree -p spike-registry --manifest-path spikes/linkme-registry/Cargo.toml -i linkme --depth 0
       - run: bash spikes/linkme-registry/run-desktop.sh | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -43,7 +43,7 @@ jobs:
     name: iOS simulator
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: rustup toolchain install && rustc --version
       - run: xcodebuild -version | tee -a "$GITHUB_STEP_SUMMARY"
       - run: bash spikes/linkme-registry/run-ios.sh | tee -a "$GITHUB_STEP_SUMMARY"
@@ -54,7 +54,7 @@ jobs:
     name: Android
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: rustup toolchain install && rustc --version
       - name: NDK version
         run: grep Pkg.Revision "${ANDROID_NDK_LATEST_HOME}/source.properties" | tee -a "$GITHUB_STEP_SUMMARY"
