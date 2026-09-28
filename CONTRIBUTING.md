@@ -26,6 +26,7 @@ CI runs these on every pull request. Run them locally before pushing:
 | Lints | `cargo clippy --workspace --all-targets -- -D warnings` | Lint |
 | Docs | `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS=-D warnings` | Docs |
 | Dependency policy | `cargo deny check` | Deny |
+| Doc anchors | `python .github/scripts/check_doc_anchors.py` | Lint |
 
 On Windows PowerShell, set the docs flag with `$env:RUSTDOCFLAGS="-D warnings"` before running `cargo doc`.
 
@@ -46,6 +47,24 @@ Commit the updated `.snap` files with the change that caused them. Never commit 
 `deny.toml` defines the dependency policy. Dependencies must use one of the allowed licenses, come from crates.io, and have no open security advisories. A new dependency that fails `cargo deny check` needs a discussion in its pull request before the policy changes.
 
 A new dependency between workspace crates must follow the layers in [docs/architecture.md](docs/architecture.md). Update that document in the same pull request.
+
+## Linking to the docs
+
+Every section and subsection of the spec, `docs/architecture.md` and the spike reports has a stable anchor in its heading:
+
+```md
+### <a id="spec-7-control-set"></a>Control set (v1)
+```
+
+Link to these anchors instead of GitHub's automatic heading links. An automatic link changes when a heading is reworded, and an anchor doesn't.
+
+- Spec sections use `spec-<n>`, and subsections use `spec-<n>-<words>`, for example `spec-7-control-set`.
+- `docs/architecture.md` uses `arch-<words>`, and the linkme spike report uses `spike-linkme-<words>`.
+- From inside the repository, use a relative link: `[Control set](docs/spec/technical_spec.md#spec-7-control-set)`.
+- From issues and pull requests, use the full URL: `https://github.com/wolfware-labs/artic/blob/main/docs/spec/technical_spec.md#spec-7-control-set`.
+- Never change or remove an existing anchor, since issues link to it. When you reword a heading, keep its anchor. A new heading gets a new anchor.
+
+The Doc anchors check fails when a heading has no anchor, an anchor is used twice, or a link in the repository points at an anchor that doesn't exist.
 
 ## Issues and labels
 

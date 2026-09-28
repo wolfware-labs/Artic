@@ -59,6 +59,9 @@ jobs:
       - name: Clippy
         if: ${{ !cancelled() }}
         run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Doc anchors
+        if: ${{ !cancelled() }}
+        run: python3 .github/scripts/check_doc_anchors.py
 
   docs:
     name: Docs
