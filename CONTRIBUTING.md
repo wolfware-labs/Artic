@@ -1,5 +1,7 @@
 # Contributing to artic
 
+Everyone taking part in the project is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately, as described in [SECURITY.md](SECURITY.md), never in a public issue.
+
 ## Setup
 
 1. Install [rustup](https://rustup.rs).
@@ -51,14 +53,17 @@ Every issue has three kinds of labels:
 
 | Prefix | Meaning | Example |
 | --- | --- | --- |
-| `type:` | Kind of work: `feature`, `test`, `infra`, `docs`, `spike`, `design` | `type:feature` |
+| `type:` | Kind of work: `feature`, `bug`, `test`, `infra`, `docs`, `spike`, `design` | `type:feature` |
 | `crate:` | Crates the work touches; `crate:workspace` for repo-wide changes | `crate:artic-core` |
 | `platform:` | Only when the work is specific to a platform | `platform:android` |
+
+Reports from the issue forms also get `needs-triage` until a maintainer reviews them. Questions and ideas belong in [Discussions](https://github.com/wolfware-labs/artic/discussions).
 
 Issues are grouped into milestones. The "Depends on" line in an issue lists what has to land first.
 
 ## Pull requests
 
+- Write the pull request title as a conventional commit (see below). Pull requests are squash merged, and the title becomes the commit on `main`.
 - Keep one issue per pull request, and put `Closes #<number>` in the description.
 - Keep unrelated changes out, including drive-by formatting.
 - Add or update tests for the behavior you change.
@@ -67,16 +72,26 @@ Issues are grouped into milestones. The "Depends on" line in an issue lists what
 
 ## Commit messages
 
-- Subject line in the imperative mood ("Add", "Fix", "Remove"), at most 72 characters, no trailing period.
-- A blank line, then a body that explains what changed and why, wrapped at 72 characters. Skip the body for trivial changes.
+Pull request titles and commits follow [Conventional Commits](https://www.conventionalcommits.org):
+
+```
+<type>(<scope>): <summary>
+```
+
+- `type` is one of `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`, `ci`, `style` or `chore`.
+- `scope` is the crate without the `artic-` prefix (`core`, `xaml`, `controls`), and can be left out for repo-wide changes.
+- The summary is in the imperative mood ("add", "fix", "remove"), lowercase, at most 72 characters, with no trailing period.
+- Add a body after a blank line when the change needs explaining: what changed and why, wrapped at 72 characters.
 - Reference issues in the pull request description, not in the subject line.
 
 ```
-Add Grid star sizing
+feat(layout): add Grid star sizing
 
 Distribute the remaining space across star rows and columns in
 proportion to their weights, after Auto and fixed sizes are measured.
 ```
+
+Commits inside a pull request can be less formal, since only the title reaches `main`, but the same format keeps the history easy to read.
 
 ## License
 
