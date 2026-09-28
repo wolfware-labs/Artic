@@ -1,6 +1,9 @@
 # Build output, including generated view code under OUT_DIR
 target/
 
+# cargo-mutants reports (mutants.out and the previous run in mutants.out.old)
+mutants.out*/
+
 # IDE settings
 .idea/
 .vscode/

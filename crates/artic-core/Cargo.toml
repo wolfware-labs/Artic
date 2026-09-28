@@ -8,7 +8,9 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 
-[dependencies]
+[dev-dependencies]
+pretty_assertions.workspace = true
+static_assertions.workspace = true
 
 [lints]
 workspace = true
