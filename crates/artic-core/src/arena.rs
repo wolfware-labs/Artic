@@ -120,25 +120,36 @@ impl TreeArena {
   /// assert!(arena.get(id).is_some());
   /// assert_eq!(arena.len(), 1);
   /// ```
-  #[must_use = "this returns the node ID. It's needed to get or free the node from the arena"]
+  #[must_use = "node ID needed to get or free the node from the arena"]
   pub fn alloc(&mut self, value: Box<dyn Object>) -> NodeId {
-    if let Some(Slot::Free { next_free, generation }) = self.first_free.map(|i| &self.slots[i as usize]) {
-      let index = self.first_free.unwrap();
-      let generation = *generation;
-      self.first_free = *next_free;
-      let _ = replace(&mut self.slots[index as usize], Slot::Occupied { generation, value });
-      self.occupied_slots += 1;
-      NodeId { index, generation }
-    } else {
-      let Ok(index) = self.slots.len().try_into() else {
-        panic!("The arena capacity is full. There is no space for more slots");
-      };
-      let generation = NodeGeneration::MIN;
-      let new_slot = Slot::Occupied { generation, value };
-      self.slots.push(new_slot);
-      self.occupied_slots += 1;
-      NodeId { index, generation }
-    }
+    let Some(index) = self.first_free else {
+      return self.alloc_new_slot(value);
+    };
+
+    let Some(slot) = self.slots.get_mut(index as usize) else {
+      panic!("slot free index out of bounds");
+    };
+
+    let Slot::Free { next_free, generation } = slot else {
+      panic!("slot free index does not belong to a free slot");
+    };
+
+    let generation = *generation;
+    self.first_free = *next_free;
+    *slot = Slot::Occupied { generation, value };
+    self.occupied_slots += 1;
+    NodeId { index, generation }
+  }
+
+  fn alloc_new_slot(&mut self, value: Box<dyn Object>) -> NodeId {
+    let Ok(index) = self.slots.len().try_into() else {
+      panic!("the arena capacity is full");
+    };
+    let generation = NodeGeneration::MIN;
+    let new_slot = Slot::Occupied { generation, value };
+    self.slots.push(new_slot);
+    self.occupied_slots += 1;
+    NodeId { index, generation }
   }
 
   /// Removes the node referred to by `node_id` and returns it.
@@ -167,24 +178,31 @@ impl TreeArena {
   /// assert!(arena.is_empty());
   /// ```
   pub fn free(&mut self, node_id: NodeId) -> Option<Box<dyn Object>> {
-    let Some(Slot::Occupied { generation, .. }) = self.slots.get(node_id.index as usize) else {
+    let slot = self.slots.get_mut(node_id.index as usize)?;
+
+    let Slot::Occupied { generation, .. } = &slot else {
       return None;
     };
 
-    if generation != &node_id.generation {
+    if *generation != node_id.generation {
       return None;
     }
 
     self.occupied_slots -= 1;
 
-    let freed_slot = Slot::Free {
-      generation: generation.checked_add(1).unwrap_or(NodeGeneration::MIN),
-      next_free: self.first_free,
+    let old_slot = replace(
+      slot,
+      Slot::Free {
+        generation: generation.checked_add(1).unwrap_or(NodeGeneration::MIN),
+        next_free: self.first_free,
+      },
+    );
+
+    let Slot::Occupied { value, .. } = old_slot else {
+      unreachable!("checked above that the slot is occupied");
     };
+
     self.first_free = Some(node_id.index);
-    let Slot::Occupied { value, .. } = replace(&mut self.slots[node_id.index as usize], freed_slot) else {
-      unreachable!();
-    };
 
     Some(value)
   }
