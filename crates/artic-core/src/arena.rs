@@ -332,6 +332,7 @@ mod tests {
   use static_assertions::{assert_eq_size, assert_impl_all, assert_not_impl_any};
 
   assert_eq_size!(NodeId, Option<NodeId>);
+  assert_eq_size!(NodeId, u64);
   assert_not_impl_any!(TreeArena: Send);
   assert_impl_all!(NodeId: Copy, Send, Sync);
 
@@ -380,8 +381,9 @@ mod tests {
     let mut arena = TreeArena::new();
     let n1 = arena.alloc(Box::new(Control));
     arena.free(n1).unwrap();
-    let _ = arena.alloc(Box::new(Control));
+    let n2 = arena.alloc(Box::new(Control));
     assert!(arena.get(n1).is_none());
+    assert_eq!(n2.index, n1.index);
   }
 
   #[test]
@@ -402,9 +404,10 @@ mod tests {
   fn double_free_returns_none_and_keeps_len() {
     let mut arena = TreeArena::new();
     let n1 = arena.alloc(Box::new(Control));
+    let _ = arena.alloc(Box::new(Control));
     assert!(arena.free(n1).is_some());
     assert!(arena.free(n1).is_none());
-    assert_eq!(arena.len(), 0);
+    assert_eq!(arena.len(), 1);
   }
 
   #[test]
@@ -414,10 +417,13 @@ mod tests {
     n1.generation = NodeGeneration::MAX;
     if let Slot::Occupied { generation, .. } = &mut arena.slots[n1.index as usize] {
       *generation = NodeGeneration::MAX;
+    } else {
+      unreachable!();
     }
     assert!(arena.free(n1).is_some());
-    n1 = arena.alloc(Box::new(Control));
-    assert_eq!(n1.generation, NodeGeneration::MIN);
+    let n2 = arena.alloc(Box::new(Control));
+    assert_eq!(n2.index, n1.index);
+    assert_eq!(n2.generation, NodeGeneration::MIN);
   }
 
   #[test]
@@ -440,17 +446,17 @@ mod tests {
   }
 
   #[test]
-  fn occupied_slots_should_match() {
+  fn len_is_correct_after_slot_reuse() {
     let mut arena = TreeArena::new();
     let n1 = arena.alloc(Box::new(Control));
     let _ = arena.alloc(Box::new(Control));
     arena.free(n1);
     let _ = arena.alloc(Box::new(Control));
-    assert_eq!(arena.occupied_slots, 2);
+    assert_eq!(arena.len(), 2);
   }
 
   #[test]
-  fn is_empty_should_be_false() {
+  fn is_not_empty_after_alloc() {
     let mut arena = TreeArena::new();
     let _ = arena.alloc(Box::new(Control));
     assert!(!arena.is_empty());
