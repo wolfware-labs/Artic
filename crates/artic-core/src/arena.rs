@@ -315,9 +315,11 @@ impl TreeArena {
     self.occupied_slots == 0
   }
 
-  /// Returns `true` if `id` refers to a live node in this arena.
+  /// Returns `true` if `id` refers to a live node.
   ///
   /// This is `false` once the node has been freed, even if its slot has since been reused by another node.
+  /// The answer is only meaningful for ids returned by this arena: an id from another arena can match a live
+  /// node here by chance.
   ///
   /// # Examples
   ///
