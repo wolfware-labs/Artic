@@ -2,7 +2,7 @@
 
 Sep 23, 2026 · @Mariano
 
-This revision applies the v1 planning decisions D1 to D27 recorded in issue #1. Decision IDs appear next to the text they changed. Work is tracked in the milestones M0 to M8 (§13).
+This revision applies the v1 planning decisions D1 to D28 recorded in issue #1. Decision IDs appear next to the text they changed. Work is tracked in the milestones M0 to M8 (§13).
 
 ## 1. Overview and locked decisions
 
@@ -22,6 +22,7 @@ A cross-platform desktop and mobile UI framework where views are written in XAML
 - Native-looking widgets. Controls are templated and drawn by the framework; one default theme ships.
 - Full MS-XAML conformance. Unsupported constructs are listed in §4 and produce compile errors, not silent behavior.
 - DataGrid, TreeView, Menu bar controls, dialogs, `SplitView`, `Expander` (v2). A Rust-only view API (views built in code without XAML) is v2, but v1 must not preclude it: the control structs and `Property<T>` fields are the API. The v2 API is a builder (`Button::new().content("Hi").on_click(...)`); in v1 the derive already generates the builder methods and the XAML compiler emits builder calls (D8).
+- CSS-syntax stylesheets (v2). v1 styles are written in XAML or with the builder API; a later CSS-syntax front end compiles to the same `Style`/`Setter` model, so v1 must keep that model independent of XAML syntax (§8, D28).
 
 ### Locked decisions
 
@@ -518,6 +519,7 @@ Templates are instantiated per use from their infoset (runtime) or from a genera
 
 - [x] Style inline in code-behind (`Style::new("Button.primary").setter(…)`) as a supported builder API in v1? Decided: yes; it is what the compiler emits anyway (D6).
 - [x] Media-style queries (`:screen(compact)` pseudo-class from window width) for adaptive layouts across desktop and phone? Decided: yes, as pseudo-classes on the root set by the platform layer (D6, M4-14).
+- [x] A CSS-syntax stylesheet format instead of, or next to, `<Style>`/`<Setter>` markup? Decided: next to it, in v2. The semantics stay as defined here (selectors, specificity, typed setters, precedence 4); only the syntax is new, and it compiles to the same builder calls as XAML styles. v1 keeps the public `Style`, `Selector` and `Setter` API free of XAML-specific types so the v2 parser can target it directly; the `Span`/`Diagnostic` types `artic-style` takes from `artic-xaml` are syntax-neutral and serve both parsers. The resource-reference syntax (`{DynamicResource}` equivalent) is decided with the v2 design (D28).
 
 ## 9. Events, routing, commands, code-behind
 
@@ -765,6 +767,7 @@ All open questions are closed. Decision IDs refer to issue #1.
 - [x] Signals as public API: yes (§6, D6).
 - [x] Grid definition syntaxes: both. `SplitView`/`Expander`: v2 (§7, D6).
 - [x] Builder-style styles and screen-size pseudo-classes: both in v1 (§8, D6).
+- [x] CSS-syntax stylesheets: v2, as a second front end over the same style model (§8, D28).
 - [x] Async code-behind handlers: yes, with `ViewHandle` (§9, D6).
 - [x] Mobile glue: winit with own IME glue. GLES-only Android: not supported (§10, D6).
 - [x] Render thread in v1: no, UI-thread rendering with a channel boundary (§11, D6).
