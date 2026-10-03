@@ -1,4 +1,3 @@
-#[derive(Debug, Eq, PartialEq)]
 pub struct Observer {
   is_dirty: bool,
 }

@@ -8,7 +8,8 @@ use crate::reactive::runtime::Runtime;
 pub use signal::Signal;
 
 pub(crate) fn run_tracked(observer: Observer, action: impl FnOnce()) {
-  Runtime::push_observer(observer);
+  let observer_id = Runtime::alloc_observer(observer);
+  Runtime::push_observer(observer_id);
   action();
   Runtime::pop_observer();
 }

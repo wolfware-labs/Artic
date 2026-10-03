@@ -11,7 +11,8 @@ thread_local! {
 
 pub struct Runtime {
   signals: RefCell<Arena<SignalSlot>>,
-  stack: RefCell<Vec<Observer>>,
+  observers: RefCell<Arena<Observer>>,
+  stack: RefCell<Vec<ObserverId>>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
@@ -19,7 +20,7 @@ pub struct SignalId(SlotId);
 
 struct SignalSlot {
   value: Box<dyn Any>,
-  subscribers: Vec<Observer>,
+  subscribers: Vec<ObserverId>,
 }
 
 impl SignalSlot {
@@ -31,15 +32,24 @@ impl SignalSlot {
   }
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub struct ObserverId(SlotId);
+
 impl Runtime {
   const fn new() -> Self {
     Self {
       signals: RefCell::new(Arena::new()),
+      observers: RefCell::new(Arena::new()),
       stack: RefCell::new(Vec::new()),
     }
   }
 
-  pub fn push_observer(observer: Observer) {
+  pub fn alloc_observer(observer: Observer) -> ObserverId {
+    let slot_id = RUNTIME.with(|r| r.observers.borrow_mut().alloc(observer));
+    ObserverId(slot_id)
+  }
+
+  pub fn push_observer(observer: ObserverId) {
     RUNTIME.with(|r| r.stack.borrow_mut().push(observer))
   }
 
@@ -55,19 +65,36 @@ impl Runtime {
     SignalId(slot_id)
   }
 
-  pub fn get_value<T>(id: SignalId) -> Option<T>
+  pub fn get_value<T>(id: SignalId) -> T
   where
     T: Any + Clone,
   {
     RUNTIME.with(|r| {
       let mut arena = r.signals.borrow_mut();
-      let slot = arena.get_mut(id.0)?;
-      if let Some(observer) = r.stack.borrow().last()
-        && !slot.subscribers.contains(observer)
-      {
-        slot.subscribers.push(observer)
-      }
-      Some(slot.value.downcast_ref::<T>()?.clone())
+      let slot = arena.get_mut(id.0).expect("signal slot not found for the specified id");
+      Self::attach_current_observer(slot);
+      slot
+        .value
+        .downcast_ref::<T>()
+        .expect("signal type does not match with the specified type")
+        .clone()
+    })
+  }
+
+  pub fn with_value<T>(id: SignalId, action: impl FnOnce(&T))
+  where
+    T: Any,
+  {
+    RUNTIME.with(|r| {
+      let mut arena = r.signals.borrow_mut();
+      let slot = arena.get_mut(id.0).expect("signal slot not found for the specified id");
+      Self::attach_current_observer(slot);
+      action(
+        slot
+          .value
+          .downcast_ref::<T>()
+          .expect("signal type does not match with the specified type"),
+      );
     })
   }
 
@@ -82,9 +109,46 @@ impl Runtime {
         return;
       };
       slot.value = Box::new(value);
-      for subscriber in slot.subscribers.iter_mut() {
-        subscriber.mark_as_dirty()
+      Self::mark_observers_as_dirty(&slot.subscribers);
+    })
+  }
+
+  pub fn with_mut_value<T>(id: SignalId, action: impl FnOnce(&mut T))
+  where
+    T: Any,
+  {
+    RUNTIME.with(|r| {
+      let mut arena = r.signals.borrow_mut();
+      let slot = arena.get_mut(id.0).expect("signal slot not found for the specified id");
+      action(
+        slot
+          .value
+          .downcast_mut::<T>()
+          .expect("signal type does not match with the specified type"),
+      );
+      Self::mark_observers_as_dirty(&slot.subscribers);
+    })
+  }
+
+  fn attach_current_observer(slot: &mut SignalSlot) {
+    RUNTIME.with(|r| {
+      if let Some(observer_id) = r.stack.borrow().last()
+        && !slot.subscribers.contains(observer_id)
+      {
+        slot.subscribers.push(observer_id.clone())
       }
     })
+  }
+
+  fn mark_observers_as_dirty(observer_ids: &[ObserverId]) {
+    RUNTIME.with(|r| {
+      let mut observers = r.observers.borrow_mut();
+      for observer_id in observer_ids {
+        let Some(observer) = observers.get_mut(observer_id.0) else {
+          continue;
+        };
+        observer.mark_as_dirty();
+      }
+    });
   }
 }
