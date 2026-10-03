@@ -1,5 +1,5 @@
-mod arena;
+pub(crate) mod arena;
 mod object;
+pub mod tree;
 
-pub use arena::{NodeId, TreeArena};
 pub use object::Object;
