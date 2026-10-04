@@ -3,6 +3,7 @@ use crate::reactive::runtime::observer_store::ObserverId;
 use std::any::Any;
 use std::cell::{Ref, RefCell};
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::rc::Rc;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct SignalId(SlotId);
@@ -44,7 +45,7 @@ impl SignalSlot {
 }
 
 pub struct SignalStore {
-  slots: RefCell<Arena<SignalSlot>>,
+  slots: RefCell<Arena<Rc<SignalSlot>>>,
 }
 
 impl SignalStore {
@@ -58,15 +59,14 @@ impl SignalStore {
   where
     TValue: Any,
   {
-    SignalId(self.slots.borrow_mut().alloc(SignalSlot::new(Box::new(value))))
+    SignalId(self.slots.borrow_mut().alloc(Rc::new(SignalSlot::new(Box::new(value)))))
   }
 
   pub fn with_signal_value<TValue, TResult>(&self, signal_id: SignalId, action: impl FnOnce(&TValue) -> TResult) -> TResult
   where
     TValue: Any,
   {
-    let arena = self.slots.borrow();
-    let slot = arena.get(signal_id.0).expect("signal slot not found for the specified id");
+    let slot = self.get_slot(signal_id);
     let value = slot.get_value();
     let Some(value) = &*value else {
       panic!("signal read while it is being updated");
@@ -82,8 +82,7 @@ impl SignalStore {
   where
     TValue: Any,
   {
-    let arena = self.slots.borrow();
-    let slot = arena.get(signal_id.0).expect("signal slot not found for the specified id");
+    let slot = self.get_slot(signal_id);
     let Some(mut value) = slot.take_value() else {
       panic!("signal updated while it is already being updated");
     };
@@ -99,15 +98,16 @@ impl SignalStore {
   }
 
   pub fn add_subscriber(&self, signal_id: SignalId, observer_id: ObserverId) {
-    if let Some(signal_slot) = self.slots.borrow().get(signal_id.0) {
-      signal_slot.add_subscriber(observer_id);
-    }
+    self.get_slot(signal_id).add_subscriber(observer_id);
   }
 
   pub fn with_subscribers(&self, signal_id: SignalId, action: impl FnOnce(&[ObserverId])) {
-    if let Some(signal_slot) = self.slots.borrow().get(signal_id.0) {
-      action(&signal_slot.get_subscribers())
-    }
+    action(&self.get_slot(signal_id).get_subscribers())
+  }
+
+  fn get_slot(&self, signal_id: SignalId) -> Rc<SignalSlot> {
+    let arena = self.slots.borrow();
+    Rc::clone(arena.get(signal_id.0).expect("signal slot not found for the specified id"))
   }
 }
 
