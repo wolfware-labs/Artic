@@ -1,3 +1,24 @@
+//! Fine-grained reactivity: values that know who reads them.
+//!
+//! A [`Signal`] holds a value and remembers which observers read it. An observer is a computation
+//! the runtime can re-run, such as a derived value or an effect. Reading a signal while an observer
+//! runs subscribes that observer to the signal, and writing the signal marks every subscribed
+//! observer as dirty, meaning its last result is out of date. Nothing subscribes explicitly: the
+//! reads themselves record the dependencies.
+//!
+//! The runtime that stores signal values is thread-local, and signals can only be used on the
+//! thread that created them. A `Signal<T>` is a small `Copy` handle into that runtime, so copying it
+//! never copies the value.
+//!
+//! ```
+//! use artic_core::reactive::Signal;
+//!
+//! let count = Signal::new(0);
+//! let copy = count;            // a second handle to the same value
+//! count.set(5);
+//! assert_eq!(copy.get(), 5);
+//! ```
+
 mod runtime;
 mod signal;
 #[cfg(test)]
