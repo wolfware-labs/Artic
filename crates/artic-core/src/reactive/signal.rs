@@ -2,32 +2,32 @@ use crate::reactive::runtime::{Runtime, SignalId};
 use std::marker::PhantomData;
 
 #[derive(Debug)]
-pub struct Signal<T>(SignalId, PhantomData<*const T>)
+pub struct Signal<TValue>(SignalId, PhantomData<*const TValue>)
 where
-  T: 'static;
+  TValue: 'static;
 
 impl<T> Clone for Signal<T> {
   fn clone(&self) -> Self {
-    Self(self.0, PhantomData)
+    *self
   }
 }
 
-impl<T> Copy for Signal<T> {}
+impl<TValue> Copy for Signal<TValue> {}
 
-impl<T> Signal<T> {
-  pub fn new(initial_value: T) -> Signal<T> {
+impl<TValue> Signal<TValue> {
+  pub fn new(initial_value: TValue) -> Signal<TValue> {
     Signal(Runtime::alloc_value(initial_value), PhantomData)
   }
 
-  pub fn with(&self, action: impl FnOnce(&T)) {
-    Runtime::with_value(self.0, action);
+  pub fn with<TResult>(&self, function: impl FnOnce(&TValue) -> TResult) -> TResult {
+    Runtime::with_value(self.0, function)
   }
 
-  pub fn set(&self, new_value: T) {
+  pub fn set(&self, new_value: TValue) {
     Runtime::set_value(self.0, new_value)
   }
 
-  pub fn update(&self, action: impl FnOnce(&mut T)) {
+  pub fn update(&self, action: impl FnOnce(&mut TValue)) {
     Runtime::with_mut_value(self.0, action);
   }
 }

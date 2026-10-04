@@ -1,7 +1,8 @@
 use crate::arena::{Arena, SlotId};
 use crate::reactive::observer::Observer;
 use std::any::Any;
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
+use std::mem;
 
 thread_local! {
   static RUNTIME: Runtime  = const {
@@ -19,16 +20,34 @@ pub struct Runtime {
 pub struct SignalId(SlotId);
 
 struct SignalSlot {
-  value: Box<dyn Any>,
-  subscribers: Vec<ObserverId>,
+  value: RefCell<Box<dyn Any>>,
+  subscribers: RefCell<Vec<ObserverId>>,
 }
 
 impl SignalSlot {
   fn new(value: Box<dyn Any>) -> Self {
     Self {
-      value,
-      subscribers: Vec::new(),
+      value: RefCell::new(value),
+      subscribers: RefCell::new(Vec::new()),
     }
+  }
+
+  fn take_value(&self) -> Box<dyn Any> {
+    self.value.replace(Box::new(()))
+  }
+
+  fn set_value(&self, value: Box<dyn Any>) {
+    self.value.replace(value);
+  }
+
+  fn add_subscriber(&self, observer: ObserverId) {
+    if !self.subscribers.borrow().contains(&observer) {
+      self.subscribers.borrow_mut().push(observer);
+    }
+  }
+
+  fn get_subscribers(&self) -> Ref<Vec<ObserverId>> {
+    self.subscribers.borrow()
   }
 }
 
@@ -57,98 +76,79 @@ impl Runtime {
     RUNTIME.with(|r| r.stack.borrow_mut().pop());
   }
 
-  pub fn alloc_value<T>(value: T) -> SignalId
+  pub fn alloc_value<TValue>(value: TValue) -> SignalId
   where
-    T: Any,
+    TValue: Any,
   {
     let slot_id = RUNTIME.with(|r| r.signals.borrow_mut().alloc(SignalSlot::new(Box::new(value))));
     SignalId(slot_id)
   }
 
-  pub fn get_value<T>(id: SignalId) -> T
+  pub fn get_value<TValue>(id: SignalId) -> TValue
   where
-    T: Any + Clone,
+    TValue: Any + Clone,
   {
-    RUNTIME.with(|r| {
-      let mut arena = r.signals.borrow_mut();
-      let slot = arena.get_mut(id.0).expect("signal slot not found for the specified id");
-      Self::attach_current_observer(slot);
-      slot
-        .value
-        .downcast_ref::<T>()
-        .expect("signal type does not match with the specified type")
-        .clone()
-    })
+    Self::with_value::<TValue, TValue>(id, |v| v.clone())
   }
 
-  pub fn with_value<T>(id: SignalId, action: impl FnOnce(&T))
+  pub fn with_value<TValue, TResult>(id: SignalId, action: impl FnOnce(&TValue) -> TResult) -> TResult
   where
-    T: Any,
+    TValue: Any,
   {
     RUNTIME.with(|r| {
-      let mut arena = r.signals.borrow_mut();
-      let slot = arena.get_mut(id.0).expect("signal slot not found for the specified id");
-      Self::attach_current_observer(slot);
+      let arena = r.signals.borrow();
+      let slot = arena.get(id.0).expect("signal slot not found for the specified id");
+      r.attach_current_observer(slot);
       action(
         slot
           .value
-          .downcast_ref::<T>()
+          .borrow()
+          .downcast_ref::<TValue>()
           .expect("signal type does not match with the specified type"),
-      );
+      )
     })
   }
 
-  pub fn set_value<T>(id: SignalId, value: T)
+  pub fn set_value<TValue>(id: SignalId, value: TValue)
   where
-    T: Any,
+    TValue: Any,
+  {
+    Self::with_mut_value(id, |v| *v = value)
+  }
+
+  pub fn with_mut_value<TValue>(id: SignalId, action: impl FnOnce(&mut TValue))
+  where
+    TValue: Any,
   {
     RUNTIME.with(|r| {
-      let mut arena = r.signals.borrow_mut();
-      let slot = arena.get_mut(id.0);
-      let Some(slot) = slot else {
-        return;
+      let arena = r.signals.borrow();
+      let slot = arena.get(id.0).expect("signal slot not found for the specified id");
+      let mut value = slot.take_value();
+      action(
+        value
+          .downcast_mut::<TValue>()
+          .expect("signal type does not match with the specified type"),
+      );
+      slot.set_value(value);
+      r.mark_observers_as_dirty(&slot.get_subscribers());
+    })
+  }
+
+  fn attach_current_observer(&self, slot: &SignalSlot) {
+    if let Some(observer_id) = self.stack.borrow().last()
+      && !slot.subscribers.borrow().contains(observer_id)
+    {
+      slot.subscribers.borrow_mut().push(*observer_id)
+    }
+  }
+
+  fn mark_observers_as_dirty(&self, observer_ids: &[ObserverId]) {
+    let mut observers = self.observers.borrow_mut();
+    for observer_id in observer_ids {
+      let Some(observer) = observers.get_mut(observer_id.0) else {
+        continue;
       };
-      slot.value = Box::new(value);
-      Self::mark_observers_as_dirty(&slot.subscribers);
-    })
-  }
-
-  pub fn with_mut_value<T>(id: SignalId, action: impl FnOnce(&mut T))
-  where
-    T: Any,
-  {
-    RUNTIME.with(|r| {
-      let mut arena = r.signals.borrow_mut();
-      let slot = arena.get_mut(id.0).expect("signal slot not found for the specified id");
-      action(
-        slot
-          .value
-          .downcast_mut::<T>()
-          .expect("signal type does not match with the specified type"),
-      );
-      Self::mark_observers_as_dirty(&slot.subscribers);
-    })
-  }
-
-  fn attach_current_observer(slot: &mut SignalSlot) {
-    RUNTIME.with(|r| {
-      if let Some(observer_id) = r.stack.borrow().last()
-        && !slot.subscribers.contains(observer_id)
-      {
-        slot.subscribers.push(observer_id.clone())
-      }
-    })
-  }
-
-  fn mark_observers_as_dirty(observer_ids: &[ObserverId]) {
-    RUNTIME.with(|r| {
-      let mut observers = r.observers.borrow_mut();
-      for observer_id in observer_ids {
-        let Some(observer) = observers.get_mut(observer_id.0) else {
-          continue;
-        };
-        observer.mark_as_dirty();
-      }
-    });
+      observer.mark_as_dirty();
+    }
   }
 }
