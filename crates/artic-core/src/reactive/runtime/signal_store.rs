@@ -114,11 +114,22 @@ impl SignalStore {
 #[cfg(test)]
 mod tests {
   // These tests inspect the private subscriber list of a slot, which is only visible from this module.
+  use super::*;
+  use crate::reactive::runtime::observer_store::ObserverStore;
+  use pretty_assertions::assert_eq;
 
   // Subscribing the same observer to a signal twice keeps a single entry, so repeated reads in one
   // observer subscribe it only once.
   #[test]
   fn add_subscriber_ignores_duplicates() {
-    todo!()
+    let signals = SignalStore::new();
+    let observers = ObserverStore::new();
+    let signal = signals.alloc_value(0);
+    let observer = observers.create_observer();
+
+    signals.add_subscriber(signal, observer);
+    signals.add_subscriber(signal, observer);
+
+    signals.with_subscribers(signal, |subscribers| assert_eq!(subscribers, [observer]));
   }
 }
