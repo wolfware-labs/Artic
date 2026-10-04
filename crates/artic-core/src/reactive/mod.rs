@@ -44,6 +44,10 @@ use crate::reactive::runtime::{ObserverId, Runtime};
 pub use signal::Signal;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
+#[cfg_attr(
+  not(test),
+  expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
+)]
 pub(crate) fn run_tracked(observer_id: ObserverId, action: impl FnOnce()) {
   Runtime::push_observer(observer_id);
   let action_result = catch_unwind(AssertUnwindSafe(action));
