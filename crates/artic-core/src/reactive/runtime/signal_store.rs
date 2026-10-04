@@ -110,3 +110,15 @@ impl SignalStore {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  // These tests inspect the private subscriber list of a slot, which is only visible from this module.
+
+  // Subscribing the same observer to a signal twice keeps a single entry, so repeated reads in one
+  // observer subscribe it only once.
+  #[test]
+  fn add_subscriber_ignores_duplicates() {
+    todo!()
+  }
+}

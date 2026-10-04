@@ -30,12 +30,6 @@ fn with_inside_observer_records_dependency() {
   todo!()
 }
 
-// Reading the same signal twice in one observer subscribes the observer only once.
-#[test]
-fn repeated_reads_subscribe_once() {
-  todo!()
-}
-
 // `update` marks dependents dirty, the same as `set`.
 #[test]
 fn update_marks_dependents_dirty() {
