@@ -16,19 +16,19 @@ impl<TValue> Copy for Signal<TValue> {}
 
 impl<TValue> Signal<TValue> {
   pub fn new(initial_value: TValue) -> Signal<TValue> {
-    Signal(Runtime::alloc_value(initial_value), PhantomData)
+    Signal(Runtime::alloc_signal_value(initial_value), PhantomData)
   }
 
   pub fn with<TResult>(&self, function: impl FnOnce(&TValue) -> TResult) -> TResult {
-    Runtime::with_value(self.0, function)
+    Runtime::with_signal_value(self.0, function)
   }
 
   pub fn set(&self, new_value: TValue) {
-    Runtime::set_value(self.0, new_value)
+    Runtime::set_signal_value(self.0, new_value)
   }
 
   pub fn update(&self, action: impl FnOnce(&mut TValue)) {
-    Runtime::with_mut_value(self.0, action);
+    Runtime::with_signal_mut_value(self.0, action);
   }
 }
 
@@ -37,7 +37,7 @@ where
   T: Clone,
 {
   pub fn get(&self) -> T {
-    Runtime::get_value(self.0)
+    Runtime::get_signal_value(self.0)
   }
 }
 

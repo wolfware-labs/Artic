@@ -1,8 +1,3 @@
-// Unit tests for the reactive runtime. They live inside the crate because they need
-// `run_tracked` and `Observer`, which are not public.
-
-// Acceptance criteria of #8
-
 // Reading a signal outside any observer records no dependency.
 #[test]
 fn get_outside_observer_records_nothing() {
