@@ -248,7 +248,7 @@ impl TreeArena {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use pretty_assertions::assert_eq;
+  use pretty_assertions::{assert_eq, assert_ne};
   use static_assertions::{assert_eq_size, assert_impl_all, assert_not_impl_any};
 
   assert_eq_size!(NodeId, Option<NodeId>);
@@ -279,5 +279,80 @@ mod tests {
     let mut arena = TreeArena::new();
     let n1 = arena.alloc(Box::new(Control));
     assert!(arena.get_as_mut::<OtherControl>(n1).is_none());
+  }
+
+  #[derive(Debug, PartialEq, Eq)]
+  struct Counter(u32);
+
+  impl Object for Counter {}
+
+  #[test]
+  fn nodes_of_different_types_share_one_arena() {
+    let mut arena = TreeArena::new();
+    let control = arena.alloc(Box::new(Control));
+    let counter = arena.alloc(Box::new(Counter(7)));
+    assert_eq!(arena.len(), 2);
+    assert_eq!(arena.get_as::<Control>(control), Some(&Control));
+    assert_eq!(arena.get_as::<Counter>(counter), Some(&Counter(7)));
+    assert!(arena.get_as::<Counter>(control).is_none());
+    assert!(arena.get_as::<Control>(counter).is_none());
+  }
+
+  #[test]
+  fn get_as_mut_changes_are_visible_through_get_as() {
+    let mut arena = TreeArena::new();
+    let n1 = arena.alloc(Box::new(Counter(1)));
+    arena.get_as_mut::<Counter>(n1).unwrap().0 += 1;
+    assert_eq!(arena.get_as::<Counter>(n1), Some(&Counter(2)));
+  }
+
+  #[test]
+  fn get_and_get_mut_return_the_node_as_object() {
+    let mut arena = TreeArena::new();
+    let n1 = arena.alloc(Box::new(Counter(3)));
+    assert_eq!(format!("{:?}", arena.get(n1).unwrap()), "Counter(3)");
+    assert_eq!(format!("{:?}", arena.get_mut(n1).unwrap()), "Counter(3)");
+  }
+
+  #[test]
+  fn free_returns_the_node_with_its_concrete_type() {
+    let mut arena = TreeArena::new();
+    let n1 = arena.alloc(Box::new(Counter(5)));
+    let node: Box<dyn Any> = arena.free(n1).unwrap();
+    assert_eq!(node.downcast_ref::<Counter>(), Some(&Counter(5)));
+    assert!(arena.is_empty());
+  }
+
+  #[test]
+  fn stale_id_returns_none_from_every_accessor() {
+    let mut arena = TreeArena::new();
+    let n1 = arena.alloc(Box::new(Control));
+    arena.free(n1);
+    let n2 = arena.alloc(Box::new(Control));
+    assert!(arena.get(n1).is_none());
+    assert!(arena.get_mut(n1).is_none());
+    assert!(arena.get_as::<Control>(n1).is_none());
+    assert!(arena.get_as_mut::<Control>(n1).is_none());
+    assert!(!arena.contains(n1));
+    assert!(arena.free(n1).is_none());
+    assert!(arena.contains(n2));
+    assert_eq!(arena.len(), 1);
+  }
+
+  #[test]
+  fn copied_node_ids_are_equal_and_distinct_nodes_are_not() {
+    let mut arena = TreeArena::new();
+    let n1 = arena.alloc(Box::new(Control));
+    let n2 = arena.alloc(Box::new(Control));
+    let copy = n1;
+    assert_eq!(copy, n1);
+    assert_ne!(n1, n2);
+  }
+
+  #[test]
+  fn default_tree_arena_is_empty() {
+    let arena = TreeArena::default();
+    assert!(arena.is_empty());
+    assert_eq!(arena.len(), 0);
   }
 }

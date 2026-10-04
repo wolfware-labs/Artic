@@ -142,6 +142,7 @@ mod tests {
   use super::*;
   use pretty_assertions::{assert_eq, assert_ne};
   use static_assertions::{assert_eq_size, assert_impl_all};
+  use std::rc::Rc;
 
   assert_eq_size!(SlotId, Option<SlotId>);
   assert_eq_size!(SlotId, u64);
@@ -247,5 +248,125 @@ mod tests {
     let mut arena = Arena::new();
     let _ = arena.alloc(Item);
     assert!(!arena.is_empty());
+  }
+
+  #[test]
+  fn new_and_default_arenas_are_empty() {
+    let new: Arena<Item> = Arena::new();
+    let default: Arena<Item> = Arena::default();
+    assert!(new.is_empty());
+    assert_eq!(new.len(), 0);
+    assert!(default.is_empty());
+    assert_eq!(default.len(), 0);
+  }
+
+  #[test]
+  fn get_returns_the_value_for_each_id() {
+    let mut arena = Arena::new();
+    let n1 = arena.alloc("first");
+    let n2 = arena.alloc("second");
+    assert_ne!(n1, n2);
+    assert_eq!(arena.get(n1), Some(&"first"));
+    assert_eq!(arena.get(n2), Some(&"second"));
+  }
+
+  #[test]
+  fn get_mut_changes_are_visible_through_get() {
+    let mut arena = Arena::new();
+    let n1 = arena.alloc(1);
+    *arena.get_mut(n1).unwrap() += 41;
+    assert_eq!(arena.get(n1), Some(&42));
+  }
+
+  #[test]
+  fn free_returns_the_stored_value() {
+    let mut arena = Arena::new();
+    let n1 = arena.alloc(String::from("hello"));
+    assert_eq!(arena.free(n1), Some(String::from("hello")));
+  }
+
+  #[test]
+  fn contains_tracks_liveness() {
+    let mut arena = Arena::new();
+    let n1 = arena.alloc(Item);
+    assert!(arena.contains(n1));
+    arena.free(n1);
+    assert!(!arena.contains(n1));
+    let n2 = arena.alloc(Item);
+    assert!(!arena.contains(n1));
+    assert!(arena.contains(n2));
+  }
+
+  #[test]
+  fn stale_id_get_mut_returns_none_after_slot_reuse() {
+    let mut arena = Arena::new();
+    let n1 = arena.alloc(1);
+    arena.free(n1);
+    let _ = arena.alloc(2);
+    assert!(arena.get_mut(n1).is_none());
+  }
+
+  // A stale id must not free the newer value that reused its slot.
+  #[test]
+  fn stale_free_after_slot_reuse_leaves_new_value() {
+    let mut arena = Arena::new();
+    let n1 = arena.alloc(1);
+    arena.free(n1);
+    let n2 = arena.alloc(2);
+    assert!(arena.free(n1).is_none());
+    assert_eq!(arena.get(n2), Some(&2));
+    assert_eq!(arena.len(), 1);
+  }
+
+  #[test]
+  fn alloc_reuses_the_most_recently_freed_slot() {
+    let mut arena = Arena::new();
+    let n1 = arena.alloc(Item);
+    let n2 = arena.alloc(Item);
+    arena.free(n1);
+    arena.free(n2);
+    assert_eq!(arena.alloc(Item).index, n2.index);
+    assert_eq!(arena.alloc(Item).index, n1.index);
+  }
+
+  #[test]
+  fn freed_slots_are_reused_before_storage_grows() {
+    let mut arena = Arena::new();
+    let ids: Vec<SlotId> = (0..4).map(|_| arena.alloc(Item)).collect();
+    for id in &ids {
+      arena.free(*id);
+    }
+    for _ in 0..4 {
+      let _ = arena.alloc(Item);
+    }
+    assert_eq!(arena.slots.len(), 4);
+    let _ = arena.alloc(Item);
+    assert_eq!(arena.slots.len(), 5);
+  }
+
+  // If a double free pushed the slot onto the free list twice, two allocations would share a slot.
+  #[test]
+  fn double_free_does_not_hand_out_the_same_slot_twice() {
+    let mut arena = Arena::new();
+    let n1 = arena.alloc(1);
+    arena.free(n1);
+    arena.free(n1);
+    let n2 = arena.alloc(2);
+    let n3 = arena.alloc(3);
+    assert_ne!(n2.index, n3.index);
+    assert_eq!(arena.get(n2), Some(&2));
+    assert_eq!(arena.get(n3), Some(&3));
+  }
+
+  #[test]
+  fn dropping_the_arena_drops_live_values() {
+    let value = Rc::new(());
+    let mut arena = Arena::new();
+    let _ = arena.alloc(Rc::clone(&value));
+    let freed = arena.alloc(Rc::clone(&value));
+    drop(arena.free(freed));
+    assert_eq!(Rc::strong_count(&value), 2);
+    drop(arena);
+    assert_eq!(Rc::strong_count(&value), 1);
   }
 }
