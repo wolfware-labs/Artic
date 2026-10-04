@@ -22,7 +22,10 @@ impl SignalSlot {
   }
 
   fn take_value(&self) -> Option<Box<dyn Any>> {
-    self.value.replace(None)
+    let Ok(mut value) = self.value.try_borrow_mut() else {
+      return None;
+    };
+    value.take()
   }
 
   fn get_value(&self) -> Ref<'_, Option<Box<dyn Any>>> {
@@ -84,7 +87,7 @@ impl SignalStore {
   {
     let slot = self.get_slot(signal_id);
     let Some(mut value) = slot.take_value() else {
-      panic!("signal updated while it is already being updated");
+      panic!("signal written while it is being read or updated");
     };
     let action_result = catch_unwind(AssertUnwindSafe(|| {
       action(

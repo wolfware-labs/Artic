@@ -124,7 +124,7 @@ fn read_inside_own_update_panics() {
 
 // Updating a signal inside its own `update` closure panics with a clear message.
 #[test]
-#[should_panic(expected = "signal updated while it is already being updated")]
+#[should_panic(expected = "signal written while it is being read or updated")]
 fn update_inside_own_update_panics() {
   let count = Signal::new(1);
   count.update(|_| count.update(|_| {}));
@@ -238,13 +238,38 @@ fn reading_same_signal_inside_its_own_with_works() {
   assert_eq!(sum, 12);
 }
 
-// Writing a signal inside its own `with` closure panics.
-// TODO: add `expected = "..."` once the clear message for this case exists.
+// Setting a signal inside its own `with` closure panics with a clear message.
 #[test]
-#[should_panic]
+#[should_panic(expected = "signal written while it is being read or updated")]
 fn write_inside_own_with_panics() {
   let count = Signal::new(1);
   count.with(|_| count.set(2));
+}
+
+// Updating a signal inside its own `with` closure panics with a clear message.
+#[test]
+#[should_panic(expected = "signal written while it is being read or updated")]
+fn update_inside_own_with_panics() {
+  let count = Signal::new(1);
+  count.with(|_| count.update(|count| *count += 1));
+}
+
+// `set_if_changed` inside the signal's own `with` closure panics when the value differs, because
+// the write happens while the value is still borrowed.
+#[test]
+#[should_panic(expected = "signal written while it is being read or updated")]
+fn set_if_changed_inside_own_with_panics() {
+  let count = Signal::new(1);
+  count.with(|_| count.set_if_changed(2));
+}
+
+// `set_if_changed` inside the signal's own `with` closure with an equal value writes nothing, so it
+// doesn't panic.
+#[test]
+fn equal_set_if_changed_inside_own_with_is_skipped() {
+  let count = Signal::new(1);
+  count.with(|_| count.set_if_changed(1));
+  assert_eq!(count.get(), 1);
 }
 
 // More panic safety

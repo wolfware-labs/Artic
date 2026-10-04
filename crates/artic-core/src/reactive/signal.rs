@@ -32,7 +32,10 @@ use std::marker::PhantomData;
 /// # Panics
 ///
 /// Reading or writing a signal from inside its own [`update`](Signal::update) closure panics, because
-/// the value is being changed at that moment. Reading and writing *other* signals there is fine.
+/// the value is being changed at that moment. Writing a signal from inside its own
+/// [`with`](Signal::with) closure panics too, because the value is borrowed for reading. Reading a
+/// signal inside its own `with` is fine, and so is reading or writing *other* signals in either
+/// closure.
 #[derive(Debug)]
 pub struct Signal<TValue>(SignalId, PhantomData<*const TValue>)
 where
@@ -78,7 +81,16 @@ impl<TValue> Signal<TValue> {
   ///
   /// # Panics
   ///
-  /// Panics if called from inside this signal's own [`update`](Signal::update) closure.
+  /// Panics if called from inside this signal's own [`update`](Signal::update) closure, or if
+  /// `function` writes this same signal through [`set`](Signal::set), [`update`](Signal::update) or
+  /// [`set_if_changed`](Signal::set_if_changed):
+  ///
+  /// ```should_panic
+  /// use artic_core::reactive::Signal;
+  ///
+  /// let count = Signal::new(1);
+  /// count.with(|_| count.set(2)); // writes `count` while it is being read
+  /// ```
   pub fn with<TResult>(&self, function: impl FnOnce(&TValue) -> TResult) -> TResult {
     Runtime::with_signal_value(self.0, function)
   }
@@ -100,7 +112,8 @@ impl<TValue> Signal<TValue> {
   ///
   /// # Panics
   ///
-  /// Panics if called from inside this signal's own [`update`](Signal::update) closure.
+  /// Panics if called from inside this signal's own [`update`](Signal::update) or
+  /// [`with`](Signal::with) closure.
   pub fn set(&self, new_value: TValue) {
     Runtime::set_signal_value(self.0, new_value)
   }
@@ -125,7 +138,8 @@ impl<TValue> Signal<TValue> {
   ///
   /// # Panics
   ///
-  /// Panics if `action` reads or writes this same signal:
+  /// Panics if called from inside this signal's own [`with`](Signal::with) closure, or if `action`
+  /// reads or writes this same signal:
   ///
   /// ```should_panic
   /// use artic_core::reactive::Signal;
@@ -188,7 +202,9 @@ where
   /// # Panics
   ///
   /// Panics if called from inside this signal's own [`update`](Signal::update) closure. The message
-  /// reports a read, because the comparison reads the value first.
+  /// reports a read, because the comparison reads the value first. Also panics if called from inside
+  /// this signal's own [`with`](Signal::with) closure with a different value, because the write
+  /// happens while the value is borrowed. An equal value writes nothing there, so it doesn't panic.
   pub fn set_if_changed(&self, new_value: TValue) {
     if Runtime::with_untracked_signal_value(self.0, |v: &TValue| *v != new_value) {
       self.set(new_value)
