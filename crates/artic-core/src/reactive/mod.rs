@@ -1,6 +1,8 @@
 mod observer;
 mod runtime;
 mod signal;
+#[cfg(test)]
+mod tests;
 
 use crate::reactive::observer::Observer;
 use crate::reactive::runtime::Runtime;
