@@ -3,6 +3,7 @@ use crate::reactive::observer::Observer;
 use std::any::Any;
 use std::cell::{Ref, RefCell};
 use std::mem;
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
 thread_local! {
   static RUNTIME: Runtime  = const {
@@ -20,24 +21,28 @@ pub struct Runtime {
 pub struct SignalId(SlotId);
 
 struct SignalSlot {
-  value: RefCell<Box<dyn Any>>,
+  value: RefCell<Option<Box<dyn Any>>>,
   subscribers: RefCell<Vec<ObserverId>>,
 }
 
 impl SignalSlot {
   fn new(value: Box<dyn Any>) -> Self {
     Self {
-      value: RefCell::new(value),
+      value: RefCell::new(Some(value)),
       subscribers: RefCell::new(Vec::new()),
     }
   }
 
-  fn take_value(&self) -> Box<dyn Any> {
-    self.value.replace(Box::new(()))
+  fn take_value(&self) -> Option<Box<dyn Any>> {
+    self.value.replace(None)
+  }
+
+  fn get_value(&self) -> Ref<Option<Box<dyn Any>>> {
+    self.value.borrow()
   }
 
   fn set_value(&self, value: Box<dyn Any>) {
-    self.value.replace(value);
+    self.value.replace(Some(value));
   }
 
   fn add_subscriber(&self, observer: ObserverId) {
@@ -99,10 +104,12 @@ impl Runtime {
       let arena = r.signals.borrow();
       let slot = arena.get(id.0).expect("signal slot not found for the specified id");
       r.attach_current_observer(slot);
+      let value = slot.get_value();
+      let Some(value) = &*value else {
+        panic!("signal read while it is being updated");
+      };
       action(
-        slot
-          .value
-          .borrow()
+        value
           .downcast_ref::<TValue>()
           .expect("signal type does not match with the specified type"),
       )
@@ -123,14 +130,21 @@ impl Runtime {
     RUNTIME.with(|r| {
       let arena = r.signals.borrow();
       let slot = arena.get(id.0).expect("signal slot not found for the specified id");
-      let mut value = slot.take_value();
-      action(
-        value
-          .downcast_mut::<TValue>()
-          .expect("signal type does not match with the specified type"),
-      );
+      let Some(mut value) = slot.take_value() else {
+        panic!("signal updated while it is already being updated");
+      };
+      let action_result = catch_unwind(AssertUnwindSafe(|| {
+        action(
+          value
+            .downcast_mut::<TValue>()
+            .expect("signal type does not match with the specified type"),
+        )
+      }));
       slot.set_value(value);
       r.mark_observers_as_dirty(&slot.get_subscribers());
+      if let Err(payload) = action_result {
+        resume_unwind(payload);
+      }
     })
   }
 
