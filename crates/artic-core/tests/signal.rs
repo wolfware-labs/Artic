@@ -260,3 +260,25 @@ fn panicking_with_keeps_signal_usable() {
   count.set(2);
   assert_eq!(count.get(), 2);
 }
+
+// Skipping equal writes
+
+// `set_if_changed` stores a different value and keeps the current one when they are equal.
+#[test]
+fn set_if_changed_stores_only_different_values() {
+  let name = Signal::new(String::from("Ada"));
+
+  name.set_if_changed(String::from("Ada"));
+  assert_eq!(name.get(), "Ada");
+
+  name.set_if_changed(String::from("Grace"));
+  assert_eq!(name.get(), "Grace");
+}
+
+// `set_if_changed` inside the signal's own `update` closure panics, reporting the read it does first.
+#[test]
+#[should_panic(expected = "signal read while it is being updated")]
+fn set_if_changed_inside_own_update_panics() {
+  let count = Signal::new(1);
+  count.update(|_| count.set_if_changed(2));
+}

@@ -54,7 +54,8 @@ fn set_marks_dependents_dirty() {
   assert!(Runtime::is_observer_dirty(second));
 }
 
-// `set` with a value equal to the current one does not mark dependents dirty (`PartialEq` types).
+// `set_if_changed` with a value equal to the current one does not mark dependents dirty (`PartialEq`
+// types). Plain `set` always propagates: see `set_with_equal_value_still_marks_dependents_dirty`.
 #[test]
 fn equal_set_does_not_propagate() {
   let count = Signal::new(1);
@@ -62,7 +63,44 @@ fn equal_set_does_not_propagate() {
     count.get();
   });
 
+  count.set_if_changed(1);
+
+  assert!(!Runtime::is_observer_dirty(observer));
+}
+
+// `set` marks dependents dirty even when the new value equals the current one.
+#[test]
+fn set_with_equal_value_still_marks_dependents_dirty() {
+  let count = Signal::new(1);
+  let observer = observe(|| {
+    count.get();
+  });
+
   count.set(1);
+
+  assert!(Runtime::is_observer_dirty(observer));
+}
+
+// `set_if_changed` with a different value marks dependents dirty, the same as `set`.
+#[test]
+fn set_if_changed_with_new_value_marks_dependents_dirty() {
+  let count = Signal::new(1);
+  let observer = observe(|| {
+    count.get();
+  });
+
+  count.set_if_changed(2);
+
+  assert!(Runtime::is_observer_dirty(observer));
+}
+
+// The comparison inside `set_if_changed` does not subscribe the running observer: it is a write.
+#[test]
+fn set_if_changed_inside_observer_records_nothing() {
+  let count = Signal::new(0);
+  let observer = observe(|| count.set_if_changed(1));
+
+  count.set(5);
 
   assert!(!Runtime::is_observer_dirty(observer));
 }

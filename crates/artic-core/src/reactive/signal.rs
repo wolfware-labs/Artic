@@ -6,6 +6,8 @@ use std::marker::PhantomData;
 /// A signal stores a value in the thread-local reactive runtime and tracks who reads it. Reads made
 /// while an observer runs ([`get`](Signal::get), [`with`](Signal::with)) subscribe that observer, and
 /// writes ([`set`](Signal::set), [`update`](Signal::update)) mark every subscriber as dirty.
+/// [`set_if_changed`](Signal::set_if_changed) skips the write when the new value equals the current
+/// one.
 ///
 /// `Signal<T>` is a `Copy` handle: copies refer to the same value, and copying never clones `T`.
 /// Signals are neither `Send` nor `Sync`, because the runtime that holds the value belongs to one
@@ -83,6 +85,9 @@ impl<TValue> Signal<TValue> {
 
   /// Replaces the value with `new_value` and marks every subscribed observer as dirty.
   ///
+  /// Subscribers are marked even when `new_value` equals the current value. To skip writes that
+  /// change nothing, use [`set_if_changed`](Signal::set_if_changed).
+  ///
   /// # Examples
   ///
   /// ```
@@ -133,9 +138,9 @@ impl<TValue> Signal<TValue> {
   }
 }
 
-impl<T> Signal<T>
+impl<TValue> Signal<TValue>
 where
-  T: Clone,
+  TValue: Clone,
 {
   /// Returns a clone of the value.
   ///
@@ -154,8 +159,40 @@ where
   /// # Panics
   ///
   /// Panics if called from inside this signal's own [`update`](Signal::update) closure.
-  pub fn get(&self) -> T {
+  pub fn get(&self) -> TValue {
     Runtime::get_signal_value(self.0)
+  }
+}
+
+impl<TValue> Signal<TValue>
+where
+  TValue: PartialEq,
+{
+  /// Replaces the value with `new_value` only if it differs from the current value.
+  ///
+  /// When the values are equal, nothing happens: the value is kept and no observer is marked dirty.
+  /// Otherwise this behaves like [`set`](Signal::set). The comparison doesn't subscribe the running
+  /// observer, so calling this inside an observer is a write, not a read.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use artic_core::reactive::Signal;
+  ///
+  /// let count = Signal::new(1);
+  /// count.set_if_changed(1); // equal: skipped
+  /// count.set_if_changed(2); // different: stored
+  /// assert_eq!(count.get(), 2);
+  /// ```
+  ///
+  /// # Panics
+  ///
+  /// Panics if called from inside this signal's own [`update`](Signal::update) closure. The message
+  /// reports a read, because the comparison reads the value first.
+  pub fn set_if_changed(&self, new_value: TValue) {
+    if Runtime::with_untracked_signal_value(self.0, |v: &TValue| *v != new_value) {
+      self.set(new_value)
+    }
   }
 }
 

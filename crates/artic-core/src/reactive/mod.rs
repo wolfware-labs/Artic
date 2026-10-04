@@ -18,6 +18,22 @@
 //! count.set(5);
 //! assert_eq!(copy.get(), 5);
 //! ```
+//!
+//! # Skipping writes that change nothing
+//!
+//! [`Signal::set`] and [`Signal::update`] always mark subscribers as dirty, even when the new value
+//! equals the old one, so they work for every value type. For types that implement `PartialEq`,
+//! [`Signal::set_if_changed`] compares first and does nothing when the values are equal.
+//!
+//! The skip is a separate method because stable Rust can't give one method two behaviors depending
+//! on whether `T: PartialEq` (that would need specialization). Requiring `PartialEq` on `set` itself
+//! would rule out signals of types that can't be compared, such as closures or handles, and storing
+//! a comparison function per signal at construction would cost every signal for a choice most
+//! writes don't need. A separate method keeps `set` unrestricted and makes skipping a visible,
+//! opt-in choice at the call site.
+//!
+//! The comparison inside `set_if_changed` reads the value without subscribing the running
+//! observer, so it is still only a write.
 
 mod runtime;
 mod signal;

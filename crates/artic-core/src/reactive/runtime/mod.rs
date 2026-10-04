@@ -47,8 +47,18 @@ impl Runtime {
   {
     RUNTIME.with(|runtime| {
       runtime.attach_current_observer(signal_id);
-      runtime.signals.with_signal_value(signal_id, action)
+      Self::with_untracked_signal_value(signal_id, action)
     })
+  }
+
+  pub(crate) fn with_untracked_signal_value<TValue, TResult>(
+    signal_id: SignalId,
+    action: impl FnOnce(&TValue) -> TResult,
+  ) -> TResult
+  where
+    TValue: Any,
+  {
+    RUNTIME.with(|runtime| runtime.signals.with_signal_value(signal_id, action))
   }
 
   pub fn set_signal_value<TValue>(signal_id: SignalId, value: TValue)
