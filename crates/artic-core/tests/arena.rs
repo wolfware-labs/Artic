@@ -1,4 +1,5 @@
-use artic_core::{Object, TreeArena};
+use artic_core::Object;
+use artic_core::tree::TreeArena;
 
 #[test]
 fn allocate_control() {
