@@ -22,9 +22,9 @@ struct MemoParts {
 }
 
 impl Observer {
-  fn new(state: ObserverState) -> Self {
+  fn new() -> Self {
     Self {
-      state,
+      state: ObserverState::Clean,
       sources: Vec::new(),
       memo: None,
     }
@@ -53,8 +53,8 @@ impl ObserverStore {
     }
   }
 
-  pub fn create_observer(&self, state: ObserverState) -> ObserverId {
-    ObserverId(self.observers.borrow_mut().alloc(Observer::new(state)))
+  pub fn create_observer(&self) -> ObserverId {
+    ObserverId(self.observers.borrow_mut().alloc(Observer::new()))
   }
 
   pub fn push_observer(&self, observer: ObserverId) {

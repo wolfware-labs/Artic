@@ -88,7 +88,7 @@ impl Runtime {
     expect(dead_code, reason = "used by Effect (#10); only tests call it until then")
   )]
   pub fn create_observer() -> ObserverId {
-    RUNTIME.with(|runtime| runtime.observers.create_observer(ObserverState::Clean))
+    RUNTIME.with(|runtime| runtime.observers.create_observer())
   }
 
   pub fn reset_observer(observer_id: ObserverId) {
@@ -124,7 +124,8 @@ impl Runtime {
     TValue: Any,
   {
     let (observer_id, value_id) = RUNTIME.with(|runtime| {
-      let observer_id = runtime.observers.create_observer(ObserverState::Dirty);
+      let observer_id = runtime.observers.create_observer();
+      runtime.observers.set_state(observer_id, ObserverState::Dirty);
       let value_id = runtime.signals.alloc_value(initial_value, Some(observer_id));
       (observer_id, value_id)
     });
