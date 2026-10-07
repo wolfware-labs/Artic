@@ -1,7 +1,9 @@
 use crate::reactive::runtime::{ObserverId, Runtime};
-use crate::reactive::{Signal, run_tracked};
+use crate::reactive::{Memo, Signal, run_tracked};
 use pretty_assertions::assert_eq;
+use std::cell::Cell;
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::rc::Rc;
 
 /// Creates an observer and runs `action` as that observer, so every signal read inside subscribes it.
 fn observe(action: impl FnOnce()) -> ObserverId {
@@ -318,4 +320,144 @@ fn rerun_marks_observer_clean() {
   });
 
   assert!(!Runtime::is_observer_dirty(observer));
+}
+
+/// Returns a call counter and a closure that bumps it, to count how often a memo computes.
+fn counter() -> (Rc<Cell<u32>>, impl Fn() + 'static) {
+  let calls = Rc::new(Cell::new(0));
+  let calls_in_closure = Rc::clone(&calls);
+  (calls, move || calls_in_closure.set(calls_in_closure.get() + 1))
+}
+
+// Creating a memo runs nothing; the first read computes it.
+#[test]
+fn memo_not_computed_until_read() {
+  let (calls, count_call) = counter();
+  let source = Signal::new(2);
+  let double = Memo::new(move || {
+    count_call();
+    source.get() * 2
+  });
+  assert_eq!(calls.get(), 0);
+
+  assert_eq!(double.get(), 4);
+  assert_eq!(calls.get(), 1);
+}
+
+// After a dependency changes the memo recomputes once, on the next read, and caches the result.
+#[test]
+fn memo_recomputes_once_after_dependency_change() {
+  let (calls, count_call) = counter();
+  let source = Signal::new(2);
+  let double = Memo::new(move || {
+    count_call();
+    source.get() * 2
+  });
+  double.get();
+
+  source.set(3);
+  source.set(4);
+  assert_eq!(calls.get(), 1, "a change alone must not recompute");
+
+  assert_eq!(double.get(), 8);
+  assert_eq!(double.get(), 8);
+  assert_eq!(calls.get(), 2);
+}
+
+// A dependency read only on a branch that is no longer taken stops triggering recomputes.
+#[test]
+fn memo_drops_stale_conditional_dependency() {
+  let (calls, count_call) = counter();
+  let use_detail = Signal::new(true);
+  let detail = Signal::new(1);
+  let shown = Memo::new(move || {
+    count_call();
+    if use_detail.get() { detail.get() } else { 0 }
+  });
+  assert_eq!(shown.get(), 1);
+  use_detail.set(false);
+  assert_eq!(shown.get(), 0);
+
+  detail.set(2);
+
+  assert_eq!(shown.get(), 0);
+  assert_eq!(calls.get(), 2, "changing a dropped dependency must not recompute");
+}
+
+// A change travels through a memo of a memo to the observer reading the end of the chain.
+#[test]
+fn memo_chain_propagates() {
+  let source = Signal::new(1);
+  let double = Memo::new(move || source.get() * 2);
+  let label = Memo::new(move || format!("value: {}", double.get()));
+  let observer = observe(|| {
+    label.get();
+  });
+
+  source.set(5);
+
+  assert!(Runtime::needs_rerun(observer));
+  assert_eq!(label.get(), "value: 10");
+}
+
+// A recompute that yields an equal value leaves the memo's subscribers up to date.
+#[test]
+fn equal_recompute_does_not_dirty_dependents() {
+  let (calls, count_call) = counter();
+  let source = Signal::new(2);
+  let is_even = Memo::new(move || source.get() % 2 == 0);
+  let label = Memo::new(move || {
+    count_call();
+    if is_even.get() { "even" } else { "odd" }
+  });
+  let observer = observe(|| {
+    label.get();
+  });
+
+  source.set(4);
+
+  assert!(!Runtime::needs_rerun(observer));
+  assert_eq!(label.get(), "even");
+  assert_eq!(calls.get(), 1, "label must not recompute when is_even is unchanged");
+}
+
+// Reading a memo outside any observer computes it but records no dependency.
+#[test]
+fn memo_read_outside_observer_records_nothing() {
+  let source = Signal::new(1);
+  let double = Memo::new(move || source.get() * 2);
+  let observer = Runtime::create_observer();
+
+  double.get();
+  source.set(2);
+
+  assert!(!Runtime::needs_rerun(observer));
+  assert_eq!(double.get(), 4);
+}
+
+// A memo whose closure panics stays out of date, so the next read runs the closure again.
+#[test]
+fn memo_retries_after_compute_panics() {
+  let fail = Signal::new(true);
+  let value = Memo::new(move || {
+    assert!(!fail.get(), "compute failed");
+    7
+  });
+  assert!(catch_unwind(AssertUnwindSafe(|| value.get())).is_err());
+
+  fail.set(false);
+
+  assert_eq!(value.get(), 7);
+}
+
+// A memo that reads itself panics instead of recursing forever.
+#[test]
+#[should_panic(expected = "memo read while it is being computed")]
+fn memo_reading_itself_panics() {
+  let slot: Rc<Cell<Option<Memo<i32>>>> = Rc::new(Cell::new(None));
+  let slot_in_closure = Rc::clone(&slot);
+  let memo = Memo::new(move || slot_in_closure.get().map_or(0, |memo| memo.get()));
+  slot.set(Some(memo));
+
+  memo.get();
 }

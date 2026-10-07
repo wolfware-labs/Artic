@@ -2,11 +2,13 @@ mod observer_store;
 mod signal_store;
 
 pub use observer_store::ObserverId;
-use observer_store::{ObserverState, ObserverStore};
+pub use observer_store::ObserverState;
+use observer_store::ObserverStore;
 pub use signal_store::SignalId;
 use signal_store::SignalStore;
 use std::any::Any;
-use std::panic::resume_unwind;
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+use std::rc::Rc;
 
 thread_local! {
   static RUNTIME: Runtime  = const {
@@ -31,7 +33,7 @@ impl Runtime {
   where
     TValue: Any,
   {
-    RUNTIME.with(|runtime| runtime.signals.alloc_value(value))
+    RUNTIME.with(|runtime| runtime.signals.alloc_value(value, None))
   }
 
   pub fn get_signal_value<TValue>(signal_id: SignalId) -> TValue
@@ -83,7 +85,7 @@ impl Runtime {
 
   #[cfg_attr(
     not(test),
-    expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
+    expect(dead_code, reason = "used by Effect (#10); only tests call it until then")
   )]
   pub fn create_observer() -> ObserverId {
     RUNTIME.with(|runtime| runtime.observers.create_observer(ObserverState::Clean))
@@ -92,10 +94,6 @@ impl Runtime {
   /// Prepares `observer_id` for a new run: unsubscribes it from every signal the last run read and
   /// marks it clean. The reads of the new run then record a fresh set of sources, so a signal that
   /// is no longer read stops notifying the observer.
-  #[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
-  )]
   pub fn reset_observer(observer_id: ObserverId) {
     RUNTIME.with(|runtime| {
       for signal_id in runtime.observers.take_sources(observer_id) {
@@ -105,28 +103,84 @@ impl Runtime {
     })
   }
 
-  #[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
-  )]
   pub fn push_observer(observer_id: ObserverId) {
     RUNTIME.with(|runtime| runtime.observers.push_observer(observer_id))
   }
 
-  #[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
-  )]
   pub fn pop_observer() {
     RUNTIME.with(|runtime| runtime.observers.pop_observer())
   }
 
   #[cfg_attr(
     not(test),
-    expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
+    expect(dead_code, reason = "used by Effect (#10); only tests call it until then")
   )]
   pub fn is_observer_dirty(observer_id: ObserverId) -> bool {
     RUNTIME.with(|runtime| runtime.observers.state(observer_id) == ObserverState::Dirty)
+  }
+
+  /// Creates the observer and the value slot of a new memo. The memo starts dirty, so its first read
+  /// computes it. `make_refresh` builds the closure that recomputes the memo; it receives both ids.
+  pub fn create_memo<TValue>(
+    initial_value: TValue,
+    make_refresh: impl FnOnce(ObserverId, SignalId) -> Rc<dyn Fn()>,
+  ) -> (ObserverId, SignalId)
+  where
+    TValue: Any,
+  {
+    let (observer_id, value_id) = RUNTIME.with(|runtime| {
+      let observer_id = runtime.observers.create_observer(ObserverState::Dirty);
+      let value_id = runtime.signals.alloc_value(initial_value, Some(observer_id));
+      (observer_id, value_id)
+    });
+    let refresh = make_refresh(observer_id, value_id);
+    RUNTIME.with(|runtime| runtime.observers.set_memo(observer_id, value_id, refresh));
+    (observer_id, value_id)
+  }
+
+  /// Brings the memo `observer_id` up to date, recomputing it only if one of its sources changed.
+  ///
+  /// If the computation panics, the memo stays dirty so the next read tries again.
+  pub fn refresh_memo(observer_id: ObserverId) {
+    if RUNTIME.with(|runtime| runtime.observers.is_running(observer_id)) {
+      panic!("memo read while it is being computed; a memo can't depend on itself");
+    }
+    if !Self::needs_rerun(observer_id) {
+      return;
+    }
+    let refresh = RUNTIME
+      .with(|runtime| runtime.observers.memo_refresh(observer_id))
+      .expect("observer is not a memo");
+    if let Err(payload) = catch_unwind(AssertUnwindSafe(|| refresh())) {
+      RUNTIME.with(|runtime| runtime.observers.set_state(observer_id, ObserverState::Dirty));
+      resume_unwind(payload);
+    }
+  }
+
+  /// Returns whether `observer_id` must run again to be up to date.
+  ///
+  /// A `Check` observer is resolved first: its memo sources are refreshed in the order they were
+  /// read, and the observer becomes dirty as soon as one of them changes value. If none does, it is
+  /// marked clean, and the memo cutoff has stopped the change before it reached this observer.
+  pub fn needs_rerun(observer_id: ObserverId) -> bool {
+    let state = RUNTIME.with(|runtime| runtime.observers.state(observer_id));
+    match state {
+      ObserverState::Clean => false,
+      ObserverState::Dirty => true,
+      ObserverState::Check => {
+        let sources = RUNTIME.with(|runtime| runtime.observers.sources(observer_id));
+        for source in sources {
+          if let Some(memo) = RUNTIME.with(|runtime| runtime.signals.owner(source)) {
+            Self::refresh_memo(memo);
+          }
+          if RUNTIME.with(|runtime| runtime.observers.state(observer_id)) == ObserverState::Dirty {
+            return true;
+          }
+        }
+        RUNTIME.with(|runtime| runtime.observers.set_state(observer_id, ObserverState::Clean));
+        false
+      }
+    }
   }
 
   fn attach_current_observer(&self, signal_id: SignalId) {
@@ -136,9 +190,31 @@ impl Runtime {
     }
   }
 
+  /// Marks the direct subscribers of `signal_id` dirty, and everything downstream of them that is
+  /// clean as `Check`. Downstream observers only *may* be out of date: whether they are depends on
+  /// whether the memos in between end up with a different value.
   fn mark_observers_as_dirty(&self, signal_id: SignalId) {
-    self.signals.with_subscribers(signal_id, |subscribers| {
-      self.observers.mark_as_dirty(subscribers);
-    });
+    for observer_id in self.signals.subscribers(signal_id) {
+      self.observers.set_state(observer_id, ObserverState::Dirty);
+      if let Some(value_id) = self.observers.memo_value(observer_id) {
+        self.mark_downstream_as_check(value_id);
+      }
+    }
+  }
+
+  fn mark_downstream_as_check(&self, signal_id: SignalId) {
+    let mut pending = vec![signal_id];
+    while let Some(signal_id) = pending.pop() {
+      for observer_id in self.signals.subscribers(signal_id) {
+        // An observer already marked `Check` or `Dirty` had its own downstream marked back then.
+        if self.observers.state(observer_id) != ObserverState::Clean {
+          continue;
+        }
+        self.observers.set_state(observer_id, ObserverState::Check);
+        if let Some(value_id) = self.observers.memo_value(observer_id) {
+          pending.push(value_id);
+        }
+      }
+    }
   }
 }

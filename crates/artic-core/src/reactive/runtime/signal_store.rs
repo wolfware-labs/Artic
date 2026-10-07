@@ -11,13 +11,16 @@ pub struct SignalId(SlotId);
 struct SignalSlot {
   value: RefCell<Option<Box<dyn Any>>>,
   subscribers: RefCell<Vec<ObserverId>>,
+  /// The memo whose value this slot caches, or `None` for a plain signal.
+  owner: Option<ObserverId>,
 }
 
 impl SignalSlot {
-  fn new(value: Box<dyn Any>) -> Self {
+  fn new(value: Box<dyn Any>, owner: Option<ObserverId>) -> Self {
     Self {
       value: RefCell::new(Some(value)),
       subscribers: RefCell::new(Vec::new()),
+      owner,
     }
   }
 
@@ -45,10 +48,6 @@ impl SignalSlot {
   fn remove_subscriber(&self, observer: ObserverId) {
     self.subscribers.borrow_mut().retain(|subscriber| *subscriber != observer);
   }
-
-  fn get_subscribers(&self) -> Ref<'_, Vec<ObserverId>> {
-    self.subscribers.borrow()
-  }
 }
 
 pub struct SignalStore {
@@ -62,11 +61,16 @@ impl SignalStore {
     }
   }
 
-  pub fn alloc_value<TValue>(&self, value: TValue) -> SignalId
+  pub fn alloc_value<TValue>(&self, value: TValue, owner: Option<ObserverId>) -> SignalId
   where
     TValue: Any,
   {
-    SignalId(self.slots.borrow_mut().alloc(Rc::new(SignalSlot::new(Box::new(value)))))
+    SignalId(
+      self
+        .slots
+        .borrow_mut()
+        .alloc(Rc::new(SignalSlot::new(Box::new(value), owner))),
+    )
   }
 
   pub fn with_signal_value<TValue, TResult>(&self, signal_id: SignalId, action: impl FnOnce(&TValue) -> TResult) -> TResult
@@ -112,8 +116,14 @@ impl SignalStore {
     self.get_slot(signal_id).remove_subscriber(observer_id);
   }
 
-  pub fn with_subscribers(&self, signal_id: SignalId, action: impl FnOnce(&[ObserverId])) {
-    action(&self.get_slot(signal_id).get_subscribers())
+  /// A copy of the subscribers of `signal_id`, so the caller can change observer state, and even
+  /// subscriptions, while walking the list.
+  pub fn subscribers(&self, signal_id: SignalId) -> Vec<ObserverId> {
+    self.get_slot(signal_id).subscribers.borrow().clone()
+  }
+
+  pub fn owner(&self, signal_id: SignalId) -> Option<ObserverId> {
+    self.get_slot(signal_id).owner
   }
 
   fn get_slot(&self, signal_id: SignalId) -> Rc<SignalSlot> {
@@ -135,12 +145,12 @@ mod tests {
   fn add_subscriber_ignores_duplicates() {
     let signals = SignalStore::new();
     let observers = ObserverStore::new();
-    let signal = signals.alloc_value(0);
+    let signal = signals.alloc_value(0, None);
     let observer = observers.create_observer(ObserverState::Clean);
 
     signals.add_subscriber(signal, observer);
     signals.add_subscriber(signal, observer);
 
-    signals.with_subscribers(signal, |subscribers| assert_eq!(subscribers, [observer]));
+    assert_eq!(signals.subscribers(signal), [observer]);
   }
 }

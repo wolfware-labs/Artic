@@ -1,12 +1,16 @@
 use crate::arena::{Arena, SlotId};
 use crate::reactive::runtime::signal_store::SignalId;
 use std::cell::RefCell;
+use std::rc::Rc;
 
 /// How up to date an observer's last result is.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ObserverState {
   /// The last result is current.
   Clean,
+  /// A memo this observer depends on, directly or through other memos, may have changed. The
+  /// observer is out of date only if refreshing those memos changes their values.
+  Check,
   /// A source changed, so the last result is out of date.
   Dirty,
 }
@@ -16,6 +20,14 @@ struct Observer {
   /// The signals read during the last run. Kept so the next run can unsubscribe from all of them
   /// before recording a fresh set.
   sources: Vec<SignalId>,
+  memo: Option<MemoParts>,
+}
+
+/// What turns an observer into a memo: the signal slot that caches its value, and the closure that
+/// recomputes that value.
+struct MemoParts {
+  value: SignalId,
+  refresh: Rc<dyn Fn()>,
 }
 
 impl Observer {
@@ -23,6 +35,7 @@ impl Observer {
     Self {
       state,
       sources: Vec::new(),
+      memo: None,
     }
   }
 
@@ -65,14 +78,8 @@ impl ObserverStore {
     self.stack.borrow().last().copied()
   }
 
-  pub fn mark_as_dirty(&self, observer_ids: &[ObserverId]) {
-    let mut observers = self.observers.borrow_mut();
-    for observer_id in observer_ids {
-      let Some(observer) = observers.get_mut(observer_id.0) else {
-        continue;
-      };
-      observer.state = ObserverState::Dirty;
-    }
+  pub fn is_running(&self, observer_id: ObserverId) -> bool {
+    self.stack.borrow().contains(&observer_id)
   }
 
   pub fn state(&self, observer_id: ObserverId) -> ObserverState {
@@ -87,9 +94,31 @@ impl ObserverStore {
     self.with_observer(observer_id, |observer| observer.add_source(signal_id));
   }
 
+  pub fn sources(&self, observer_id: ObserverId) -> Vec<SignalId> {
+    self.with_observer(observer_id, |observer| observer.sources.clone())
+  }
+
   /// Removes and returns the sources recorded by the last run.
   pub fn take_sources(&self, observer_id: ObserverId) -> Vec<SignalId> {
     self.with_observer(observer_id, |observer| std::mem::take(&mut observer.sources))
+  }
+
+  pub fn set_memo(&self, observer_id: ObserverId, value: SignalId, refresh: Rc<dyn Fn()>) {
+    self.with_observer(observer_id, |observer| observer.memo = Some(MemoParts { value, refresh }));
+  }
+
+  /// The signal slot holding the value of `observer_id`, if the observer is a memo.
+  pub fn memo_value(&self, observer_id: ObserverId) -> Option<SignalId> {
+    self.with_observer(observer_id, |observer| observer.memo.as_ref().map(|memo| memo.value))
+  }
+
+  /// The closure that recomputes `observer_id`, if the observer is a memo. The `Rc` is cloned so the
+  /// caller can run it after the store's borrow ends: the closure reads signals and other memos,
+  /// which borrow the store again.
+  pub fn memo_refresh(&self, observer_id: ObserverId) -> Option<Rc<dyn Fn()>> {
+    self.with_observer(observer_id, |observer| {
+      observer.memo.as_ref().map(|memo| Rc::clone(&memo.refresh))
+    })
   }
 
   fn with_observer<TResult>(&self, observer_id: ObserverId, action: impl FnOnce(&mut Observer) -> TResult) -> TResult {

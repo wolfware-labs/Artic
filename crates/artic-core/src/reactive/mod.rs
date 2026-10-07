@@ -19,6 +19,20 @@
 //! assert_eq!(copy.get(), 5);
 //! ```
 //!
+//! # Derived values
+//!
+//! A [`Memo`] computes a value from other signals and memos and caches it. It recomputes lazily, on
+//! the first read after a dependency changed, and a recompute that produces an equal value doesn't
+//! disturb the memo's own readers.
+//!
+//! ```
+//! use artic_core::reactive::{Memo, Signal};
+//!
+//! let count = Signal::new(2);
+//! let is_even = Memo::new(move || count.get() % 2 == 0);
+//! assert!(is_even.get());
+//! ```
+//!
 //! # Skipping writes that change nothing
 //!
 //! [`Signal::set`] and [`Signal::update`] always mark subscribers as dirty, even when the new value
@@ -35,19 +49,17 @@
 //! The comparison inside `set_if_changed` reads the value without subscribing the running
 //! observer, so it is still only a write.
 
+mod memo;
 mod runtime;
 mod signal;
 #[cfg(test)]
 mod tests;
 
 use crate::reactive::runtime::{ObserverId, Runtime};
+pub use memo::Memo;
 pub use signal::Signal;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
-#[cfg_attr(
-  not(test),
-  expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
-)]
 pub(crate) fn run_tracked(observer_id: ObserverId, action: impl FnOnce()) {
   Runtime::reset_observer(observer_id);
   Runtime::push_observer(observer_id);
