@@ -11,7 +11,6 @@ pub struct SignalId(SlotId);
 struct SignalSlot {
   value: RefCell<Option<Box<dyn Any>>>,
   subscribers: RefCell<Vec<ObserverId>>,
-  /// The memo whose value this slot caches, or `None` for a plain signal.
   owner: Option<ObserverId>,
 }
 
@@ -116,8 +115,6 @@ impl SignalStore {
     self.get_slot(signal_id).remove_subscriber(observer_id);
   }
 
-  /// A copy of the subscribers of `signal_id`, so the caller can change observer state, and even
-  /// subscriptions, while walking the list.
   pub fn subscribers(&self, signal_id: SignalId) -> Vec<ObserverId> {
     self.get_slot(signal_id).subscribers.borrow().clone()
   }

@@ -72,12 +72,10 @@ where
   /// assert_eq!(shout.get(), "ADA");
   /// ```
   pub fn new(compute: impl Fn() -> TValue + 'static) -> Memo<TValue> {
-    // The slot holds `None` until the first read computes the value.
     let (observer_id, value_id) = Runtime::create_memo(None::<TValue>, |observer_id, value_id| {
       Rc::new(move || {
         let mut new_value = None;
         run_tracked(observer_id, || new_value = Some(compute()));
-        // The equality cutoff: an equal value writes nothing, so subscribers stay as they are.
         if Runtime::with_untracked_signal_value(value_id, |value: &Option<TValue>| *value != new_value) {
           Runtime::set_signal_value(value_id, new_value);
         }

@@ -91,9 +91,6 @@ impl Runtime {
     RUNTIME.with(|runtime| runtime.observers.create_observer(ObserverState::Clean))
   }
 
-  /// Prepares `observer_id` for a new run: unsubscribes it from every signal the last run read and
-  /// marks it clean. The reads of the new run then record a fresh set of sources, so a signal that
-  /// is no longer read stops notifying the observer.
   pub fn reset_observer(observer_id: ObserverId) {
     RUNTIME.with(|runtime| {
       for signal_id in runtime.observers.take_sources(observer_id) {
@@ -119,8 +116,6 @@ impl Runtime {
     RUNTIME.with(|runtime| runtime.observers.state(observer_id) == ObserverState::Dirty)
   }
 
-  /// Creates the observer and the value slot of a new memo. The memo starts dirty, so its first read
-  /// computes it. `make_refresh` builds the closure that recomputes the memo; it receives both ids.
   pub fn create_memo<TValue>(
     initial_value: TValue,
     make_refresh: impl FnOnce(ObserverId, SignalId) -> Rc<dyn Fn()>,
@@ -138,9 +133,6 @@ impl Runtime {
     (observer_id, value_id)
   }
 
-  /// Brings the memo `observer_id` up to date, recomputing it only if one of its sources changed.
-  ///
-  /// If the computation panics, the memo stays dirty so the next read tries again.
   pub fn refresh_memo(observer_id: ObserverId) {
     if RUNTIME.with(|runtime| runtime.observers.is_running(observer_id)) {
       panic!("memo read while it is being computed; a memo can't depend on itself");
@@ -157,11 +149,6 @@ impl Runtime {
     }
   }
 
-  /// Returns whether `observer_id` must run again to be up to date.
-  ///
-  /// A `Check` observer is resolved first: its memo sources are refreshed in the order they were
-  /// read, and the observer becomes dirty as soon as one of them changes value. If none does, it is
-  /// marked clean, and the memo cutoff has stopped the change before it reached this observer.
   pub fn needs_rerun(observer_id: ObserverId) -> bool {
     let state = RUNTIME.with(|runtime| runtime.observers.state(observer_id));
     match state {
@@ -190,9 +177,6 @@ impl Runtime {
     }
   }
 
-  /// Marks the direct subscribers of `signal_id` dirty, and everything downstream of them that is
-  /// clean as `Check`. Downstream observers only *may* be out of date: whether they are depends on
-  /// whether the memos in between end up with a different value.
   fn mark_observers_as_dirty(&self, signal_id: SignalId) {
     for observer_id in self.signals.subscribers(signal_id) {
       self.observers.set_state(observer_id, ObserverState::Dirty);
@@ -206,7 +190,6 @@ impl Runtime {
     let mut pending = vec![signal_id];
     while let Some(signal_id) = pending.pop() {
       for observer_id in self.signals.subscribers(signal_id) {
-        // An observer already marked `Check` or `Dirty` had its own downstream marked back then.
         if self.observers.state(observer_id) != ObserverState::Clean {
           continue;
         }
