@@ -42,6 +42,10 @@ impl SignalSlot {
     }
   }
 
+  fn remove_subscriber(&self, observer: ObserverId) {
+    self.subscribers.borrow_mut().retain(|subscriber| *subscriber != observer);
+  }
+
   fn get_subscribers(&self) -> Ref<'_, Vec<ObserverId>> {
     self.subscribers.borrow()
   }
@@ -104,6 +108,10 @@ impl SignalStore {
     self.get_slot(signal_id).add_subscriber(observer_id);
   }
 
+  pub fn remove_subscriber(&self, signal_id: SignalId, observer_id: ObserverId) {
+    self.get_slot(signal_id).remove_subscriber(observer_id);
+  }
+
   pub fn with_subscribers(&self, signal_id: SignalId, action: impl FnOnce(&[ObserverId])) {
     action(&self.get_slot(signal_id).get_subscribers())
   }
@@ -118,7 +126,7 @@ impl SignalStore {
 mod tests {
   // These tests inspect the private subscriber list of a slot, which is only visible from this module.
   use super::*;
-  use crate::reactive::runtime::observer_store::ObserverStore;
+  use crate::reactive::runtime::observer_store::{ObserverState, ObserverStore};
   use pretty_assertions::assert_eq;
 
   // Subscribing the same observer to a signal twice keeps a single entry, so repeated reads in one
@@ -128,7 +136,7 @@ mod tests {
     let signals = SignalStore::new();
     let observers = ObserverStore::new();
     let signal = signals.alloc_value(0);
-    let observer = observers.create_observer();
+    let observer = observers.create_observer(ObserverState::Clean);
 
     signals.add_subscriber(signal, observer);
     signals.add_subscriber(signal, observer);

@@ -282,3 +282,40 @@ fn update_inside_observer_records_nothing() {
 
   assert!(!Runtime::is_observer_dirty(observer));
 }
+
+// Each run of an observer records its sources afresh, so a signal read only in an earlier run no
+// longer marks the observer dirty.
+#[test]
+fn rerun_drops_dependency_no_longer_read() {
+  let use_detail = Signal::new(true);
+  let detail = Signal::new(0);
+  let observer = Runtime::create_observer();
+  let read = || {
+    if use_detail.get() {
+      detail.get();
+    }
+  };
+  run_tracked(observer, read);
+
+  use_detail.set(false);
+  run_tracked(observer, read);
+  detail.set(1);
+
+  assert!(!Runtime::is_observer_dirty(observer));
+}
+
+// Rerunning an observer clears its dirty state.
+#[test]
+fn rerun_marks_observer_clean() {
+  let count = Signal::new(0);
+  let observer = observe(|| {
+    count.get();
+  });
+  count.set(1);
+
+  run_tracked(observer, || {
+    count.get();
+  });
+
+  assert!(!Runtime::is_observer_dirty(observer));
+}

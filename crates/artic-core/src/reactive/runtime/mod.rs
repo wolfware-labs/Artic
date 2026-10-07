@@ -2,7 +2,7 @@ mod observer_store;
 mod signal_store;
 
 pub use observer_store::ObserverId;
-use observer_store::ObserverStore;
+use observer_store::{ObserverState, ObserverStore};
 pub use signal_store::SignalId;
 use signal_store::SignalStore;
 use std::any::Any;
@@ -86,7 +86,23 @@ impl Runtime {
     expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
   )]
   pub fn create_observer() -> ObserverId {
-    RUNTIME.with(|runtime| runtime.observers.create_observer())
+    RUNTIME.with(|runtime| runtime.observers.create_observer(ObserverState::Clean))
+  }
+
+  /// Prepares `observer_id` for a new run: unsubscribes it from every signal the last run read and
+  /// marks it clean. The reads of the new run then record a fresh set of sources, so a signal that
+  /// is no longer read stops notifying the observer.
+  #[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
+  )]
+  pub fn reset_observer(observer_id: ObserverId) {
+    RUNTIME.with(|runtime| {
+      for signal_id in runtime.observers.take_sources(observer_id) {
+        runtime.signals.remove_subscriber(signal_id, observer_id);
+      }
+      runtime.observers.set_state(observer_id, ObserverState::Clean);
+    })
   }
 
   #[cfg_attr(
@@ -110,12 +126,13 @@ impl Runtime {
     expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
   )]
   pub fn is_observer_dirty(observer_id: ObserverId) -> bool {
-    RUNTIME.with(|runtime| runtime.observers.is_dirty(observer_id))
+    RUNTIME.with(|runtime| runtime.observers.state(observer_id) == ObserverState::Dirty)
   }
 
   fn attach_current_observer(&self, signal_id: SignalId) {
     if let Some(observer_id) = self.observers.current_observer() {
       self.signals.add_subscriber(signal_id, observer_id);
+      self.observers.add_source(observer_id, signal_id);
     }
   }
 

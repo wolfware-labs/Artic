@@ -1,17 +1,35 @@
 use crate::arena::{Arena, SlotId};
+use crate::reactive::runtime::signal_store::SignalId;
 use std::cell::RefCell;
 
+/// How up to date an observer's last result is.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ObserverState {
+  /// The last result is current.
+  Clean,
+  /// A source changed, so the last result is out of date.
+  Dirty,
+}
+
 struct Observer {
-  is_dirty: bool,
+  state: ObserverState,
+  /// The signals read during the last run. Kept so the next run can unsubscribe from all of them
+  /// before recording a fresh set.
+  sources: Vec<SignalId>,
 }
 
 impl Observer {
-  #[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
-  )]
-  fn new() -> Self {
-    Self { is_dirty: false }
+  fn new(state: ObserverState) -> Self {
+    Self {
+      state,
+      sources: Vec::new(),
+    }
+  }
+
+  fn add_source(&mut self, signal_id: SignalId) {
+    if !self.sources.contains(&signal_id) {
+      self.sources.push(signal_id);
+    }
   }
 }
 
@@ -31,26 +49,14 @@ impl ObserverStore {
     }
   }
 
-  #[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
-  )]
-  pub fn create_observer(&self) -> ObserverId {
-    ObserverId(self.observers.borrow_mut().alloc(Observer::new()))
+  pub fn create_observer(&self, state: ObserverState) -> ObserverId {
+    ObserverId(self.observers.borrow_mut().alloc(Observer::new(state)))
   }
 
-  #[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
-  )]
   pub fn push_observer(&self, observer: ObserverId) {
     self.stack.borrow_mut().push(observer);
   }
 
-  #[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
-  )]
   pub fn pop_observer(&self) {
     self.stack.borrow_mut().pop();
   }
@@ -65,16 +71,29 @@ impl ObserverStore {
       let Some(observer) = observers.get_mut(observer_id.0) else {
         continue;
       };
-      observer.is_dirty = true;
+      observer.state = ObserverState::Dirty;
     }
   }
 
-  #[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
-  )]
-  pub fn is_dirty(&self, observer_id: ObserverId) -> bool {
-    let observers = self.observers.borrow();
-    observers.get(observer_id.0).expect("observer does not exist").is_dirty
+  pub fn state(&self, observer_id: ObserverId) -> ObserverState {
+    self.with_observer(observer_id, |observer| observer.state)
+  }
+
+  pub fn set_state(&self, observer_id: ObserverId, state: ObserverState) {
+    self.with_observer(observer_id, |observer| observer.state = state);
+  }
+
+  pub fn add_source(&self, observer_id: ObserverId, signal_id: SignalId) {
+    self.with_observer(observer_id, |observer| observer.add_source(signal_id));
+  }
+
+  /// Removes and returns the sources recorded by the last run.
+  pub fn take_sources(&self, observer_id: ObserverId) -> Vec<SignalId> {
+    self.with_observer(observer_id, |observer| std::mem::take(&mut observer.sources))
+  }
+
+  fn with_observer<TResult>(&self, observer_id: ObserverId, action: impl FnOnce(&mut Observer) -> TResult) -> TResult {
+    let mut observers = self.observers.borrow_mut();
+    action(observers.get_mut(observer_id.0).expect("observer does not exist"))
   }
 }
