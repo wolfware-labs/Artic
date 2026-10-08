@@ -3,6 +3,7 @@ mod memo_store;
 mod observable;
 mod observer_store;
 mod signal_store;
+mod tracking;
 
 pub use effect_store::EffectId;
 use effect_store::EffectStore;
@@ -18,6 +19,7 @@ use std::cell::{Cell, RefCell};
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::rc::Rc;
 use std::thread;
+use tracking::Tracker;
 
 const MAX_FLUSH_PASSES: usize = 100;
 
@@ -32,7 +34,7 @@ pub struct Runtime {
   observers: ObserverStore,
   memos: MemoStore,
   effects: EffectStore,
-  observables: RefCell<Vec<Vec<ObservableId>>>,
+  tracker: Tracker,
   has_changes: Cell<bool>,
   is_flushing: Cell<bool>,
   batch_depth: Cell<usize>,
@@ -45,7 +47,7 @@ impl Runtime {
       observers: ObserverStore::new(),
       memos: MemoStore::new(),
       effects: EffectStore::new(),
-      observables: RefCell::new(Vec::new()),
+      tracker: Tracker::new(),
       has_changes: Cell::new(false),
       is_flushing: Cell::new(false),
       batch_depth: Cell::new(0),
@@ -71,7 +73,7 @@ impl Runtime {
     TValue: Any,
   {
     RUNTIME.with(|runtime| {
-      runtime.attach_current_observer(signal_id);
+      runtime.subscribe_current_observer(signal_id);
       Self::with_untracked_signal_value(signal_id, action)
     })
   }
@@ -126,30 +128,6 @@ impl Runtime {
     RUNTIME.with(|runtime| runtime.observers.create_observer())
   }
 
-  fn push_observer(observer_id: ObserverId) {
-    RUNTIME.with(|runtime| {
-      runtime.observers.push_observer(observer_id);
-      runtime.observables.borrow_mut().push(Vec::new());
-    })
-  }
-
-  fn pop_observer() -> Vec<ObservableId> {
-    RUNTIME.with(|runtime| {
-      runtime.observers.pop_observer();
-      runtime.observables.borrow_mut().pop().unwrap_or_default()
-    })
-  }
-
-  pub fn record_read(observable: ObservableId) {
-    RUNTIME.with(|runtime| {
-      if let Some(observables) = runtime.observables.borrow_mut().last_mut()
-        && !observables.contains(&observable)
-      {
-        observables.push(observable);
-      }
-    })
-  }
-
   pub fn is_observer_dirty(observer_id: ObserverId) -> bool {
     RUNTIME.with(|runtime| runtime.observers.is_dirty(observer_id))
   }
@@ -164,20 +142,6 @@ impl Runtime {
 
   pub fn memo_value(memo_id: MemoId) -> SignalId {
     RUNTIME.with(|runtime| runtime.memos.value(memo_id))
-  }
-
-  pub fn run_tracked(observer_id: ObserverId, action: impl FnOnce()) -> Vec<ObservableId> {
-    RUNTIME.with(|runtime| runtime.observers.mark_as_clean(observer_id));
-    Self::push_observer(observer_id);
-    let action_result = catch_unwind(AssertUnwindSafe(action));
-    let observables = Self::pop_observer();
-    if let Err(payload) = action_result {
-      for observable in observables {
-        observable.unsubscribe(observer_id);
-      }
-      resume_unwind(payload);
-    }
-    observables
   }
 
   pub fn refresh_memo(memo_id: MemoId) {
@@ -293,12 +257,6 @@ impl Runtime {
       observable.unsubscribe(observer_id);
     }
     catch_unwind(AssertUnwindSafe(|| Self::run_tracked(observer_id, action)))
-  }
-
-  fn attach_current_observer(&self, signal_id: SignalId) {
-    if let Some(observer_id) = self.observers.current_observer() {
-      self.signals.add_subscriber(signal_id, observer_id);
-    }
   }
 
   fn mark_observers_as_dirty(&self, signal_id: SignalId) {
