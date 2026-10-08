@@ -95,7 +95,7 @@ impl Runtime {
   where
     TValue: Any,
   {
-    RUNTIME.with(|runtime| runtime.tracker.note_write());
+    RUNTIME.with(|runtime| runtime.tracker.record_write());
     Self::write_signal_value(signal_id, action);
   }
 

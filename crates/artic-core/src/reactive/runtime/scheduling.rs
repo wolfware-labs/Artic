@@ -70,7 +70,7 @@ impl Drop for FlushingGuard {
     RUNTIME.with(|runtime| {
       runtime.scheduler.end_flush();
       if thread::panicking() {
-        runtime.tracker.note_write();
+        runtime.tracker.record_write();
       }
     });
   }

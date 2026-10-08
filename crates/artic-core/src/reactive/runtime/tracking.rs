@@ -40,7 +40,7 @@ impl Tracker {
     self.frames.borrow().last().map(|frame| frame.observer)
   }
 
-  pub fn note_write(&self) {
+  pub fn record_write(&self) {
     self.has_writes.set(true);
   }
 
