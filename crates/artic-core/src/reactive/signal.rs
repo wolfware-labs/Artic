@@ -8,9 +8,10 @@ use std::marker::PhantomData;
 /// while an observer runs ([`get`](Signal::get), [`with`](Signal::with)) subscribe that observer, and
 /// writes ([`set`](Signal::set), [`update`](Signal::update)) mark every subscriber as dirty.
 /// [`set_if_changed`](Signal::set_if_changed) skips the write when the new value equals the current
-/// one.
+/// one, and [`update_with`](Signal::update_with) lets an in-place edit say whether readers can see it.
 ///
-/// `Signal<T>` is a `Copy` handle: copies refer to the same value, and copying never clones `T`.
+/// `Signal<T>` is a `Copy` handle: copies refer to the same value, and copying never clones `T`. Two
+/// handles compare equal when they refer to the same signal, whatever its value.
 /// Signals are neither `Send` nor `Sync`, because the runtime that holds the value belongs to one
 /// thread.
 ///

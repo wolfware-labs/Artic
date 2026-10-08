@@ -95,18 +95,20 @@ pub enum Precedence {
 
 /// A reactive value that several sources can write at once, each at its own [`Precedence`] level.
 ///
-/// Every level holds its own value, or none. The property's *effective* value comes from the highest
-/// level that holds one; `Default` always does. Writing a level only replaces that level's value,
-/// and [`clear`](Property::clear) empties it so the next level down shows through. A style that
-/// stops matching or an animation that ends clears its level, and nobody has to remember what the
-/// value was before.
+/// Every level holds its own value, or none; the `Inherited` level instead follows the same kind of
+/// property on a logical ancestor, which the tree sets. The property's *effective* value comes from
+/// the highest level that holds one; `Default` always does. Writing a level only replaces that
+/// level's value, and [`clear`](Property::clear) empties it so the next level down shows through. A
+/// style that stops matching or an animation that ends clears its level, and nobody has to remember
+/// what the value was before.
 ///
 /// Reading the property through [`get`](Property::get) or [`with`](Property::with) subscribes the
 /// running observer. Readers are marked dirty only when what they can see changes: the effective
 /// value or the level it comes from. A write to a level below the winning one wakes nobody.
 ///
-/// `Property<T>` is a `Copy` handle, like [`Signal`], and is neither `Send` nor `Sync`. It belongs to
-/// the [`Scope`](crate::reactive::Scope) that was active when it was created.
+/// `Property<T>` is a `Copy` handle, like [`Signal`], and is neither `Send` nor `Sync`. Two handles
+/// compare equal when they refer to the same property. It belongs to the
+/// [`Scope`](crate::reactive::Scope) that was active when it was created.
 ///
 /// # Examples
 ///
