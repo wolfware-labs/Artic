@@ -54,12 +54,14 @@ mod affects;
 mod any;
 mod key;
 mod levels;
+mod state;
 
 use crate::reactive::{Change, Signal};
 pub use affects::Affects;
 pub use any::{AnyProperty, KeyId};
 pub use key::PropertyKey;
 use levels::Levels;
+use state::PropertyState;
 
 /// Who supplied a property's value, from lowest to highest priority.
 ///
@@ -122,7 +124,7 @@ pub enum Precedence {
 /// assert_eq!(width.get(), 50.0);
 /// ```
 #[derive(Debug)]
-pub struct Property<T>(Signal<Levels<T>>)
+pub struct Property<T>(Signal<PropertyState<T>>)
 where
   T: 'static;
 
@@ -151,14 +153,14 @@ where
   /// levels are empty.
   #[track_caller]
   pub fn new(key: &'static PropertyKey<T>, default: T) -> Property<T> {
-    Property(Signal::new(Levels::new(key, default)))
+    Property(Signal::new(PropertyState::new(key, default)))
   }
 
   /// Returns the key that identifies this property's kind and holds its metadata.
   ///
   /// The key never changes, so reading it doesn't subscribe the running observer.
   pub fn key(&self) -> &'static PropertyKey<T> {
-    self.0.with_untracked(Levels::key)
+    self.0.with_untracked(PropertyState::key)
   }
 
   /// Calls `function` with a reference to the effective value and returns its result.
@@ -166,7 +168,7 @@ where
   /// Use this instead of [`get`](Property::get) to read a value that isn't `Clone`, or part of one,
   /// without cloning it.
   pub fn with<TResult>(&self, function: impl FnOnce(&T) -> TResult) -> TResult {
-    self.0.with(|levels| levels.with_effective(function))
+    self.0.with(|state| state.levels.with_effective(function))
   }
 
   /// Returns the level that supplies the effective value.
@@ -189,7 +191,7 @@ where
   /// assert_eq!(width.effective_source(), Precedence::Binding);
   /// ```
   pub fn effective_source(&self) -> Precedence {
-    self.0.with(|levels| levels.effective_source())
+    self.0.with(|state| state.levels.effective_source())
   }
 
   /// Sets the `Local` level, the level for values set in code or in markup.
@@ -229,31 +231,34 @@ where
   /// Makes the `Inherited` level follow `source`, or no property, and keeps `source`'s followers
   /// list in step.
   fn follow(&self, source: Option<Property<T>>) {
-    let previous = self.0.with_untracked(Levels::inherited);
+    let previous = self.0.with_untracked(|state| state.levels.inherited());
     if previous == source {
       return;
     }
     if let Some(previous) = previous.filter(|previous| previous.0.is_alive()) {
-      previous.0.update_with(|levels| {
-        levels.remove_follower(*self);
+      previous.0.update_with(|state| {
+        state.remove_follower(*self);
         Change::Hidden
       });
     }
     if let Some(source) = source {
-      source.0.update_with(|levels| {
-        levels.add_follower(*self);
+      source.0.update_with(|state| {
+        state.add_follower(*self);
         Change::Hidden
       });
     }
     self.edit(|levels| levels.set_inherited(source));
   }
 
-  /// Applies `edit` to the levels and, if readers can see it, marks the nodes of the followers that
-  /// inherit the new value dirty.
+  /// Applies `edit` to the levels and, if readers can see it, marks the property's node dirty and
+  /// the nodes of the followers that inherit the new value.
   fn edit(&self, edit: impl FnOnce(&mut Levels<T>) -> Change) {
     let mut change = Change::Hidden;
-    self.0.update_with(|levels| {
-      change = edit(levels);
+    self.0.update_with(|state| {
+      change = edit(&mut state.levels);
+      if change == Change::Visible {
+        state.mark_dirty();
+      }
       change
     });
     if change == Change::Visible {
@@ -265,17 +270,17 @@ where
   /// passes the walk on to their own followers. Reads are untracked, so a write inside an effect
   /// doesn't subscribe it to every descendant. Followers whose scope was disposed are dropped.
   fn mark_followers_dirty(&self) {
-    let followers = self.0.with_untracked(|levels| levels.followers().to_vec());
+    let followers = self.0.with_untracked(|state| state.followers().to_vec());
     let mut has_disposed = false;
     for follower in followers {
       if !follower.0.is_alive() {
         has_disposed = true;
         continue;
       }
-      let inherits_from_here = follower.0.with_untracked(|levels| {
-        let inherits = levels.effective_source() == Precedence::Inherited;
+      let inherits_from_here = follower.0.with_untracked(|state| {
+        let inherits = state.levels.effective_source() == Precedence::Inherited;
         if inherits {
-          levels.mark_dirty();
+          state.mark_dirty();
         }
         inherits
       });
@@ -284,8 +289,8 @@ where
       }
     }
     if has_disposed {
-      self.0.update_with(|levels| {
-        levels.retain_followers(|follower| follower.0.is_alive());
+      self.0.update_with(|state| {
+        state.retain_followers(|follower| follower.0.is_alive());
         Change::Hidden
       });
     }
@@ -592,7 +597,7 @@ mod tests {
     scope.dispose();
     parent.set(1);
 
-    assert_eq!(parent.0.with_untracked(|levels| levels.followers().len()), 0);
+    assert_eq!(parent.0.with_untracked(|state| state.followers().len()), 0);
   }
 
   // Following another property moves the follower from the old source's list to the new one's.
@@ -603,8 +608,8 @@ mod tests {
 
     child.follow(Some(second));
 
-    assert_eq!(first.0.with_untracked(|levels| levels.followers().len()), 0);
-    assert_eq!(second.0.with_untracked(|levels| levels.followers().to_vec()), [child]);
+    assert_eq!(first.0.with_untracked(|state| state.followers().len()), 0);
+    assert_eq!(second.0.with_untracked(|state| state.followers().to_vec()), [child]);
   }
 
   // Writing the Inherited level directly panics: the tree sets it.

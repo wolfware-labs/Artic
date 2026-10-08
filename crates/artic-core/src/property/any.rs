@@ -55,8 +55,8 @@ where
   }
 
   fn attach(&self, dirty: Rc<Cell<Affects>>) {
-    self.0.update_with(|levels| {
-      levels.attach(dirty);
+    self.0.update_with(|state| {
+      state.attach(dirty);
       Change::Hidden
     });
   }

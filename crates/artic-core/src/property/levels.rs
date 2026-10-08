@@ -1,7 +1,5 @@
-use crate::property::{Affects, Precedence, Property, PropertyKey};
+use crate::property::{Precedence, Property};
 use crate::reactive::Change;
-use std::cell::Cell;
-use std::rc::Rc;
 
 const VALUE_LEVELS: usize = 4;
 
@@ -10,35 +8,21 @@ pub struct Levels<T>
 where
   T: 'static,
 {
-  key: &'static PropertyKey<T>,
-  dirty: Option<Rc<Cell<Affects>>>,
   values: [Option<T>; VALUE_LEVELS],
   inherited: Option<Property<T>>,
   default: T,
-  followers: Vec<Property<T>>,
 }
 
 impl<T> Levels<T>
 where
   T: PartialEq,
 {
-  pub fn new(key: &'static PropertyKey<T>, default: T) -> Self {
+  pub fn new(default: T) -> Self {
     Self {
-      key,
-      dirty: None,
       values: [const { None }; VALUE_LEVELS],
       inherited: None,
       default,
-      followers: Vec::new(),
     }
-  }
-
-  pub fn key(&self) -> &'static PropertyKey<T> {
-    self.key
-  }
-
-  pub fn attach(&mut self, dirty: Rc<Cell<Affects>>) {
-    self.dirty = Some(dirty);
   }
 
   pub fn with_effective<TResult>(&self, function: impl FnOnce(&T) -> TResult) -> TResult {
@@ -75,18 +59,14 @@ where
         self.default = value;
       }
     }
-    if level >= winner {
-      self.visible_change()
-    } else {
-      Change::Hidden
-    }
+    if level >= winner { Change::Visible } else { Change::Hidden }
   }
 
   pub fn clear(&mut self, level: Precedence) -> Change {
     let winner = self.effective_source();
     let index = Self::value_index(level).expect("only value levels can be cleared");
     if self.values[index].take().is_some() && level == winner {
-      self.visible_change()
+      Change::Visible
     } else {
       Change::Hidden
     }
@@ -103,37 +83,10 @@ where
     let winner = self.effective_source();
     self.inherited = source;
     if winner <= Precedence::Inherited {
-      self.visible_change()
+      Change::Visible
     } else {
       Change::Hidden
     }
-  }
-
-  pub fn followers(&self) -> &[Property<T>] {
-    &self.followers
-  }
-
-  pub fn add_follower(&mut self, follower: Property<T>) {
-    self.followers.push(follower);
-  }
-
-  pub fn remove_follower(&mut self, follower: Property<T>) {
-    self.followers.retain(|existing| *existing != follower);
-  }
-
-  pub fn retain_followers(&mut self, keep: impl FnMut(&Property<T>) -> bool) {
-    self.followers.retain(keep);
-  }
-
-  pub fn mark_dirty(&self) {
-    if let Some(dirty) = &self.dirty {
-      dirty.set(dirty.get() | self.key.affects());
-    }
-  }
-
-  fn visible_change(&self) -> Change {
-    self.mark_dirty();
-    Change::Visible
   }
 
   fn value_index(level: Precedence) -> Option<usize> {
@@ -154,8 +107,6 @@ where
 mod tests {
   use super::*;
   use pretty_assertions::assert_eq;
-
-  static TEST: PropertyKey<i32> = PropertyKey::new("Test", Affects::NONE, false);
 
   /// Returns the effective value of `levels`.
   fn effective(levels: &Levels<i32>) -> i32 {
@@ -181,7 +132,7 @@ mod tests {
   // Writing the winning level or a level above it is visible; writing below it is hidden.
   #[test]
   fn set_is_visible_only_at_or_above_the_winner() {
-    let mut levels = Levels::new(&TEST, 0);
+    let mut levels = Levels::new(0);
     assert_eq!(levels.set(Precedence::Binding, 1), Change::Visible);
 
     assert_eq!(levels.set(Precedence::StyleSetter, 2), Change::Hidden);
@@ -194,7 +145,7 @@ mod tests {
   // Writing the value a level already holds stores nothing and is hidden.
   #[test]
   fn set_with_the_same_value_is_hidden() {
-    let mut levels = Levels::new(&TEST, 0);
+    let mut levels = Levels::new(0);
     levels.set(Precedence::Local, 1);
 
     assert_eq!(levels.set(Precedence::Local, 1), Change::Hidden);
@@ -204,7 +155,7 @@ mod tests {
   // Writing the default is visible only while no level above it is set.
   #[test]
   fn set_default_is_visible_only_when_nothing_overrides_it() {
-    let mut levels = Levels::new(&TEST, 0);
+    let mut levels = Levels::new(0);
     assert_eq!(levels.set(Precedence::Default, 1), Change::Visible);
 
     levels.set(Precedence::StyleSetter, 2);
@@ -217,7 +168,7 @@ mod tests {
   // hidden.
   #[test]
   fn clear_is_visible_only_for_the_winner() {
-    let mut levels = Levels::new(&TEST, 0);
+    let mut levels = Levels::new(0);
     levels.set(Precedence::StyleSetter, 1);
     levels.set(Precedence::Local, 2);
 
