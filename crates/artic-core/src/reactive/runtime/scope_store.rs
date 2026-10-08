@@ -12,12 +12,14 @@ struct ScopeSlot {
 
 pub struct ScopeStore {
   slots: RefCell<Arena<ScopeSlot>>,
+  active: RefCell<Vec<ScopeId>>,
 }
 
 impl ScopeStore {
   pub const fn new() -> Self {
     Self {
       slots: RefCell::new(Arena::new()),
+      active: RefCell::new(Vec::new()),
     }
   }
 
@@ -39,5 +41,18 @@ impl ScopeStore {
 
   pub fn count(&self) -> usize {
     self.slots.borrow().len()
+  }
+
+  pub fn push_active(&self, scope_id: ScopeId) {
+    self.active.borrow_mut().push(scope_id);
+  }
+
+  pub fn pop_active(&self) {
+    self.active.borrow_mut().pop();
+  }
+
+  #[cfg(test)]
+  pub fn active(&self) -> Option<ScopeId> {
+    self.active.borrow().last().copied()
   }
 }

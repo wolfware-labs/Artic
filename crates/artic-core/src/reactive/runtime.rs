@@ -2,6 +2,7 @@ mod effect_store;
 mod memo_store;
 mod observable;
 mod observer_store;
+mod ownership;
 mod refresh;
 mod scheduling;
 mod scope_store;
@@ -147,10 +148,6 @@ impl Runtime {
     });
     Self::refresh_effect(effect_id);
     effect_id
-  }
-
-  pub fn create_scope(parent: Option<ScopeId>) -> ScopeId {
-    RUNTIME.with(|runtime| runtime.scopes.alloc(parent))
   }
 
   pub fn live_counts() -> LiveCounts {

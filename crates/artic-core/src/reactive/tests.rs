@@ -603,3 +603,44 @@ fn live_counts_track_created_scopes() {
 
   assert_eq!(live_counts().scopes, before.scopes + 2);
 }
+
+// Scope
+
+// `run` makes the scope active only while its closure runs, and returns the closure's result.
+#[test]
+fn run_activates_scope_only_inside_closure() {
+  let scope = Scope::new_root();
+
+  let active = scope.run(Runtime::active_scope);
+
+  assert_eq!(active, Some(scope.id()));
+  assert_eq!(Runtime::active_scope(), None);
+}
+
+// A nested `run` activates the inner scope, and the outer one is active again once it returns.
+#[test]
+fn nested_run_restores_outer_scope() {
+  let outer = Scope::new_root();
+  let inner = outer.child();
+
+  let (during, after) = outer.run(|| (inner.run(Runtime::active_scope), Runtime::active_scope()));
+
+  assert_eq!(during, Some(inner.id()));
+  assert_eq!(after, Some(outer.id()));
+}
+
+// If the closure passed to `run` panics, the previous scope is active again and the panic reaches
+// the caller.
+#[test]
+fn run_restores_scope_when_action_panics() {
+  let outer = Scope::new_root();
+  let inner = outer.child();
+
+  let after = outer.run(|| {
+    let result = catch_unwind(AssertUnwindSafe(|| inner.run(|| panic!("boom"))));
+    assert!(result.is_err());
+    Runtime::active_scope()
+  });
+
+  assert_eq!(after, Some(outer.id()));
+}
