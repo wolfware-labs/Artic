@@ -85,6 +85,7 @@ mod effect;
 mod live_counts;
 mod memo;
 mod runtime;
+mod scope;
 mod signal;
 #[cfg(test)]
 mod tests;
@@ -92,6 +93,7 @@ mod tests;
 pub use effect::Effect;
 pub use live_counts::{LiveCounts, live_counts};
 pub use memo::Memo;
+pub use scope::Scope;
 pub use signal::Signal;
 
 /// Runs every effect whose dependencies changed since it last ran.

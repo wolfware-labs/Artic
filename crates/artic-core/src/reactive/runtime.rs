@@ -4,6 +4,7 @@ mod observable;
 mod observer_store;
 mod refresh;
 mod scheduling;
+mod scope_store;
 mod signal_store;
 mod tracking;
 
@@ -16,6 +17,8 @@ pub use observable::ObservableId;
 pub use observer_store::ObserverId;
 use observer_store::ObserverStore;
 use scheduling::Scheduler;
+pub use scope_store::ScopeId;
+use scope_store::ScopeStore;
 pub use signal_store::SignalId;
 use signal_store::SignalStore;
 use std::any::Any;
@@ -35,6 +38,7 @@ pub struct Runtime {
   observers: ObserverStore,
   memos: MemoStore,
   effects: EffectStore,
+  scopes: ScopeStore,
   tracker: Tracker,
   scheduler: Scheduler,
 }
@@ -46,6 +50,7 @@ impl Runtime {
       observers: ObserverStore::new(),
       memos: MemoStore::new(),
       effects: EffectStore::new(),
+      scopes: ScopeStore::new(),
       tracker: Tracker::new(),
       scheduler: Scheduler::new(),
     }
@@ -144,11 +149,16 @@ impl Runtime {
     effect_id
   }
 
+  pub fn create_scope(parent: Option<ScopeId>) -> ScopeId {
+    RUNTIME.with(|runtime| runtime.scopes.alloc(parent))
+  }
+
   pub fn live_counts() -> LiveCounts {
     RUNTIME.with(|runtime| LiveCounts {
       signals: runtime.signals.count(),
       memos: runtime.memos.count(),
       effects: runtime.effects.count(),
+      scopes: runtime.scopes.count(),
     })
   }
 

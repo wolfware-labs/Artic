@@ -1,5 +1,5 @@
 use crate::reactive::runtime::{ObservableId, ObserverId, Runtime};
-use crate::reactive::{Effect, LiveCounts, Memo, Signal, batch, flush_effects, live_counts};
+use crate::reactive::{Effect, LiveCounts, Memo, Scope, Signal, batch, flush_effects, live_counts};
 use pretty_assertions::assert_eq;
 use std::cell::{Cell, RefCell};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -588,6 +588,18 @@ fn live_counts_track_created_nodes() {
       signals: before.signals + 2,
       memos: before.memos + 1,
       effects: before.effects + 1,
+      scopes: before.scopes,
     }
   );
+}
+
+// Creating a root scope and a child scope raises the scope count by two.
+#[test]
+fn live_counts_track_created_scopes() {
+  let before = live_counts();
+
+  let root = Scope::new_root();
+  root.child();
+
+  assert_eq!(live_counts().scopes, before.scopes + 2);
 }

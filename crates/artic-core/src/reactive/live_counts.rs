@@ -23,6 +23,8 @@ pub struct LiveCounts {
   pub memos: usize,
   /// Live effects.
   pub effects: usize,
+  /// Live scopes.
+  pub scopes: usize,
 }
 
 /// Returns how many reactive nodes are alive on the current thread.
