@@ -1,5 +1,6 @@
 use crate::tree::node::TreeNode;
 use crate::tree::{NodeId, Tree, TreeArena};
+use std::iter::successors;
 
 impl TreeArena {
   /// Makes `child` the last child of `parent` in `tree`.
@@ -9,7 +10,8 @@ impl TreeArena {
   ///
   /// # Panics
   ///
-  /// Panics if `parent` or `child` is stale.
+  /// Panics if `parent` or `child` is stale, or if `child` is `parent` or one of its ancestors in
+  /// `tree`, because the tree would then contain a cycle.
   ///
   /// # Examples
   ///
@@ -34,7 +36,7 @@ impl TreeArena {
   /// ```
   #[track_caller]
   pub fn add_child(&mut self, tree: Tree, parent: NodeId, child: NodeId) {
-    self.node(parent);
+    self.check_attach(tree, parent, child);
     self.detach(tree, child);
     let index = self.node(parent).links(tree).children.len();
     self.attach(tree, parent, index, child);
@@ -48,9 +50,11 @@ impl TreeArena {
   ///
   /// # Panics
   ///
-  /// Panics if `parent` or `child` is stale, or if `index` is greater than the number of children.
+  /// Panics in the same cases as [`add_child`](TreeArena::add_child), and if `index` is greater than
+  /// the number of children.
   #[track_caller]
   pub fn insert_child(&mut self, tree: Tree, parent: NodeId, index: usize, child: NodeId) {
+    self.check_attach(tree, parent, child);
     let mut len = self.node(parent).links(tree).children.len();
     if self.node(child).links(tree).parent == Some(parent) {
       len -= 1;
@@ -86,6 +90,24 @@ impl TreeArena {
       .unwrap_or_default()
       .iter()
       .copied()
+  }
+
+  /// Returns the ancestors of `id` in `tree`: its parent, then that node's parent, up to the root.
+  ///
+  /// `id` itself isn't included, and a stale `id` has no ancestors.
+  pub fn ancestors(&self, tree: Tree, id: NodeId) -> impl Iterator<Item = NodeId> + '_ {
+    successors(self.parent(tree, id), move |ancestor| self.parent(tree, *ancestor))
+  }
+
+  #[track_caller]
+  fn check_attach(&self, tree: Tree, parent: NodeId, child: NodeId) {
+    self.node(parent);
+    self.node(child);
+    let is_cycle = child == parent || self.ancestors(tree, parent).any(|ancestor| ancestor == child);
+    assert!(
+      !is_cycle,
+      "adding node {child:?} under {parent:?} would create a cycle in the {tree:?} tree"
+    );
   }
 
   fn attach(&mut self, tree: Tree, parent: NodeId, index: usize, child: NodeId) {
@@ -257,5 +279,63 @@ mod tests {
     assert!(stale_parent.is_err() && past_the_end.is_err());
     assert_eq!(arena.parent(Tree::Logical, child), Some(parent));
     assert_eq!(children(&arena, Tree::Logical, parent), [child]);
+  }
+
+  // `ancestors` walks from the parent up to the root, in one tree only.
+  #[test]
+  fn ancestors_walk_up_to_the_root() {
+    let mut arena = TreeArena::new();
+    let [root, middle, leaf] = nodes(&mut arena, 3)[..] else {
+      unreachable!()
+    };
+    arena.add_child(Tree::Logical, root, middle);
+    arena.add_child(Tree::Logical, middle, leaf);
+
+    assert_eq!(arena.ancestors(Tree::Logical, leaf).collect::<Vec<_>>(), [middle, root]);
+    assert_eq!(arena.ancestors(Tree::Visual, leaf).count(), 0);
+  }
+
+  // Adding a node under itself or under one of its descendants is rejected, and the tree is left as
+  // it was.
+  #[test]
+  fn cycle_insert_is_rejected() {
+    let mut arena = TreeArena::new();
+    let [root, middle, leaf] = nodes(&mut arena, 3)[..] else {
+      unreachable!()
+    };
+    arena.add_child(Tree::Logical, root, middle);
+    arena.add_child(Tree::Logical, middle, leaf);
+
+    let under_itself = catch_unwind(AssertUnwindSafe(|| arena.add_child(Tree::Logical, middle, middle)));
+    let under_descendant = catch_unwind(AssertUnwindSafe(|| arena.insert_child(Tree::Logical, leaf, 0, root)));
+
+    assert!(under_itself.is_err() && under_descendant.is_err());
+    assert_eq!(arena.parent(Tree::Logical, middle), Some(root));
+    assert_eq!(arena.parent(Tree::Logical, root), None);
+    assert_eq!(children(&arena, Tree::Logical, leaf), []);
+  }
+
+  // The cycle check is per tree: a logical ancestor can be a visual child.
+  #[test]
+  fn cycle_check_looks_at_one_tree_only() {
+    let mut arena = TreeArena::new();
+    let [root, leaf] = nodes(&mut arena, 2)[..] else {
+      unreachable!()
+    };
+    arena.add_child(Tree::Logical, root, leaf);
+
+    arena.add_child(Tree::Visual, leaf, root);
+
+    assert_eq!(arena.parent(Tree::Visual, root), Some(leaf));
+  }
+
+  // The cycle panic names both nodes and the tree.
+  #[test]
+  #[should_panic(expected = "would create a cycle in the Visual tree")]
+  fn cycle_panic_names_the_tree() {
+    let mut arena = TreeArena::new();
+    let [node] = nodes(&mut arena, 1)[..] else { unreachable!() };
+
+    arena.add_child(Tree::Visual, node, node);
   }
 }
