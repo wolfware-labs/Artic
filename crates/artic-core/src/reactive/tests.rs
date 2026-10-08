@@ -1,5 +1,5 @@
 use crate::reactive::runtime::{ObservableId, ObserverId, Runtime};
-use crate::reactive::{LiveCounts, Memo, Scope, Signal, batch, effect, flush_effects, live_counts};
+use crate::reactive::{LiveCounts, Memo, Scope, Signal, assert_no_reactive_leaks, batch, effect, flush_effects, live_counts};
 use pretty_assertions::assert_eq;
 use std::cell::{Cell, RefCell};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -672,7 +672,7 @@ fn dispose_frees_all_owned_nodes() {
   });
   scope.dispose();
 
-  assert_eq!(live_counts(), before);
+  assert_no_reactive_leaks(before);
 }
 
 // Disposing a parent scope disposes its child scopes and what they own.
@@ -686,7 +686,7 @@ fn dispose_parent_disposes_children() {
 
   parent.dispose();
 
-  assert_eq!(live_counts(), before);
+  assert_no_reactive_leaks(before);
 }
 
 // An effect whose scope was disposed doesn't run again when a signal it read changes.
@@ -730,7 +730,7 @@ fn disposed_child_is_removed_from_parent() {
   child.dispose();
   parent.dispose();
 
-  assert_eq!(live_counts(), before);
+  assert_no_reactive_leaks(before);
 }
 
 // An effect that outlives a memo it read no longer refreshes it, and unsubscribing from it on the
@@ -863,7 +863,7 @@ fn dispose_frees_nodes_created_by_an_owned_effect() {
 
   scope.dispose();
 
-  assert_eq!(live_counts(), before);
+  assert_no_reactive_leaks(before);
 }
 
 // Disposed handles
@@ -946,7 +946,7 @@ fn dispose_twice_is_a_no_op() {
   child.dispose();
   parent.dispose();
 
-  assert_eq!(live_counts(), before);
+  assert_no_reactive_leaks(before);
 }
 
 // A memo that disposes its own scope while computing is freed and unsubscribed from what it read,
@@ -976,5 +976,27 @@ fn memo_can_dispose_its_own_scope() {
       signals: before.signals + 1,
       ..before
     }
+  );
+}
+
+// Leak check
+
+// `assert_no_reactive_leaks` names each count that differs from the baseline.
+#[test]
+fn leak_check_names_the_counts_that_changed() {
+  let baseline = live_counts();
+  Scope::new_root().run(|| Signal::new(0));
+
+  let message = panic_message(|| assert_no_reactive_leaks(baseline));
+
+  assert_eq!(
+    message,
+    format!(
+      "reactive nodes leaked: signals {} -> {}, scopes {} -> {}",
+      baseline.signals,
+      baseline.signals + 1,
+      baseline.scopes,
+      baseline.scopes + 1
+    )
   );
 }

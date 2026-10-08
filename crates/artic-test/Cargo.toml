@@ -9,7 +9,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-artic-core.workspace = true
+artic-core = { workspace = true, features = ["testing"] }
 artic-layout.workspace = true
 artic-render.workspace = true
 artic-platform.workspace = true
