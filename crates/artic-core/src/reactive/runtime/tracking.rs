@@ -1,5 +1,5 @@
 use crate::reactive::runtime::{ObservableId, ObserverId, RUNTIME, Runtime, SignalId};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
 struct Frame {
@@ -9,12 +9,14 @@ struct Frame {
 
 pub struct Tracker {
   frames: RefCell<Vec<Frame>>,
+  has_writes: Cell<bool>,
 }
 
 impl Tracker {
   pub const fn new() -> Self {
     Self {
       frames: RefCell::new(Vec::new()),
+      has_writes: Cell::new(false),
     }
   }
 
@@ -36,6 +38,14 @@ impl Tracker {
 
   fn current_observer(&self) -> Option<ObserverId> {
     self.frames.borrow().last().map(|frame| frame.observer)
+  }
+
+  pub fn note_write(&self) {
+    self.has_writes.set(true);
+  }
+
+  pub fn take_writes(&self) -> bool {
+    self.has_writes.replace(false)
   }
 
   fn record(&self, observable: ObservableId) {

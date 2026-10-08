@@ -5,7 +5,6 @@ use std::thread;
 const MAX_FLUSH_PASSES: usize = 100;
 
 pub struct Scheduler {
-  has_writes: Cell<bool>,
   is_flushing: Cell<bool>,
   batch_depth: Cell<usize>,
 }
@@ -13,29 +12,17 @@ pub struct Scheduler {
 impl Scheduler {
   pub const fn new() -> Self {
     Self {
-      has_writes: Cell::new(false),
       is_flushing: Cell::new(false),
       batch_depth: Cell::new(0),
     }
-  }
-
-  pub fn note_write(&self) {
-    self.has_writes.set(true);
-  }
-
-  fn take_writes(&self) -> bool {
-    self.has_writes.replace(false)
   }
 
   fn start_flush(&self) -> bool {
     self.batch_depth.get() == 0 && !self.is_flushing.replace(true)
   }
 
-  fn end_flush(&self, is_unwinding: bool) {
+  fn end_flush(&self) {
     self.is_flushing.set(false);
-    if is_unwinding {
-      self.has_writes.set(true);
-    }
   }
 
   fn enter_batch(&self) {
@@ -63,7 +50,7 @@ impl Runtime {
     }
     let _flushing = FlushingGuard;
     for _ in 0..MAX_FLUSH_PASSES {
-      if !RUNTIME.with(|runtime| runtime.scheduler.take_writes()) {
+      if !RUNTIME.with(|runtime| runtime.tracker.take_writes()) {
         return;
       }
       let mut index = 0;
@@ -80,7 +67,12 @@ struct FlushingGuard;
 
 impl Drop for FlushingGuard {
   fn drop(&mut self) {
-    RUNTIME.with(|runtime| runtime.scheduler.end_flush(thread::panicking()));
+    RUNTIME.with(|runtime| {
+      runtime.scheduler.end_flush();
+      if thread::panicking() {
+        runtime.tracker.note_write();
+      }
+    });
   }
 }
 
