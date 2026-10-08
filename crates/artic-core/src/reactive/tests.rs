@@ -1,5 +1,5 @@
 use crate::reactive::runtime::{ObservableId, ObserverId, Runtime};
-use crate::reactive::{Memo, Signal, run_tracked};
+use crate::reactive::{Memo, Signal};
 use pretty_assertions::assert_eq;
 use std::cell::Cell;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -8,7 +8,7 @@ use std::rc::Rc;
 /// Creates an observer and runs `action` as that observer, so every signal read inside subscribes it.
 fn observe(action: impl FnOnce()) -> ObserverId {
   let observer = Runtime::create_observer();
-  run_tracked(observer, action);
+  Runtime::run_tracked(observer, action);
   observer
 }
 
@@ -158,7 +158,7 @@ fn run_tracked_marks_observer_clean() {
   });
   count.set(1);
 
-  run_tracked(observer, || {
+  Runtime::run_tracked(observer, || {
     count.get();
   });
 
@@ -172,7 +172,7 @@ fn run_tracked_returns_each_signal_read_once() {
   let second = Signal::new(0);
   let observer = Runtime::create_observer();
 
-  let observables = run_tracked(observer, || {
+  let observables = Runtime::run_tracked(observer, || {
     first.get();
     second.with(|_| ());
     first.get();
@@ -189,7 +189,7 @@ fn run_tracked_returns_each_signal_read_once() {
 fn unsubscribed_observer_is_not_marked_dirty() {
   let count = Signal::new(0);
   let observer = Runtime::create_observer();
-  let observables = run_tracked(observer, || {
+  let observables = Runtime::run_tracked(observer, || {
     count.get();
   });
 
@@ -211,7 +211,7 @@ fn run_tracked_unsubscribes_reads_when_action_panics() {
   let observer = Runtime::create_observer();
 
   let result = catch_unwind(AssertUnwindSafe(|| {
-    run_tracked(observer, || {
+    Runtime::run_tracked(observer, || {
       count.get();
       panic!("action failed");
     })
@@ -228,7 +228,9 @@ fn run_tracked_pops_observer_when_action_panics() {
   let count = Signal::new(0);
   let observer = Runtime::create_observer();
 
-  let result = catch_unwind(AssertUnwindSafe(|| run_tracked(observer, || panic!("action failed"))));
+  let result = catch_unwind(AssertUnwindSafe(|| {
+    Runtime::run_tracked(observer, || panic!("action failed"))
+  }));
 
   let payload = result.expect_err("the panic should reach the caller of run_tracked");
   assert_eq!(payload.downcast_ref::<&str>(), Some(&"action failed"));
@@ -262,8 +264,8 @@ fn nested_run_tracked_subscribes_only_innermost_observer() {
   let outer = Runtime::create_observer();
   let inner = Runtime::create_observer();
 
-  run_tracked(outer, || {
-    run_tracked(inner, || {
+  Runtime::run_tracked(outer, || {
+    Runtime::run_tracked(inner, || {
       count.get();
     });
   });
@@ -281,8 +283,8 @@ fn outer_observer_is_current_again_after_inner_finishes() {
   let outer = Runtime::create_observer();
   let inner = Runtime::create_observer();
 
-  run_tracked(outer, || {
-    run_tracked(inner, || {
+  Runtime::run_tracked(outer, || {
+    Runtime::run_tracked(inner, || {
       inner_signal.get();
     });
     outer_signal.get();
@@ -300,8 +302,8 @@ fn inner_panic_restores_outer_observer() {
   let outer = Runtime::create_observer();
   let inner = Runtime::create_observer();
 
-  run_tracked(outer, || {
-    let result = catch_unwind(AssertUnwindSafe(|| run_tracked(inner, || panic!("inner failed"))));
+  Runtime::run_tracked(outer, || {
+    let result = catch_unwind(AssertUnwindSafe(|| Runtime::run_tracked(inner, || panic!("inner failed"))));
     assert!(result.is_err());
     count.get();
   });
@@ -458,7 +460,7 @@ fn run_tracked_records_a_memo_read_as_the_memo() {
   let double = Memo::new(move || source.get() * 2);
   let observer = Runtime::create_observer();
 
-  let observables = run_tracked(observer, || {
+  let observables = Runtime::run_tracked(observer, || {
     double.get();
     double.with(|_| ());
   });

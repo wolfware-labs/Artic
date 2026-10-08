@@ -50,27 +50,10 @@
 //! observer, so it is still only a write.
 
 mod memo;
-mod observable;
 mod runtime;
 mod signal;
 #[cfg(test)]
 mod tests;
 
-use crate::reactive::runtime::{ObservableId, ObserverId, Runtime};
 pub use memo::Memo;
 pub use signal::Signal;
-use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
-
-pub(crate) fn run_tracked(observer_id: ObserverId, action: impl FnOnce()) -> Vec<ObservableId> {
-  Runtime::mark_observer_as_clean(observer_id);
-  Runtime::push_observer(observer_id);
-  let action_result = catch_unwind(AssertUnwindSafe(action));
-  let observables = Runtime::pop_observer();
-  if let Err(payload) = action_result {
-    for observable in observables {
-      observable.unsubscribe(observer_id);
-    }
-    resume_unwind(payload);
-  }
-  observables
-}

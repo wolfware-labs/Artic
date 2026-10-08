@@ -10,7 +10,7 @@ pub use signal_store::SignalId;
 use signal_store::SignalStore;
 use std::any::Any;
 use std::cell::RefCell;
-use std::panic::resume_unwind;
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::rc::Rc;
 
 thread_local! {
@@ -23,6 +23,23 @@ thread_local! {
 pub enum ObservableId {
   Signal(SignalId),
   Memo(MemoId),
+}
+
+impl ObservableId {
+  pub fn refresh(self) {
+    match self {
+      ObservableId::Signal(_) => {}
+      ObservableId::Memo(memo_id) => Runtime::refresh_memo(memo_id),
+    }
+  }
+
+  pub fn unsubscribe(self, observer_id: ObserverId) {
+    let signal_id = match self {
+      ObservableId::Signal(signal_id) => signal_id,
+      ObservableId::Memo(memo_id) => Runtime::memo_value(memo_id),
+    };
+    RUNTIME.with(|runtime| runtime.signals.remove_subscriber(signal_id, observer_id));
+  }
 }
 
 pub struct Runtime {
@@ -96,10 +113,6 @@ impl Runtime {
     })
   }
 
-  pub fn unsubscribe(signal_id: SignalId, observer_id: ObserverId) {
-    RUNTIME.with(|runtime| runtime.signals.remove_subscriber(signal_id, observer_id))
-  }
-
   #[cfg_attr(
     not(test),
     expect(dead_code, reason = "used by Effect (#10); only tests call it until then")
@@ -108,14 +121,14 @@ impl Runtime {
     RUNTIME.with(|runtime| runtime.observers.create_observer())
   }
 
-  pub fn push_observer(observer_id: ObserverId) {
+  fn push_observer(observer_id: ObserverId) {
     RUNTIME.with(|runtime| {
       runtime.observers.push_observer(observer_id);
       runtime.observables.borrow_mut().push(Vec::new());
     })
   }
 
-  pub fn pop_observer() -> Vec<ObservableId> {
+  fn pop_observer() -> Vec<ObservableId> {
     RUNTIME.with(|runtime| {
       runtime.observers.pop_observer();
       runtime.observables.borrow_mut().pop().unwrap_or_default()
@@ -132,14 +145,6 @@ impl Runtime {
     })
   }
 
-  pub fn mark_observer_as_clean(observer_id: ObserverId) {
-    RUNTIME.with(|runtime| runtime.observers.mark_as_clean(observer_id))
-  }
-
-  pub fn mark_observer_as_dirty(observer_id: ObserverId) {
-    RUNTIME.with(|runtime| runtime.observers.mark_as_dirty(&[observer_id]))
-  }
-
   pub fn is_observer_dirty(observer_id: ObserverId) -> bool {
     RUNTIME.with(|runtime| runtime.observers.is_dirty(observer_id))
   }
@@ -152,32 +157,63 @@ impl Runtime {
     })
   }
 
-  pub fn memo_observer(memo_id: MemoId) -> ObserverId {
-    RUNTIME.with(|runtime| runtime.memos.observer(memo_id))
-  }
-
   pub fn memo_value(memo_id: MemoId) -> SignalId {
     RUNTIME.with(|runtime| runtime.memos.value(memo_id))
   }
 
-  pub fn memo_compute(memo_id: MemoId) -> Rc<dyn Fn()> {
-    RUNTIME.with(|runtime| runtime.memos.compute(memo_id))
+  pub fn run_tracked(observer_id: ObserverId, action: impl FnOnce()) -> Vec<ObservableId> {
+    RUNTIME.with(|runtime| runtime.observers.mark_as_clean(observer_id));
+    Self::push_observer(observer_id);
+    let action_result = catch_unwind(AssertUnwindSafe(action));
+    let observables = Self::pop_observer();
+    if let Err(payload) = action_result {
+      for observable in observables {
+        observable.unsubscribe(observer_id);
+      }
+      resume_unwind(payload);
+    }
+    observables
   }
 
-  pub fn memo_observables(memo_id: MemoId) -> Vec<ObservableId> {
-    RUNTIME.with(|runtime| runtime.memos.observables(memo_id))
-  }
-
-  pub fn set_memo_observables(memo_id: MemoId, observables: Vec<ObservableId>) {
-    RUNTIME.with(|runtime| runtime.memos.set_observables(memo_id, observables))
-  }
-
-  pub fn is_memo_computing(memo_id: MemoId) -> bool {
-    RUNTIME.with(|runtime| runtime.memos.is_computing(memo_id))
-  }
-
-  pub fn set_memo_computing(memo_id: MemoId, is_computing: bool) {
-    RUNTIME.with(|runtime| runtime.memos.set_computing(memo_id, is_computing))
+  pub fn refresh_memo(memo_id: MemoId) {
+    let (observer_id, observables, is_computing) = RUNTIME.with(|runtime| {
+      (
+        runtime.memos.observer(memo_id),
+        runtime.memos.observables(memo_id),
+        runtime.memos.is_computing(memo_id),
+      )
+    });
+    if is_computing {
+      panic!("memo read while it is being computed; a memo can't depend on itself");
+    }
+    for observable in &observables {
+      if Self::is_observer_dirty(observer_id) {
+        break;
+      }
+      observable.refresh();
+    }
+    if !Self::is_observer_dirty(observer_id) {
+      return;
+    }
+    for observable in observables {
+      observable.unsubscribe(observer_id);
+    }
+    let compute = RUNTIME.with(|runtime| {
+      runtime.memos.set_observables(memo_id, Vec::new());
+      runtime.memos.set_computing(memo_id, true);
+      runtime.memos.compute(memo_id)
+    });
+    let compute_result = catch_unwind(AssertUnwindSafe(|| Self::run_tracked(observer_id, &*compute)));
+    RUNTIME.with(|runtime| {
+      runtime.memos.set_computing(memo_id, false);
+      match compute_result {
+        Ok(observables) => runtime.memos.set_observables(memo_id, observables),
+        Err(payload) => {
+          runtime.observers.mark_as_dirty(&[observer_id]);
+          resume_unwind(payload);
+        }
+      }
+    })
   }
 
   fn attach_current_observer(&self, signal_id: SignalId) {
