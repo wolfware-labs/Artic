@@ -35,6 +35,10 @@ impl MemoStore {
     }))
   }
 
+  pub fn count(&self) -> usize {
+    self.slots.borrow().len()
+  }
+
   pub fn observer(&self, memo_id: MemoId) -> ObserverId {
     self.with_slot(memo_id, |slot| slot.observer)
   }

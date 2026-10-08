@@ -104,6 +104,10 @@ impl SignalStore {
     action_result
   }
 
+  pub fn count(&self) -> usize {
+    self.slots.borrow().len()
+  }
+
   pub fn add_subscriber(&self, signal_id: SignalId, observer_id: ObserverId) {
     self.get_slot(signal_id).add_subscriber(observer_id);
   }

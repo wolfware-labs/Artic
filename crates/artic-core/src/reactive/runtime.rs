@@ -7,6 +7,7 @@ mod scheduling;
 mod signal_store;
 mod tracking;
 
+use crate::reactive::LiveCounts;
 pub use effect_store::EffectId;
 use effect_store::EffectStore;
 pub use memo_store::MemoId;
@@ -141,6 +142,14 @@ impl Runtime {
     });
     Self::refresh_effect(effect_id);
     effect_id
+  }
+
+  pub fn live_counts() -> LiveCounts {
+    RUNTIME.with(|runtime| LiveCounts {
+      signals: runtime.signals.count(),
+      memos: runtime.memos.count(),
+      effects: runtime.effects.count(),
+    })
   }
 
   fn mark_observers_as_dirty(&self, signal_id: SignalId) {

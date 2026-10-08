@@ -37,6 +37,10 @@ impl EffectStore {
     effect_id
   }
 
+  pub fn count(&self) -> usize {
+    self.slots.borrow().len()
+  }
+
   pub fn nth_created(&self, index: usize) -> Option<EffectId> {
     self.creation_order.borrow().get(index).copied()
   }

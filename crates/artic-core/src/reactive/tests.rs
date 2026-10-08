@@ -1,5 +1,5 @@
 use crate::reactive::runtime::{ObservableId, ObserverId, Runtime};
-use crate::reactive::{Effect, Memo, Signal, batch, flush_effects};
+use crate::reactive::{Effect, LiveCounts, Memo, Signal, batch, flush_effects, live_counts};
 use pretty_assertions::assert_eq;
 use std::cell::{Cell, RefCell};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -566,4 +566,28 @@ fn nested_batch_flushes_once() {
   });
 
   assert_eq!(runs.get(), 2);
+}
+
+// Live counts
+
+// Creating a signal, a memo and an effect raises each count; a memo also adds the signal that holds
+// its value.
+#[test]
+fn live_counts_track_created_nodes() {
+  let before = live_counts();
+
+  let count = Signal::new(0);
+  let double = Memo::new(move || count.get() * 2);
+  Effect::new(move || {
+    double.get();
+  });
+
+  assert_eq!(
+    live_counts(),
+    LiveCounts {
+      signals: before.signals + 2,
+      memos: before.memos + 1,
+      effects: before.effects + 1,
+    }
+  );
 }

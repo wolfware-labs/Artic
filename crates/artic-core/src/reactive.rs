@@ -82,6 +82,7 @@
 //! observer, so it is still only a write.
 
 mod effect;
+mod live_counts;
 mod memo;
 mod runtime;
 mod signal;
@@ -89,6 +90,7 @@ mod signal;
 mod tests;
 
 pub use effect::Effect;
+pub use live_counts::{LiveCounts, live_counts};
 pub use memo::Memo;
 pub use signal::Signal;
 
