@@ -2,25 +2,27 @@ use crate::graph::{Graph, GraphSpec, NodeKind, Source};
 use crate::ops::Op;
 use artic_core::reactive::{batch, flush_effects};
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 /// One run of an effect: its node index and the values it read, in input order.
 #[derive(Debug, Clone)]
 pub struct Run {
   pub effect: usize,
-  #[expect(dead_code, reason = "the oracle compares it with its own values (#12)")]
   pub seen: Vec<i64>,
 }
 
-/// A built graph, a model of which of its scopes are alive, and a log of every effect run. It
-/// applies ops and checks the run log after each one.
+/// A built graph, a model of its signal values and live scopes, and a log of every effect run. It
+/// applies ops and checks the run log after each one against an oracle that recomputes every value
+/// from the signal values, with no caching.
 pub struct Harness {
   spec: GraphSpec,
   graph: Graph,
+  signal_values: Vec<i64>,
   alive_scopes: Vec<bool>,
   log: Rc<RefCell<Vec<Run>>>,
   checked_runs: usize,
+  last_seen: HashMap<usize, Vec<i64>>,
 }
 
 impl Harness {
@@ -31,13 +33,23 @@ impl Harness {
     let graph = Graph::build(&spec, move |effect, seen| {
       log_in_effects.borrow_mut().push(Run { effect, seen })
     });
+    let signal_values = spec
+      .nodes
+      .iter()
+      .map(|node| match node.kind {
+        NodeKind::Signal { initial } => initial,
+        _ => 0,
+      })
+      .collect();
     let alive_scopes = vec![true; spec.scopes.len()];
     let mut harness = Harness {
       spec,
       graph,
+      signal_values,
       alive_scopes,
       log,
       checked_runs: 0,
+      last_seen: HashMap::new(),
     };
     let effects = harness
       .spec
@@ -85,18 +97,20 @@ impl Harness {
     self.graph.root().dispose();
   }
 
-  /// Sets the `pick`-th live signal, if there is one.
-  fn set(&self, pick: usize, value: i64) {
+  /// Sets the `pick`-th live signal, if there is one, in the graph and in the model.
+  fn set(&mut self, pick: usize, value: i64) {
     let signals: Vec<usize> = (0..self.spec.nodes.len())
       .filter(|&index| matches!(self.spec.nodes[index].kind, NodeKind::Signal { .. }) && self.is_alive(index))
       .collect();
     if signals.is_empty() {
       return;
     }
-    let Some(Source::Signal(signal)) = self.graph.sources[signals[pick % signals.len()]] else {
+    let index = signals[pick % signals.len()];
+    let Some(Source::Signal(signal)) = self.graph.sources[index] else {
       unreachable!("signal nodes build signals");
     };
     signal.set(value);
+    self.signal_values[index] = value;
   }
 
   /// Disposes the `pick`-th live scope other than the root, if there is one, and marks its subtree
@@ -117,6 +131,23 @@ impl Harness {
     }
   }
 
+  /// The oracle: the value of a signal or memo node, recomputed from the signal values.
+  fn expected_value(&self, node: usize) -> i64 {
+    match &self.spec.nodes[node].kind {
+      NodeKind::Signal { .. } => self.signal_values[node],
+      NodeKind::Memo { inputs, modulus } => inputs.iter().map(|input| self.expected_value(*input)).sum::<i64>() % modulus,
+      NodeKind::Effect { .. } => unreachable!("effects are never read"),
+    }
+  }
+
+  /// The values the oracle expects an effect to read.
+  fn expected_seen(&self, effect: usize) -> Vec<i64> {
+    let NodeKind::Effect { inputs } = &self.spec.nodes[effect].kind else {
+      unreachable!("only effects run");
+    };
+    inputs.iter().map(|input| self.expected_value(*input)).collect()
+  }
+
   fn is_alive(&self, node: usize) -> bool {
     self.alive_scopes[self.spec.nodes[node].scope]
   }
@@ -130,18 +161,32 @@ impl Harness {
     );
   }
 
-  /// Checks the runs since the last flush point: each effect ran at most once, and only if alive.
+  /// Checks the runs since the last flush point: each effect ran at most once, only if alive, and
+  /// read the values the oracle expects. Then checks that every live effect's latest run read the
+  /// current values, so none missed an update.
   fn check_flush(&mut self) {
-    let log = self.log.borrow();
+    let runs = self.log.borrow()[self.checked_runs..].to_vec();
     let mut ran = HashSet::new();
-    for run in &log[self.checked_runs..] {
+    for run in runs {
       assert!(
         self.is_alive(run.effect),
         "effect {} ran after its scope was disposed",
         run.effect
       );
       assert!(ran.insert(run.effect), "effect {} ran twice in one flush", run.effect);
+      assert_eq!(
+        run.seen,
+        self.expected_seen(run.effect),
+        "effect {} saw an inconsistent snapshot",
+        run.effect
+      );
+      self.last_seen.insert(run.effect, run.seen);
     }
-    self.checked_runs = log.len();
+    self.checked_runs = self.log.borrow().len();
+    for (&effect, seen) in &self.last_seen {
+      if self.is_alive(effect) {
+        assert_eq!(seen, &self.expected_seen(effect), "effect {effect} missed an update");
+      }
+    }
   }
 }

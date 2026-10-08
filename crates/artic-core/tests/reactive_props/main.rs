@@ -24,10 +24,11 @@ proptest! {
   }
 
   // Under any sequence of sets, batches, flushes and disposals, effects run only at flush points,
-  // at most once per flush, and never after their scope is disposed; disposing the root at the end
-  // frees every node.
+  // at most once per flush, and never after their scope is disposed. Every run reads the values an
+  // uncached recomputation expects, and after each flush every live effect has read the current
+  // ones. Disposing the root at the end frees every node.
   #[test]
-  fn random_edits_run_effects_once_per_flush(spec in graph(), ops in ops()) {
+  fn random_edits_keep_effects_consistent(spec in graph(), ops in ops()) {
     let baseline = live_counts();
     let mut harness = Harness::new(spec);
 
