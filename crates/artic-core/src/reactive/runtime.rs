@@ -1,9 +1,11 @@
 mod memo_store;
+mod observable;
 mod observer_store;
 mod signal_store;
 
 pub use memo_store::MemoId;
 use memo_store::MemoStore;
+pub use observable::ObservableId;
 pub use observer_store::ObserverId;
 use observer_store::ObserverStore;
 pub use signal_store::SignalId;
@@ -17,29 +19,6 @@ thread_local! {
   static RUNTIME: Runtime  = const {
     Runtime::new()
   };
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum ObservableId {
-  Signal(SignalId),
-  Memo(MemoId),
-}
-
-impl ObservableId {
-  pub fn refresh(self) {
-    match self {
-      ObservableId::Signal(_) => {}
-      ObservableId::Memo(memo_id) => Runtime::refresh_memo(memo_id),
-    }
-  }
-
-  pub fn unsubscribe(self, observer_id: ObserverId) {
-    let signal_id = match self {
-      ObservableId::Signal(signal_id) => signal_id,
-      ObservableId::Memo(memo_id) => Runtime::memo_value(memo_id),
-    };
-    RUNTIME.with(|runtime| runtime.signals.remove_subscriber(signal_id, observer_id));
-  }
 }
 
 pub struct Runtime {
