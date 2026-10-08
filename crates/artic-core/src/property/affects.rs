@@ -33,6 +33,12 @@ impl Affects {
     self.0 & other.0 == other.0
   }
 
+  /// Returns `self` with the stages in `other` removed.
+  #[must_use]
+  pub const fn without(self, other: Affects) -> Affects {
+    Affects(self.0 & !other.0)
+  }
+
   /// Returns `true` if no stage is set.
   #[must_use]
   pub const fn is_empty(self) -> bool {

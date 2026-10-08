@@ -1,9 +1,13 @@
 use crate::Object;
+use crate::property::Affects;
 use crate::tree::{NodeId, Tree};
+use std::cell::Cell;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct TreeNode {
   pub object: Box<dyn Object>,
+  pub dirty: Rc<Cell<Affects>>,
   logical: Links,
   visual: Links,
 }
@@ -16,8 +20,11 @@ pub struct Links {
 
 impl TreeNode {
   pub fn new(object: Box<dyn Object>) -> Self {
+    let dirty = Rc::new(Cell::new(Affects::LAYOUT | Affects::RENDER));
+    object.visit_properties(&mut |property| property.attach(Rc::clone(&dirty)));
     Self {
       object,
+      dirty,
       logical: Links::default(),
       visual: Links::default(),
     }

@@ -1,5 +1,6 @@
 //! The [`Object`] trait that every node type in the tree implements.
 
+use crate::property::AnyProperty;
 use std::any::Any;
 use std::fmt::Debug;
 
@@ -32,4 +33,11 @@ use std::fmt::Debug;
 ///
 /// assert_eq!(arena.get_as::<Label>(id).map(|label| label.text.as_str()), Some("hello"));
 /// ```
-pub trait Object: Debug + Any {}
+pub trait Object: Debug + Any {
+  /// Calls `visit` with each of the node's [`Property`](crate::property::Property) fields.
+  ///
+  /// The tree uses it to connect the properties to their node when the node is allocated, so that
+  /// changes mark the node dirty, and to find a property by its key. A node type without properties
+  /// keeps the default, which visits nothing.
+  fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+}

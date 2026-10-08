@@ -1,5 +1,7 @@
-use crate::property::{Precedence, PropertyKey};
+use crate::property::{Affects, Precedence, PropertyKey};
 use crate::reactive::Change;
+use std::cell::Cell;
+use std::rc::Rc;
 
 const OVERRIDES: usize = 5;
 
@@ -9,6 +11,7 @@ where
   T: 'static,
 {
   key: &'static PropertyKey<T>,
+  dirty: Option<Rc<Cell<Affects>>>,
   overrides: [Option<T>; OVERRIDES],
   default: T,
 }
@@ -20,6 +23,7 @@ where
   pub fn new(key: &'static PropertyKey<T>, default: T) -> Self {
     Self {
       key,
+      dirty: None,
       overrides: [const { None }; OVERRIDES],
       default,
     }
@@ -27,6 +31,10 @@ where
 
   pub fn key(&self) -> &'static PropertyKey<T> {
     self.key
+  }
+
+  pub fn attach(&mut self, dirty: Rc<Cell<Affects>>) {
+    self.dirty = Some(dirty);
   }
 
   pub fn effective(&self) -> &T {
@@ -56,17 +64,28 @@ where
         self.default = value;
       }
     }
-    if level >= winner { Change::Visible } else { Change::Hidden }
+    if level >= winner {
+      self.visible_change()
+    } else {
+      Change::Hidden
+    }
   }
 
   pub fn clear(&mut self, level: Precedence) -> Change {
     let winner = self.effective_source();
     let index = Self::override_index(level).expect("the Default level can't be cleared");
     if self.overrides[index].take().is_some() && level == winner {
-      Change::Visible
+      self.visible_change()
     } else {
       Change::Hidden
     }
+  }
+
+  fn visible_change(&self) -> Change {
+    if let Some(dirty) = &self.dirty {
+      dirty.set(dirty.get() | self.key.affects());
+    }
+    Change::Visible
   }
 
   fn override_index(level: Precedence) -> Option<usize> {

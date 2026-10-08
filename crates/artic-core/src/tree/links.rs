@@ -189,7 +189,7 @@ impl TreeArena {
   }
 
   #[track_caller]
-  fn node(&self, id: NodeId) -> &TreeNode {
+  pub(super) fn node(&self, id: NodeId) -> &TreeNode {
     match self.inner.get(id.0) {
       Some(node) => node,
       None => panic!("node {id:?} is not in the arena"),
@@ -197,7 +197,7 @@ impl TreeArena {
   }
 
   #[track_caller]
-  fn node_mut(&mut self, id: NodeId) -> &mut TreeNode {
+  pub(super) fn node_mut(&mut self, id: NodeId) -> &mut TreeNode {
     match self.inner.get_mut(id.0) {
       Some(node) => node,
       None => panic!("node {id:?} is not in the arena"),

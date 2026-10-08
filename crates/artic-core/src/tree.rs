@@ -9,6 +9,7 @@
 //! [`Tree`] to say which one, such as [`add_child`](TreeArena::add_child) and
 //! [`descendants`](TreeArena::descendants).
 
+mod dirty;
 mod links;
 mod node;
 
