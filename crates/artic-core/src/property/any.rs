@@ -30,6 +30,11 @@ pub trait AnyProperty {
   /// adds the key's [`Affects`] to them.
   fn attach(&self, dirty: Rc<Cell<Affects>>);
 
+  /// Makes the property's `Inherited` level follow `source`, a property of the same kind on a
+  /// logical ancestor, or stop following anything when `source` is `None`. The tree calls it when
+  /// the node moves; a property of another kind is ignored.
+  fn inherit_from(&self, source: Option<&dyn AnyProperty>);
+
   /// The property as `Any`, to get the typed `Property<T>` back.
   fn as_any(&self) -> &dyn Any;
 }
@@ -47,6 +52,11 @@ where
       levels.attach(dirty);
       Change::Hidden
     });
+  }
+
+  fn inherit_from(&self, source: Option<&dyn AnyProperty>) {
+    let source = source.and_then(|source| source.as_any().downcast_ref::<Property<T>>());
+    self.follow(source.copied());
   }
 
   fn as_any(&self) -> &dyn Any {

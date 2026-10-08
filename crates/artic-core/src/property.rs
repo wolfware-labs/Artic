@@ -33,7 +33,7 @@ mod any;
 mod key;
 mod levels;
 
-use crate::reactive::Signal;
+use crate::reactive::{Change, Signal};
 pub use affects::Affects;
 pub use any::{AnyProperty, KeyId};
 pub use key::PropertyKey;
@@ -111,6 +111,15 @@ impl<T> Clone for Property<T> {
 
 impl<T> Copy for Property<T> {}
 
+/// Two handles are equal when they refer to the same property, whatever its value.
+impl<T> PartialEq for Property<T> {
+  fn eq(&self, other: &Self) -> bool {
+    self.0 == other.0
+  }
+}
+
+impl<T> Eq for Property<T> {}
+
 impl<T> Property<T>
 where
   T: PartialEq,
@@ -134,7 +143,7 @@ where
   /// Use this instead of [`get`](Property::get) to read a value that isn't `Clone`, or part of one,
   /// without cloning it.
   pub fn with<TResult>(&self, function: impl FnOnce(&T) -> TResult) -> TResult {
-    self.0.with(|levels| function(levels.effective()))
+    self.0.with(|levels| levels.with_effective(function))
   }
 
   /// Returns the level that supplies the effective value.
@@ -170,8 +179,14 @@ where
   /// If a higher level holds a value, the effective value doesn't change and readers aren't marked
   /// dirty; `value` shows once the levels above it are cleared. Setting a level to the value it
   /// already holds does nothing.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `level` is [`Precedence::Inherited`]: that level follows the logical tree, and the
+  /// tree sets it.
   pub fn set_at(&self, level: Precedence, value: T) {
-    self.0.update_with(|levels| levels.set(level, value));
+    assert_ne!(level, Precedence::Inherited, "the Inherited level follows the logical tree");
+    self.edit(|levels| levels.set(level, value));
   }
 
   /// Empties `level`, so the next level down that holds a value becomes effective.
@@ -180,10 +195,77 @@ where
   ///
   /// # Panics
   ///
-  /// Panics if `level` is [`Precedence::Default`]: a property always has a default value.
+  /// Panics if `level` is [`Precedence::Default`], because a property always has a default value,
+  /// or [`Precedence::Inherited`], because the tree sets that level.
   pub fn clear(&self, level: Precedence) {
     assert_ne!(level, Precedence::Default, "the Default level can't be cleared");
-    self.0.update_with(|levels| levels.clear(level));
+    assert_ne!(level, Precedence::Inherited, "the Inherited level follows the logical tree");
+    self.edit(|levels| levels.clear(level));
+  }
+
+  /// Makes the `Inherited` level follow `source`, or no property, and keeps `source`'s followers
+  /// list in step.
+  fn follow(&self, source: Option<Property<T>>) {
+    let previous = self.0.with_untracked(Levels::inherited);
+    if previous == source {
+      return;
+    }
+    if let Some(previous) = previous.filter(|previous| previous.0.is_alive()) {
+      previous.0.update_with(|levels| {
+        levels.remove_follower(*self);
+        Change::Hidden
+      });
+    }
+    if let Some(source) = source {
+      source.0.update_with(|levels| {
+        levels.add_follower(*self);
+        Change::Hidden
+      });
+    }
+    self.edit(|levels| levels.set_inherited(source));
+  }
+
+  /// Applies `edit` to the levels and, if readers can see it, marks the nodes of the followers that
+  /// inherit the new value dirty.
+  fn edit(&self, edit: impl FnOnce(&mut Levels<T>) -> Change) {
+    let mut change = Change::Hidden;
+    self.0.update_with(|levels| {
+      change = edit(levels);
+      change
+    });
+    if change == Change::Visible {
+      self.mark_followers_dirty();
+    }
+  }
+
+  /// Marks dirty the node of every follower whose effective value comes from this property, and
+  /// passes the walk on to their own followers. Reads are untracked, so a write inside an effect
+  /// doesn't subscribe it to every descendant. Followers whose scope was disposed are dropped.
+  fn mark_followers_dirty(&self) {
+    let followers = self.0.with_untracked(|levels| levels.followers().to_vec());
+    let mut has_disposed = false;
+    for follower in followers {
+      if !follower.0.is_alive() {
+        has_disposed = true;
+        continue;
+      }
+      let inherits_from_here = follower.0.with_untracked(|levels| {
+        let inherits = levels.effective_source() == Precedence::Inherited;
+        if inherits {
+          levels.mark_dirty();
+        }
+        inherits
+      });
+      if inherits_from_here {
+        follower.mark_followers_dirty();
+      }
+    }
+    if has_disposed {
+      self.0.update_with(|levels| {
+        levels.retain_followers(|follower| follower.0.is_alive());
+        Change::Hidden
+      });
+    }
   }
 }
 
@@ -202,7 +284,7 @@ where
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::reactive::{effect, flush_effects};
+  use crate::reactive::{Scope, effect, flush_effects};
   use pretty_assertions::assert_eq;
   use static_assertions::{assert_impl_all, assert_not_impl_any};
   use std::cell::Cell;
@@ -222,6 +304,25 @@ mod tests {
     Precedence::Local,
     Precedence::Animation,
   ];
+
+  /// Puts `value` at `level` of `property`. The Inherited level gets it from a new property to
+  /// follow, because only the tree sets that level directly.
+  fn put(property: Property<i32>, level: Precedence, value: i32) {
+    if level == Precedence::Inherited {
+      property.follow(Some(Property::new(&TEST, value)));
+    } else {
+      property.set_at(level, value);
+    }
+  }
+
+  /// Empties `level` of `property`, unfollowing for the Inherited level.
+  fn take(property: Property<i32>, level: Precedence) {
+    if level == Precedence::Inherited {
+      property.follow(None);
+    } else {
+      property.clear(level);
+    }
+  }
 
   // Sorting the levels puts them in priority order, lowest first.
   #[test]
@@ -257,8 +358,8 @@ mod tests {
       let (lower, higher) = (pair[0], pair[1]);
       let property = Property::new(&TEST, -1);
 
-      property.set_at(lower, 1);
-      property.set_at(higher, 2);
+      put(property, lower, 1);
+      put(property, higher, 2);
 
       assert_eq!(property.get(), 2, "{higher:?} over {lower:?}");
     }
@@ -337,11 +438,11 @@ mod tests {
     assert_eq!(property.effective_source(), Precedence::Default);
 
     for level in &LEVELS[1..] {
-      property.set_at(*level, 1);
+      put(property, *level, 1);
       assert_eq!(property.effective_source(), *level);
     }
     for pair in LEVELS.windows(2).rev() {
-      property.clear(pair[1]);
+      take(property, pair[1]);
       assert_eq!(property.effective_source(), pair[0]);
     }
   }
@@ -384,5 +485,131 @@ mod tests {
     assert!(!affects.contains(Affects::LAYOUT));
     assert!((affects | Affects::LAYOUT).contains(Affects::LAYOUT | Affects::RENDER));
     assert!(Affects::NONE.is_empty() && !affects.is_empty());
+  }
+
+  // Inheritance
+
+  // A property following another reads its effective value through the link, so a change to the
+  // source shows at once, with no flush.
+  #[test]
+  fn inherited_level_reads_through_the_link() {
+    let parent = Property::new(&TEST, 0);
+    let child = Property::new(&TEST, 0);
+    parent.set(20);
+
+    child.follow(Some(parent));
+    assert_eq!(child.get(), 20);
+    assert_eq!(child.effective_source(), Precedence::Inherited);
+
+    parent.set(24);
+    assert_eq!(child.get(), 24);
+  }
+
+  // A value set above the Inherited level wins over the followed property.
+  #[test]
+  fn local_value_wins_over_the_link() {
+    let parent = Property::new(&TEST, 20);
+    let child = Property::new(&TEST, 0);
+    child.follow(Some(parent));
+
+    child.set(12);
+    parent.set(30);
+
+    assert_eq!(child.get(), 12);
+  }
+
+  // An effect reading a following property reruns when the followed property changes.
+  #[test]
+  fn effect_on_follower_reruns_when_the_source_changes() {
+    let parent = Property::new(&TEST, 20);
+    let child = Property::new(&TEST, 0);
+    child.follow(Some(parent));
+    let seen = Rc::new(Cell::new(0));
+    let seen_in_effect = Rc::clone(&seen);
+    effect(move || seen_in_effect.set(child.get()));
+
+    parent.set(24);
+    flush_effects();
+
+    assert_eq!(seen.get(), 24);
+  }
+
+  // A visible change marks dirty the nodes of followers that inherit it, through every level of
+  // followers, and stops at a follower with its own value.
+  #[test]
+  fn visible_change_marks_inheriting_followers_dirty() {
+    let [root, middle, leaf, blocked] = [(); 4].map(|_| Property::new(&TEST, 0));
+    let [middle_dirty, leaf_dirty, blocked_dirty] = [(); 3].map(|_| Rc::new(Cell::new(Affects::NONE)));
+    middle.attach(Rc::clone(&middle_dirty));
+    leaf.attach(Rc::clone(&leaf_dirty));
+    blocked.attach(Rc::clone(&blocked_dirty));
+    middle.follow(Some(root));
+    leaf.follow(Some(middle));
+    blocked.follow(Some(middle));
+    blocked.set(5);
+    for dirty in [&middle_dirty, &leaf_dirty, &blocked_dirty] {
+      dirty.set(Affects::NONE);
+    }
+
+    root.set(1);
+
+    assert_eq!(middle_dirty.get(), Affects::LAYOUT);
+    assert_eq!(leaf_dirty.get(), Affects::LAYOUT);
+    assert_eq!(blocked_dirty.get(), Affects::NONE);
+  }
+
+  // A follower whose scope was disposed is skipped and dropped from the followers list.
+  #[test]
+  fn disposed_follower_is_dropped() {
+    let parent = Property::new(&TEST, 0);
+    let scope = Scope::new_root();
+    let child = scope.run(|| Property::new(&TEST, 0));
+    child.follow(Some(parent));
+
+    scope.dispose();
+    parent.set(1);
+
+    assert_eq!(parent.0.with_untracked(|levels| levels.followers().len()), 0);
+  }
+
+  // Following another property moves the follower from the old source's list to the new one's.
+  #[test]
+  fn refollowing_moves_the_follower() {
+    let [first, second, child] = [(); 3].map(|_| Property::new(&TEST, 0));
+    child.follow(Some(first));
+
+    child.follow(Some(second));
+
+    assert_eq!(first.0.with_untracked(|levels| levels.followers().len()), 0);
+    assert_eq!(second.0.with_untracked(|levels| levels.followers().to_vec()), [child]);
+  }
+
+  // Writing the Inherited level directly panics: the tree sets it.
+  #[test]
+  #[should_panic(expected = "the Inherited level follows the logical tree")]
+  fn set_at_inherited_is_rejected() {
+    Property::new(&TEST, 0).set_at(Precedence::Inherited, 1);
+  }
+
+  // Starting or stopping to follow a source is a visible change while nothing above the Inherited
+  // level is set: readers rerun and the node is marked dirty.
+  #[test]
+  fn following_or_unfollowing_a_source_is_visible() {
+    let parent = Property::new(&TEST, 20);
+    let child = Property::new(&TEST, 0);
+    let dirty = Rc::new(Cell::new(Affects::NONE));
+    child.attach(Rc::clone(&dirty));
+    let seen = Rc::new(Cell::new(-1));
+    let seen_in_effect = Rc::clone(&seen);
+    effect(move || seen_in_effect.set(child.get()));
+
+    child.follow(Some(parent));
+    flush_effects();
+    assert_eq!((seen.get(), dirty.get()), (20, Affects::LAYOUT));
+
+    dirty.set(Affects::NONE);
+    child.follow(None);
+    flush_effects();
+    assert_eq!((seen.get(), dirty.get()), (0, Affects::LAYOUT));
   }
 }
