@@ -59,3 +59,21 @@ mod tests;
 pub use effect::Effect;
 pub use memo::Memo;
 pub use signal::Signal;
+
+/// Runs every effect whose dependencies changed since it last ran.
+///
+/// Effects run in the order they were created, each at most once per pass. If an effect writes a
+/// signal during the flush, another pass runs, so when `flush_effects` returns every effect has
+/// seen the latest values. Effects that never settle, because they keep writing each other's
+/// inputs, make it panic after 100 passes.
+///
+/// Calling it while a flush is already running, for example from inside an effect, does nothing:
+/// the running flush picks up the change.
+///
+/// # Panics
+///
+/// Panics if the effects don't settle after 100 passes. A panic inside an effect continues to the
+/// caller; that effect and the effects not yet visited run again on the next flush.
+pub fn flush_effects() {
+  runtime::Runtime::flush_effects();
+}

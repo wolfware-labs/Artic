@@ -15,22 +15,30 @@ struct EffectSlot {
 
 pub struct EffectStore {
   slots: RefCell<Arena<EffectSlot>>,
+  creation_order: RefCell<Vec<EffectId>>,
 }
 
 impl EffectStore {
   pub const fn new() -> Self {
     Self {
       slots: RefCell::new(Arena::new()),
+      creation_order: RefCell::new(Vec::new()),
     }
   }
 
   pub fn alloc(&self, observer: ObserverId, run: Rc<RefCell<dyn FnMut()>>) -> EffectId {
-    EffectId(self.slots.borrow_mut().alloc(EffectSlot {
+    let effect_id = EffectId(self.slots.borrow_mut().alloc(EffectSlot {
       observer,
       run,
       observables: Rc::from([]),
       is_running: false,
-    }))
+    }));
+    self.creation_order.borrow_mut().push(effect_id);
+    effect_id
+  }
+
+  pub fn nth_created(&self, index: usize) -> Option<EffectId> {
+    self.creation_order.borrow().get(index).copied()
   }
 
   pub fn observer(&self, effect_id: EffectId) -> ObserverId {

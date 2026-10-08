@@ -14,10 +14,12 @@ use observer_store::ObserverStore;
 pub use signal_store::SignalId;
 use signal_store::SignalStore;
 use std::any::Any;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::rc::Rc;
 use std::thread;
+
+const MAX_FLUSH_PASSES: usize = 100;
 
 thread_local! {
   static RUNTIME: Runtime  = const {
@@ -31,6 +33,8 @@ pub struct Runtime {
   memos: MemoStore,
   effects: EffectStore,
   observables: RefCell<Vec<Vec<ObservableId>>>,
+  has_changes: Cell<bool>,
+  is_flushing: Cell<bool>,
 }
 
 impl Runtime {
@@ -41,6 +45,8 @@ impl Runtime {
       memos: MemoStore::new(),
       effects: EffectStore::new(),
       observables: RefCell::new(Vec::new()),
+      has_changes: Cell::new(false),
+      is_flushing: Cell::new(false),
     }
   }
 
@@ -86,6 +92,21 @@ impl Runtime {
   }
 
   pub fn with_signal_mut_value<TValue>(signal_id: SignalId, action: impl FnOnce(&mut TValue))
+  where
+    TValue: Any,
+  {
+    RUNTIME.with(|runtime| runtime.has_changes.set(true));
+    Self::write_signal_value(signal_id, action);
+  }
+
+  pub fn set_memo_value<TValue>(value_id: SignalId, value: TValue)
+  where
+    TValue: Any,
+  {
+    Self::write_signal_value(value_id, |v| *v = value);
+  }
+
+  fn write_signal_value<TValue>(signal_id: SignalId, action: impl FnOnce(&mut TValue))
   where
     TValue: Any,
   {
@@ -228,6 +249,24 @@ impl Runtime {
     })
   }
 
+  pub fn flush_effects() {
+    if RUNTIME.with(|runtime| runtime.is_flushing.replace(true)) {
+      return;
+    }
+    let _flushing = FlushingGuard;
+    for _ in 0..MAX_FLUSH_PASSES {
+      if !RUNTIME.with(|runtime| runtime.has_changes.replace(false)) {
+        return;
+      }
+      let mut index = 0;
+      while let Some(effect_id) = RUNTIME.with(|runtime| runtime.effects.nth_created(index)) {
+        Self::refresh_effect(effect_id);
+        index += 1;
+      }
+    }
+    panic!("effects did not settle after {MAX_FLUSH_PASSES} passes; two effects probably write each other's inputs");
+  }
+
   fn refresh_observables(observer_id: ObserverId, observables: &[ObservableId]) -> bool {
     for observable in observables {
       if Self::is_observer_dirty(observer_id) {
@@ -254,6 +293,19 @@ impl Runtime {
   fn mark_observers_as_dirty(&self, signal_id: SignalId) {
     self.signals.with_subscribers(signal_id, |subscribers| {
       self.observers.mark_as_dirty(subscribers);
+    });
+  }
+}
+
+struct FlushingGuard;
+
+impl Drop for FlushingGuard {
+  fn drop(&mut self) {
+    RUNTIME.with(|runtime| {
+      runtime.is_flushing.set(false);
+      if thread::panicking() {
+        runtime.has_changes.set(true);
+      }
     });
   }
 }
