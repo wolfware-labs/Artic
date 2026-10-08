@@ -10,6 +10,7 @@
 //! [`descendants`](TreeArena::descendants).
 
 mod dirty;
+mod inheritance;
 mod links;
 mod node;
 
@@ -141,7 +142,9 @@ impl TreeArena {
   /// assert!(arena.is_empty());
   /// ```
   pub fn free(&mut self, node_id: NodeId) -> Option<Box<dyn Object>> {
-    self.inner.free(node_id.0).map(|node| node.object)
+    let node = self.inner.free(node_id.0)?;
+    node.object.visit_properties(&mut |property| property.inherit_from(None));
+    Some(node.object)
   }
 
   /// Returns a reference to the node referred to by `id`, or `None` if `id` is stale.

@@ -26,6 +26,9 @@ pub trait AnyProperty {
   /// The identity of the property's kind.
   fn key_id(&self) -> KeyId;
 
+  /// Whether the property's kind inherits from logical ancestors.
+  fn inherits(&self) -> bool;
+
   /// Connects the property to its node's dirty flags. After this, a change to the effective value
   /// adds the key's [`Affects`] to them.
   fn attach(&self, dirty: Rc<Cell<Affects>>);
@@ -45,6 +48,10 @@ where
 {
   fn key_id(&self) -> KeyId {
     KeyId::of(self.key())
+  }
+
+  fn inherits(&self) -> bool {
+    self.key().inherits()
   }
 
   fn attach(&self, dirty: Rc<Cell<Affects>>) {
