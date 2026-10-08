@@ -120,6 +120,11 @@
 //!
 //! The comparison inside `set_if_changed` reads the value without subscribing the running
 //! observer, so it is still only a write.
+//!
+//! When only some edits matter to readers, [`Signal::update_with`] edits the value in place and
+//! lets the closure say whether readers can see the edit: a [`Change::Hidden`] edit is kept but
+//! wakes nobody. [`Property`](crate::property::Property) uses it so that a write below the winning
+//! level stays hidden.
 
 mod effect;
 mod live_counts;
@@ -137,7 +142,7 @@ pub use live_counts::assert_no_reactive_leaks;
 pub use live_counts::{LiveCounts, live_counts};
 pub use memo::Memo;
 pub use scope::Scope;
-pub use signal::Signal;
+pub use signal::{Change, Signal};
 
 /// Runs every effect whose dependencies changed since it last ran.
 ///

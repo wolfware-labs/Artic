@@ -308,7 +308,7 @@ A `Property<T>` is a signal plus a value-precedence stack, so several sources ca
 | 5 | Inherited value (`inherits` properties only) |
 | 6 | Default |
 
-The effective value is a `Memo` over the stack. `affects` metadata marks the node layout- or render-dirty when the effective value changes.
+The stack lives in one signal, and each write decides whether readers can see it: only a change of the effective value or of the level supplying it marks readers dirty, so a write below the winning level wakes nobody. `affects` metadata marks the node layout- or render-dirty when the effective value changes.
 
 ### Bindings
 

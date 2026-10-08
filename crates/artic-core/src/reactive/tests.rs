@@ -1,5 +1,7 @@
 use crate::reactive::runtime::{ObservableId, ObserverId, Runtime};
-use crate::reactive::{LiveCounts, Memo, Scope, Signal, assert_no_reactive_leaks, batch, effect, flush_effects, live_counts};
+use crate::reactive::{
+  Change, LiveCounts, Memo, Scope, Signal, assert_no_reactive_leaks, batch, effect, flush_effects, live_counts,
+};
 use pretty_assertions::assert_eq;
 use std::cell::{Cell, RefCell};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -999,4 +1001,59 @@ fn leak_check_names_the_counts_that_changed() {
       baseline.scopes + 1
     )
   );
+}
+
+// update_with
+
+// An edit reported as visible marks subscribers dirty and makes the next flush rerun them.
+#[test]
+fn visible_update_with_marks_dependents_dirty() {
+  let items = Signal::new(vec![1]);
+  let observer = observe(|| {
+    items.with(|_| {});
+  });
+
+  items.update_with(|items| {
+    items.push(2);
+    Change::Visible
+  });
+
+  assert!(Runtime::is_observer_dirty(observer));
+}
+
+// An edit reported as hidden is kept but marks nobody dirty and records no write, so a flush after
+// it reruns nothing.
+#[test]
+fn hidden_update_with_keeps_the_edit_and_wakes_nobody() {
+  let items = Signal::new(vec![1]);
+  let runs = Rc::new(Cell::new(0));
+  let runs_in_effect = Rc::clone(&runs);
+  effect(move || {
+    runs_in_effect.set(runs_in_effect.get() + 1);
+    items.with(|_| {});
+  });
+
+  items.update_with(|items| {
+    items[0] = 5;
+    Change::Hidden
+  });
+  flush_effects();
+
+  assert_eq!(items.get(), vec![5]);
+  assert_eq!(runs.get(), 1, "only the run on creation");
+}
+
+// If the closure passed to `update_with` panics, dependents are marked dirty as after a visible
+// change, and the panic reaches the caller.
+#[test]
+fn panicking_update_with_still_marks_dependents_dirty() {
+  let count = Signal::new(0);
+  let observer = observe(|| {
+    count.get();
+  });
+
+  let result = catch_unwind(AssertUnwindSafe(|| count.update_with(|_| panic!("boom"))));
+
+  assert!(result.is_err());
+  assert!(Runtime::is_observer_dirty(observer));
 }

@@ -9,7 +9,7 @@ mod scope_store;
 mod signal_store;
 mod tracking;
 
-use crate::reactive::LiveCounts;
+use crate::reactive::{Change, LiveCounts};
 pub use effect_store::EffectId;
 use effect_store::EffectStore;
 pub use memo_store::MemoId;
@@ -130,6 +130,24 @@ impl Runtime {
       let action_result = runtime.signals.with_signal_mut_value(signal_id, action);
       runtime.mark_observers_as_dirty(signal_id);
       if let Err(payload) = action_result {
+        resume_unwind(payload);
+      }
+    })
+  }
+
+  pub fn update_signal_value_with<TValue>(signal_id: SignalId, action: impl FnOnce(&mut TValue) -> Change)
+  where
+    TValue: Any,
+  {
+    RUNTIME.with(|runtime| match runtime.signals.with_signal_mut_value(signal_id, action) {
+      Ok(Change::Hidden) => {}
+      Ok(Change::Visible) => {
+        runtime.tracker.record_write();
+        runtime.mark_observers_as_dirty(signal_id);
+      }
+      Err(payload) => {
+        runtime.tracker.record_write();
+        runtime.mark_observers_as_dirty(signal_id);
         resume_unwind(payload);
       }
     })

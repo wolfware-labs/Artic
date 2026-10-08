@@ -85,7 +85,11 @@ impl SignalStore {
     )
   }
 
-  pub fn with_signal_mut_value<TValue>(&self, signal_id: SignalId, action: impl FnOnce(&mut TValue)) -> std::thread::Result<()>
+  pub fn with_signal_mut_value<TValue, TResult>(
+    &self,
+    signal_id: SignalId,
+    action: impl FnOnce(&mut TValue) -> TResult,
+  ) -> std::thread::Result<TResult>
   where
     TValue: Any,
   {
