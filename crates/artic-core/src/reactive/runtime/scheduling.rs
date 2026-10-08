@@ -1,6 +1,6 @@
 use crate::reactive::runtime::{RUNTIME, Runtime};
 use std::cell::Cell;
-use std::thread;
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
 const MAX_FLUSH_PASSES: usize = 100;
 
@@ -36,19 +36,31 @@ impl Scheduler {
 
 impl Runtime {
   pub fn batch<TResult>(action: impl FnOnce() -> TResult) -> TResult {
-    let result = {
-      let _batch = BatchGuard::enter();
-      action()
-    };
-    Self::flush_effects();
-    result
+    RUNTIME.with(|runtime| runtime.scheduler.enter_batch());
+    let action_result = catch_unwind(AssertUnwindSafe(action));
+    RUNTIME.with(|runtime| runtime.scheduler.exit_batch());
+    match action_result {
+      Ok(result) => {
+        Self::flush_effects();
+        result
+      }
+      Err(payload) => resume_unwind(payload),
+    }
   }
 
   pub fn flush_effects() {
     if !RUNTIME.with(|runtime| runtime.scheduler.start_flush()) {
       return;
     }
-    let _flushing = FlushingGuard;
+    let flush_result = catch_unwind(AssertUnwindSafe(Self::run_passes));
+    RUNTIME.with(|runtime| runtime.scheduler.end_flush());
+    if let Err(payload) = flush_result {
+      RUNTIME.with(|runtime| runtime.tracker.record_write());
+      resume_unwind(payload);
+    }
+  }
+
+  fn run_passes() {
     for _ in 0..MAX_FLUSH_PASSES {
       if !RUNTIME.with(|runtime| runtime.tracker.take_writes()) {
         return;
@@ -60,33 +72,5 @@ impl Runtime {
       }
     }
     panic!("effects did not settle after {MAX_FLUSH_PASSES} passes; two effects probably write each other's inputs");
-  }
-}
-
-struct FlushingGuard;
-
-impl Drop for FlushingGuard {
-  fn drop(&mut self) {
-    RUNTIME.with(|runtime| {
-      runtime.scheduler.end_flush();
-      if thread::panicking() {
-        runtime.tracker.record_write();
-      }
-    });
-  }
-}
-
-struct BatchGuard;
-
-impl BatchGuard {
-  fn enter() -> Self {
-    RUNTIME.with(|runtime| runtime.scheduler.enter_batch());
-    BatchGuard
-  }
-}
-
-impl Drop for BatchGuard {
-  fn drop(&mut self) {
-    RUNTIME.with(|runtime| runtime.scheduler.exit_batch());
   }
 }
