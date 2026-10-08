@@ -1,4 +1,30 @@
 //! Properties: reactive values that several sources can write at once, ranked by precedence.
+//!
+//! An animation, app code, a binding, a style, inheritance and a default can all hold a value for
+//! the same [`Property`]. Each writes its own [`Precedence`] level, and the highest level holding a
+//! value wins. When a source stops having an opinion it clears its level, and the next one shows
+//! through.
+//!
+//! ```
+//! use artic_core::property::{Precedence, Property};
+//! use artic_core::reactive::{effect, flush_effects};
+//! use std::cell::Cell;
+//! use std::rc::Rc;
+//!
+//! let background = Property::new("white");
+//! let painted = Rc::new(Cell::new(""));
+//! let painted_in_effect = Rc::clone(&painted);
+//! effect(move || painted_in_effect.set(background.get()));
+//!
+//! background.set_at(Precedence::StyleSetter, "blue");
+//! background.set_at(Precedence::Animation, "lightblue"); // hover starts
+//! flush_effects();
+//! assert_eq!(painted.get(), "lightblue");
+//!
+//! background.clear(Precedence::Animation); // hover ends
+//! flush_effects();
+//! assert_eq!(painted.get(), "blue");
+//! ```
 
 mod levels;
 

@@ -120,6 +120,11 @@
 //!
 //! The comparison inside `set_if_changed` reads the value without subscribing the running
 //! observer, so it is still only a write.
+//!
+//! When only some edits matter to readers, [`Signal::update_with`] edits the value in place and
+//! lets the closure say whether readers can see the edit: a [`Change::Hidden`] edit is kept but
+//! wakes nobody. [`Property`](crate::property::Property) uses it so that a write below the winning
+//! level stays hidden.
 
 mod effect;
 mod live_counts;
