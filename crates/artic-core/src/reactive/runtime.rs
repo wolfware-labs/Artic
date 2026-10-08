@@ -1,12 +1,18 @@
+mod memo_store;
 mod observer_store;
+mod read_store;
 mod signal_store;
 
+pub use memo_store::MemoId;
+use memo_store::MemoStore;
 pub use observer_store::ObserverId;
 use observer_store::ObserverStore;
+use read_store::ReadStore;
 pub use signal_store::SignalId;
 use signal_store::SignalStore;
 use std::any::Any;
 use std::panic::resume_unwind;
+use std::rc::Rc;
 
 thread_local! {
   static RUNTIME: Runtime  = const {
@@ -14,9 +20,17 @@ thread_local! {
   };
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ObservableId {
+  Signal(SignalId),
+  Memo(MemoId),
+}
+
 pub struct Runtime {
   signals: SignalStore,
   observers: ObserverStore,
+  memos: MemoStore,
+  reads: ReadStore,
 }
 
 impl Runtime {
@@ -24,6 +38,8 @@ impl Runtime {
     Self {
       signals: SignalStore::new(),
       observers: ObserverStore::new(),
+      memos: MemoStore::new(),
+      reads: ReadStore::new(),
     }
   }
 
@@ -85,16 +101,30 @@ impl Runtime {
     RUNTIME.with(|runtime| runtime.signals.remove_subscriber(signal_id, observer_id))
   }
 
+  #[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used by Effect (#10); only tests call it until then")
+  )]
   pub fn create_observer() -> ObserverId {
     RUNTIME.with(|runtime| runtime.observers.create_observer())
   }
 
   pub fn push_observer(observer_id: ObserverId) {
-    RUNTIME.with(|runtime| runtime.observers.push_observer(observer_id))
+    RUNTIME.with(|runtime| {
+      runtime.observers.push_observer(observer_id);
+      runtime.reads.push_frame();
+    })
   }
 
-  pub fn pop_observer() {
-    RUNTIME.with(|runtime| runtime.observers.pop_observer())
+  pub fn pop_observer() -> Vec<ObservableId> {
+    RUNTIME.with(|runtime| {
+      runtime.observers.pop_observer();
+      runtime.reads.pop_frame()
+    })
+  }
+
+  pub fn record_read(observable: ObservableId) {
+    RUNTIME.with(|runtime| runtime.reads.record(observable))
   }
 
   pub fn mark_observer_as_clean(observer_id: ObserverId) {
@@ -107,6 +137,42 @@ impl Runtime {
 
   pub fn is_observer_dirty(observer_id: ObserverId) -> bool {
     RUNTIME.with(|runtime| runtime.observers.is_dirty(observer_id))
+  }
+
+  pub fn create_memo(value_id: SignalId, compute: Rc<dyn Fn()>) -> MemoId {
+    RUNTIME.with(|runtime| {
+      let observer_id = runtime.observers.create_observer();
+      runtime.observers.mark_as_dirty(&[observer_id]);
+      runtime.memos.alloc(observer_id, value_id, compute)
+    })
+  }
+
+  pub fn memo_observer(memo_id: MemoId) -> ObserverId {
+    RUNTIME.with(|runtime| runtime.memos.observer(memo_id))
+  }
+
+  pub fn memo_value(memo_id: MemoId) -> SignalId {
+    RUNTIME.with(|runtime| runtime.memos.value(memo_id))
+  }
+
+  pub fn memo_compute(memo_id: MemoId) -> Rc<dyn Fn()> {
+    RUNTIME.with(|runtime| runtime.memos.compute(memo_id))
+  }
+
+  pub fn memo_observables(memo_id: MemoId) -> Vec<ObservableId> {
+    RUNTIME.with(|runtime| runtime.memos.observables(memo_id))
+  }
+
+  pub fn set_memo_observables(memo_id: MemoId, observables: Vec<ObservableId>) {
+    RUNTIME.with(|runtime| runtime.memos.set_observables(memo_id, observables))
+  }
+
+  pub fn is_memo_computing(memo_id: MemoId) -> bool {
+    RUNTIME.with(|runtime| runtime.memos.is_computing(memo_id))
+  }
+
+  pub fn set_memo_computing(memo_id: MemoId, is_computing: bool) {
+    RUNTIME.with(|runtime| runtime.memos.set_computing(memo_id, is_computing))
   }
 
   fn attach_current_observer(&self, signal_id: SignalId) {

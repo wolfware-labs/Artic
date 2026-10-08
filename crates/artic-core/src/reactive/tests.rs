@@ -1,5 +1,4 @@
-use crate::reactive::observable::ObservableId;
-use crate::reactive::runtime::{ObserverId, Runtime};
+use crate::reactive::runtime::{ObservableId, ObserverId, Runtime};
 use crate::reactive::{Memo, Signal, run_tracked};
 use pretty_assertions::assert_eq;
 use std::cell::Cell;

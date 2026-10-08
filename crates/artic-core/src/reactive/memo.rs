@@ -1,10 +1,8 @@
-mod memo_store;
-
-use crate::reactive::observable::ObservableId;
-use crate::reactive::record_read;
-use crate::reactive::runtime::Runtime;
-pub(crate) use memo_store::{MemoId, MemoStore};
+use crate::reactive::run_tracked;
+use crate::reactive::runtime::{MemoId, ObservableId, Runtime};
 use std::marker::PhantomData;
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+use std::rc::Rc;
 
 /// A value computed from signals and other memos, and remembered until one of them changes.
 ///
@@ -73,9 +71,9 @@ where
   /// ```
   pub fn new(compute: impl Fn() -> TValue + 'static) -> Memo<TValue> {
     let value_id = Runtime::alloc_signal_value(None::<TValue>);
-    let memo_id = MemoStore::create(
+    let memo_id = Runtime::create_memo(
       value_id,
-      Box::new(move || {
+      Rc::new(move || {
         let new_value = Some(compute());
         if Runtime::with_untracked_signal_value(value_id, |value: &Option<TValue>| *value != new_value) {
           Runtime::set_signal_value(value_id, new_value);
@@ -106,9 +104,9 @@ impl<TValue> Memo<TValue> {
   /// assert_eq!(sorted.with(|sorted| sorted[0]), 1);
   /// ```
   pub fn with<TResult>(&self, function: impl FnOnce(&TValue) -> TResult) -> TResult {
-    MemoStore::refresh(self.0);
-    record_read(ObservableId::Memo(self.0));
-    Runtime::with_signal_value(MemoStore::value(self.0), |value: &Option<TValue>| {
+    refresh(self.0);
+    Runtime::record_read(ObservableId::Memo(self.0));
+    Runtime::with_signal_value(Runtime::memo_value(self.0), |value: &Option<TValue>| {
       function(value.as_ref().expect("a refreshed memo has a value"))
     })
   }
@@ -134,6 +132,38 @@ where
   /// ```
   pub fn get(&self) -> TValue {
     self.with(TValue::clone)
+  }
+}
+
+pub(crate) fn refresh(memo_id: MemoId) {
+  if Runtime::is_memo_computing(memo_id) {
+    panic!("memo read while it is being computed; a memo can't depend on itself");
+  }
+  let observer_id = Runtime::memo_observer(memo_id);
+  let observables = Runtime::memo_observables(memo_id);
+  for observable in &observables {
+    if Runtime::is_observer_dirty(observer_id) {
+      break;
+    }
+    observable.refresh();
+  }
+  if !Runtime::is_observer_dirty(observer_id) {
+    return;
+  }
+  for observable in observables {
+    observable.unsubscribe(observer_id);
+  }
+  Runtime::set_memo_observables(memo_id, Vec::new());
+  let compute = Runtime::memo_compute(memo_id);
+  Runtime::set_memo_computing(memo_id, true);
+  let compute_result = catch_unwind(AssertUnwindSafe(|| run_tracked(observer_id, &*compute)));
+  Runtime::set_memo_computing(memo_id, false);
+  match compute_result {
+    Ok(observables) => Runtime::set_memo_observables(memo_id, observables),
+    Err(payload) => {
+      Runtime::mark_observer_as_dirty(observer_id);
+      resume_unwind(payload);
+    }
   }
 }
 
