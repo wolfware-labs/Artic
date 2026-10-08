@@ -174,7 +174,7 @@ impl Runtime {
     RUNTIME.with(|runtime| runtime.memos.value(memo_id))
   }
 
-  pub fn create_effect(run: Rc<RefCell<dyn FnMut()>>) -> EffectId {
+  pub fn create_effect(run: Rc<RefCell<dyn FnMut()>>) {
     let effect_id = RUNTIME.with(|runtime| {
       let observer_id = runtime.observers.create_observer();
       runtime.observers.mark_as_dirty(&[observer_id]);
@@ -184,7 +184,6 @@ impl Runtime {
       effect_id
     });
     Self::refresh_effect(effect_id);
-    effect_id
   }
 
   pub fn live_counts() -> LiveCounts {

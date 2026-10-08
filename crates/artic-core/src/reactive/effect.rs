@@ -1,4 +1,4 @@
-use crate::reactive::runtime::{EffectId, Runtime};
+use crate::reactive::runtime::Runtime;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -38,10 +38,7 @@ use std::rc::Rc;
 /// assert_eq!(seen.get(), 2);
 /// ```
 #[derive(Debug, Clone, Copy)]
-pub struct Effect(
-  #[expect(dead_code, reason = "Scope disposes effects through their id (#11)")] EffectId,
-  PhantomData<*const ()>,
-);
+pub struct Effect(PhantomData<*const ()>);
 
 impl Effect {
   /// Creates an effect and runs `run` once, right away.
@@ -49,7 +46,8 @@ impl Effect {
   /// If `run` panics during that first run, the panic reaches the caller and the next flush runs it
   /// again.
   pub fn new(run: impl FnMut() + 'static) -> Effect {
-    Effect(Runtime::create_effect(Rc::new(RefCell::new(run))), PhantomData)
+    Runtime::create_effect(Rc::new(RefCell::new(run)));
+    Effect(PhantomData)
   }
 }
 
