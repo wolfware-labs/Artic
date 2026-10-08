@@ -1,6 +1,6 @@
 use crate::tree::node::TreeNode;
 use crate::tree::{NodeId, Tree, TreeArena};
-use std::iter::successors;
+use std::iter::{from_fn, successors};
 
 impl TreeArena {
   /// Makes `child` the last child of `parent` in `tree`.
@@ -83,13 +83,7 @@ impl TreeArena {
   ///
   /// A stale `id` has no children.
   pub fn children(&self, tree: Tree, id: NodeId) -> impl Iterator<Item = NodeId> + '_ {
-    self
-      .inner
-      .get(id.0)
-      .map(|node| node.links(tree).children.as_slice())
-      .unwrap_or_default()
-      .iter()
-      .copied()
+    self.child_slice(tree, id).iter().copied()
   }
 
   /// Returns the ancestors of `id` in `tree`: its parent, then that node's parent, up to the root.
@@ -97,6 +91,46 @@ impl TreeArena {
   /// `id` itself isn't included, and a stale `id` has no ancestors.
   pub fn ancestors(&self, tree: Tree, id: NodeId) -> impl Iterator<Item = NodeId> + '_ {
     successors(self.parent(tree, id), move |ancestor| self.parent(tree, *ancestor))
+  }
+
+  /// Returns every descendant of `id` in `tree`, depth-first in pre-order: a node, then its first
+  /// child's whole subtree, then its next child's.
+  ///
+  /// `id` itself isn't included, and a stale `id` has no descendants.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use artic_core::Object;
+  /// use artic_core::tree::{Tree, TreeArena};
+  ///
+  /// #[derive(Debug)]
+  /// struct Panel;
+  /// impl Object for Panel {}
+  ///
+  /// let mut arena = TreeArena::new();
+  /// let [root, a, a1, b] = [(); 4].map(|_| arena.alloc(Box::new(Panel)));
+  /// arena.add_child(Tree::Visual, root, a);
+  /// arena.add_child(Tree::Visual, a, a1);
+  /// arena.add_child(Tree::Visual, root, b);
+  ///
+  /// assert_eq!(arena.descendants(Tree::Visual, root).collect::<Vec<_>>(), [a, a1, b]);
+  /// ```
+  pub fn descendants(&self, tree: Tree, id: NodeId) -> impl Iterator<Item = NodeId> + '_ {
+    let mut stack: Vec<NodeId> = self.child_slice(tree, id).iter().rev().copied().collect();
+    from_fn(move || {
+      let next = stack.pop()?;
+      stack.extend(self.child_slice(tree, next).iter().rev());
+      Some(next)
+    })
+  }
+
+  fn child_slice(&self, tree: Tree, id: NodeId) -> &[NodeId] {
+    self
+      .inner
+      .get(id.0)
+      .map(|node| node.links(tree).children.as_slice())
+      .unwrap_or_default()
   }
 
   #[track_caller]
@@ -337,5 +371,28 @@ mod tests {
     let [node] = nodes(&mut arena, 1)[..] else { unreachable!() };
 
     arena.add_child(Tree::Visual, node, node);
+  }
+
+  // `descendants` yields a subtree in pre-order, and each tree follows its own links.
+  #[test]
+  fn descendants_preorder() {
+    let mut arena = TreeArena::new();
+    let [a, b, c, d, e] = nodes(&mut arena, 5)[..] else {
+      unreachable!()
+    };
+    // Logical: a(b(c, d), e)
+    arena.add_child(Tree::Logical, a, b);
+    arena.add_child(Tree::Logical, b, c);
+    arena.add_child(Tree::Logical, b, d);
+    arena.add_child(Tree::Logical, a, e);
+    // Visual: a(e(d, b(c)))
+    arena.add_child(Tree::Visual, a, e);
+    arena.add_child(Tree::Visual, e, d);
+    arena.add_child(Tree::Visual, e, b);
+    arena.add_child(Tree::Visual, b, c);
+
+    assert_eq!(arena.descendants(Tree::Logical, a).collect::<Vec<_>>(), [b, c, d, e]);
+    assert_eq!(arena.descendants(Tree::Visual, a).collect::<Vec<_>>(), [e, d, b, c]);
+    assert_eq!(arena.descendants(Tree::Logical, c).count(), 0);
   }
 }
