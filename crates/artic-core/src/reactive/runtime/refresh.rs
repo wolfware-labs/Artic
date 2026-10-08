@@ -24,6 +24,10 @@ impl Runtime {
     });
     Self::clear_scope(scope_id);
     let compute_result = Self::rerun(observer_id, &observables, || Self::run_in_scope(scope_id, &*compute));
+    if !RUNTIME.with(|runtime| runtime.memos.contains(memo_id)) {
+      Self::discard_run(observer_id, compute_result);
+      return;
+    }
     RUNTIME.with(|runtime| {
       runtime.memos.set_computing(memo_id, false);
       match compute_result {
@@ -60,14 +64,7 @@ impl Runtime {
       Self::run_in_scope(scope_id, || (run.borrow_mut())())
     });
     if !RUNTIME.with(|runtime| runtime.effects.contains(effect_id)) {
-      match run_result {
-        Ok(observables) => {
-          for observable in observables {
-            observable.unsubscribe(observer_id);
-          }
-        }
-        Err(payload) => resume_unwind(payload),
-      }
+      Self::discard_run(observer_id, run_result);
       return;
     }
     RUNTIME.with(|runtime| {
@@ -90,6 +87,17 @@ impl Runtime {
       observable.refresh();
     }
     Self::is_observer_dirty(observer_id)
+  }
+
+  fn discard_run(observer_id: ObserverId, run_result: thread::Result<Vec<ObservableId>>) {
+    match run_result {
+      Ok(observables) => {
+        for observable in observables {
+          observable.unsubscribe(observer_id);
+        }
+      }
+      Err(payload) => resume_unwind(payload),
+    }
   }
 
   fn rerun(observer_id: ObserverId, observables: &[ObservableId], action: impl FnOnce()) -> thread::Result<Vec<ObservableId>> {

@@ -948,3 +948,33 @@ fn dispose_twice_is_a_no_op() {
 
   assert_eq!(live_counts(), before);
 }
+
+// A memo that disposes its own scope while computing is freed and unsubscribed from what it read,
+// and the read that triggered the compute reports the memo as disposed.
+#[test]
+fn memo_can_dispose_its_own_scope() {
+  let before = live_counts();
+  let source = Signal::new(0);
+  let scope = Scope::new_root();
+  let memo = scope.run(|| {
+    Memo::new(move || {
+      if source.get() > 0 {
+        scope.dispose();
+      }
+    })
+  });
+  memo.get();
+
+  source.set(1);
+  let message = panic_message(|| memo.get());
+
+  assert!(message.starts_with("memo used after its scope was disposed"), "{message}");
+  assert_eq!(Runtime::subscriber_count(source.id()), 0);
+  assert_eq!(
+    live_counts(),
+    LiveCounts {
+      signals: before.signals + 1,
+      ..before
+    }
+  );
+}

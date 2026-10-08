@@ -77,6 +77,9 @@ where
       value_id,
       Rc::new(move || {
         let new_value = Some(compute());
+        if !Runtime::contains_signal(value_id) {
+          return;
+        }
         if Runtime::with_untracked_signal_value(value_id, |value: &Option<TValue>| *value != new_value) {
           Runtime::with_untracked_signal_mut_value(value_id, |value| *value = new_value);
         }
@@ -106,14 +109,19 @@ impl<TValue> Memo<TValue> {
   /// assert_eq!(sorted.with(|sorted| sorted[0]), 1);
   /// ```
   pub fn with<TResult>(&self, function: impl FnOnce(&TValue) -> TResult) -> TResult {
-    if !Runtime::contains_memo(self.0) {
-      self.1.panic("memo used after its scope was disposed");
-    }
+    self.ensure_alive();
     Runtime::refresh_memo(self.0);
+    self.ensure_alive();
     Runtime::record_read(ObservableId::Memo(self.0));
     Runtime::with_signal_value(Runtime::memo_value(self.0), |value: &Option<TValue>| {
       function(value.as_ref().expect("a refreshed memo has a value"))
     })
+  }
+
+  fn ensure_alive(&self) {
+    if !Runtime::contains_memo(self.0) {
+      self.1.panic("memo used after its scope was disposed");
+    }
   }
 }
 
