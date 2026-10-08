@@ -1,0 +1,53 @@
+use crate::reactive::runtime::{EffectId, Runtime};
+use std::cell::RefCell;
+use std::marker::PhantomData;
+use std::rc::Rc;
+
+/// A closure that runs again whenever a signal or memo it read changes.
+///
+/// An effect runs once when it is created, recording every signal and memo it reads. Like a memo,
+/// it records its dependencies afresh on each run.
+///
+/// Effects are where reactive values reach the outside world: they update widgets, write logs or
+/// mark layout as dirty. They return nothing, and their closure may keep its own mutable state
+/// between runs.
+///
+/// `Effect` is a `Copy` handle and is neither `Send` nor `Sync`.
+///
+/// # Examples
+///
+/// ```
+/// use artic_core::reactive::{Effect, Signal};
+/// use std::cell::Cell;
+/// use std::rc::Rc;
+///
+/// let count = Signal::new(1);
+/// let seen = Rc::new(Cell::new(0));
+/// let seen_in_effect = Rc::clone(&seen);
+/// Effect::new(move || seen_in_effect.set(count.get()));
+/// assert_eq!(seen.get(), 1);
+/// ```
+#[derive(Debug, Clone, Copy)]
+pub struct Effect(
+  #[expect(dead_code, reason = "Scope disposes effects through their id (#11)")] EffectId,
+  PhantomData<*const ()>,
+);
+
+impl Effect {
+  /// Creates an effect and runs `run` once, right away.
+  ///
+  /// If `run` panics during that first run, the panic reaches the caller and the next flush runs it
+  /// again.
+  pub fn new(run: impl FnMut() + 'static) -> Effect {
+    Effect(Runtime::create_effect(Rc::new(RefCell::new(run))), PhantomData)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use static_assertions::{assert_impl_all, assert_not_impl_any};
+
+  assert_not_impl_any!(Effect: Send, Sync);
+  assert_impl_all!(Effect: Copy);
+}

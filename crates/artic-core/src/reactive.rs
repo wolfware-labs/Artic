@@ -49,11 +49,13 @@
 //! The comparison inside `set_if_changed` reads the value without subscribing the running
 //! observer, so it is still only a write.
 
+mod effect;
 mod memo;
 mod runtime;
 mod signal;
 #[cfg(test)]
 mod tests;
 
+pub use effect::Effect;
 pub use memo::Memo;
 pub use signal::Signal;
