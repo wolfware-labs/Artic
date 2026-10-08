@@ -865,3 +865,86 @@ fn dispose_frees_nodes_created_by_an_owned_effect() {
 
   assert_eq!(live_counts(), before);
 }
+
+// Disposed handles
+
+/// Runs `action`, expects it to panic, and returns the panic message.
+fn panic_message(action: impl FnOnce()) -> String {
+  let payload = catch_unwind(AssertUnwindSafe(action)).expect_err("the action should panic");
+  payload
+    .downcast_ref::<String>()
+    .cloned()
+    .or_else(|| payload.downcast_ref::<&str>().map(|message| message.to_string()))
+    .expect("the panic message should be a string")
+}
+
+// Reading a signal whose scope was disposed panics, and in debug builds the message says where the
+// signal was created.
+#[test]
+fn reading_disposed_signal_panics_with_creation_location() {
+  let scope = Scope::new_root();
+  let count = scope.run(|| Signal::new(0));
+  scope.dispose();
+
+  let message = panic_message(|| {
+    count.get();
+  });
+
+  assert!(message.starts_with("signal used after its scope was disposed"), "{message}");
+  if cfg!(debug_assertions) {
+    assert!(message.contains(&format!("(created at {}:", file!())), "{message}");
+  }
+}
+
+// Writing a signal whose scope was disposed panics, even after its slot was reused by a new signal.
+#[test]
+fn writing_disposed_signal_panics_after_slot_reuse() {
+  let scope = Scope::new_root();
+  let old = scope.run(|| Signal::new(0));
+  scope.dispose();
+  let new = Signal::new(0);
+
+  let message = panic_message(|| old.set(1));
+
+  assert!(message.starts_with("signal used after its scope was disposed"), "{message}");
+  assert_eq!(new.get(), 0);
+}
+
+// Reading a memo whose scope was disposed panics.
+#[test]
+fn reading_disposed_memo_panics() {
+  let scope = Scope::new_root();
+  let memo = scope.run(|| Memo::new(|| 1));
+  scope.dispose();
+
+  let message = panic_message(|| {
+    memo.get();
+  });
+
+  assert!(message.starts_with("memo used after its scope was disposed"), "{message}");
+}
+
+// Running a disposed scope panics instead of leaving what the closure creates without an owner.
+#[test]
+fn running_disposed_scope_panics() {
+  let scope = Scope::new_root();
+  scope.dispose();
+
+  let message = panic_message(|| scope.run(|| {}));
+
+  assert!(message.starts_with("scope used after it was disposed"), "{message}");
+}
+
+// Disposing a scope twice does nothing the second time, also when its parent disposed it first.
+#[test]
+fn dispose_twice_is_a_no_op() {
+  let before = live_counts();
+  let parent = Scope::new_root();
+  let child = parent.child();
+
+  parent.dispose();
+  child.dispose();
+  parent.dispose();
+
+  assert_eq!(live_counts(), before);
+}

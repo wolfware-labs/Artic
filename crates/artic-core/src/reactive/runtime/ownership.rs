@@ -6,6 +6,10 @@ impl Runtime {
     RUNTIME.with(|runtime| runtime.scopes.alloc(parent))
   }
 
+  pub fn contains_scope(scope_id: ScopeId) -> bool {
+    RUNTIME.with(|runtime| runtime.scopes.contains(scope_id))
+  }
+
   pub fn run_in_scope<TResult>(scope_id: ScopeId, action: impl FnOnce() -> TResult) -> TResult {
     RUNTIME.with(|runtime| runtime.scopes.push_active(scope_id));
     let action_result = catch_unwind(AssertUnwindSafe(action));

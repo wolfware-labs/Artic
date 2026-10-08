@@ -108,6 +108,10 @@ impl SignalStore {
     self.slots.borrow_mut().free(signal_id.0);
   }
 
+  pub fn contains(&self, signal_id: SignalId) -> bool {
+    self.slots.borrow().contains(signal_id.0)
+  }
+
   pub fn count(&self) -> usize {
     self.slots.borrow().len()
   }

@@ -76,6 +76,10 @@ impl Runtime {
     })
   }
 
+  pub fn contains_signal(signal_id: SignalId) -> bool {
+    RUNTIME.with(|runtime| runtime.signals.contains(signal_id))
+  }
+
   pub fn get_signal_value<TValue>(signal_id: SignalId) -> TValue
   where
     TValue: Any + Clone,
@@ -160,6 +164,10 @@ impl Runtime {
       runtime.register_node(ReactiveNodeId::Memo(memo_id));
       memo_id
     })
+  }
+
+  pub fn contains_memo(memo_id: MemoId) -> bool {
+    RUNTIME.with(|runtime| runtime.memos.contains(memo_id))
   }
 
   pub fn memo_value(memo_id: MemoId) -> SignalId {

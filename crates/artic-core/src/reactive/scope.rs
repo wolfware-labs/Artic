@@ -1,3 +1,4 @@
+use crate::reactive::origin::Origin;
 use crate::reactive::runtime::{Runtime, ScopeId};
 use std::marker::PhantomData;
 
@@ -24,24 +25,36 @@ use std::marker::PhantomData;
 /// assert_eq!(live_counts(), before);
 /// ```
 #[derive(Debug, Clone, Copy)]
-pub struct Scope(ScopeId, PhantomData<*const ()>);
+pub struct Scope(ScopeId, Origin, PhantomData<*const ()>);
 
 impl Scope {
   /// Creates a scope with no parent.
+  #[track_caller]
   pub fn new_root() -> Scope {
-    Scope(Runtime::create_scope(None), PhantomData)
+    Scope(Runtime::create_scope(None), Origin::caller(), PhantomData)
   }
 
   /// Creates a scope owned by this one.
+  ///
+  /// # Panics
+  ///
+  /// Panics if this scope was disposed.
+  #[track_caller]
   pub fn child(&self) -> Scope {
-    Scope(Runtime::create_scope(Some(self.0)), PhantomData)
+    self.ensure_alive();
+    Scope(Runtime::create_scope(Some(self.0)), Origin::caller(), PhantomData)
   }
 
   /// Runs `action` with this scope as the active scope and returns its result.
   ///
   /// Calls to `run` nest: inside `action`, another scope's `run` makes that scope active until it
   /// returns. If `action` panics, the previous scope is active again before the panic continues.
+  ///
+  /// # Panics
+  ///
+  /// Panics if this scope was disposed, because nothing created in `action` would have an owner.
   pub fn run<TResult>(&self, action: impl FnOnce() -> TResult) -> TResult {
+    self.ensure_alive();
     Runtime::run_in_scope(self.0, action)
   }
 
@@ -49,9 +62,16 @@ impl Scope {
   /// active.
   ///
   /// Child scopes go first, then effects, memos and signals. A disposed effect never runs again,
-  /// and signals and memos that outlive it stop listing it as a reader.
+  /// and signals and memos that outlive it stop listing it as a reader. Disposing a scope that was
+  /// already disposed, directly or through its parent, does nothing.
   pub fn dispose(&self) {
     Runtime::dispose_scope(self.0);
+  }
+
+  fn ensure_alive(&self) {
+    if !Runtime::contains_scope(self.0) {
+      self.1.panic("scope used after it was disposed");
+    }
   }
 }
 
