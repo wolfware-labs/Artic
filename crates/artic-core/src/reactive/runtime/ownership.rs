@@ -34,7 +34,7 @@ impl Runtime {
     });
   }
 
-  fn clear_scope(scope_id: ScopeId) {
+  pub(super) fn clear_scope(scope_id: ScopeId) {
     let (children, nodes) =
       RUNTIME.with(|runtime| (runtime.scopes.take_children(scope_id), runtime.scopes.take_nodes(scope_id)));
     for child in children {
@@ -58,8 +58,14 @@ impl Runtime {
   }
 
   fn dispose_effect(effect_id: EffectId) {
-    let (observer_id, observables) =
-      RUNTIME.with(|runtime| (runtime.effects.observer(effect_id), runtime.effects.observables(effect_id)));
+    let (observer_id, scope_id, observables) = RUNTIME.with(|runtime| {
+      (
+        runtime.effects.observer(effect_id),
+        runtime.effects.scope(effect_id),
+        runtime.effects.observables(effect_id),
+      )
+    });
+    Self::dispose_scope(scope_id);
     for observable in observables.iter() {
       observable.unsubscribe(observer_id);
     }
@@ -73,13 +79,15 @@ impl Runtime {
   }
 
   fn dispose_memo(memo_id: MemoId) {
-    let (observer_id, value_id, observables) = RUNTIME.with(|runtime| {
+    let (observer_id, scope_id, value_id, observables) = RUNTIME.with(|runtime| {
       (
         runtime.memos.observer(memo_id),
+        runtime.memos.scope(memo_id),
         runtime.memos.value(memo_id),
         runtime.memos.observables(memo_id),
       )
     });
+    Self::dispose_scope(scope_id);
     for observable in observables.iter() {
       observable.unsubscribe(observer_id);
     }

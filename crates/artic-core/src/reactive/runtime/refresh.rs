@@ -17,12 +17,13 @@ impl Runtime {
     if !Self::refresh_observables(observer_id, &observables) {
       return;
     }
-    let compute = RUNTIME.with(|runtime| {
+    let (scope_id, compute) = RUNTIME.with(|runtime| {
       runtime.memos.set_observables(memo_id, Vec::new());
       runtime.memos.set_computing(memo_id, true);
-      runtime.memos.compute(memo_id)
+      (runtime.memos.scope(memo_id), runtime.memos.compute(memo_id))
     });
-    let compute_result = Self::rerun(observer_id, &observables, &*compute);
+    Self::clear_scope(scope_id);
+    let compute_result = Self::rerun(observer_id, &observables, || Self::run_in_scope(scope_id, &*compute));
     RUNTIME.with(|runtime| {
       runtime.memos.set_computing(memo_id, false);
       match compute_result {
@@ -49,12 +50,15 @@ impl Runtime {
     if is_running || !Self::refresh_observables(observer_id, &observables) {
       return;
     }
-    let run = RUNTIME.with(|runtime| {
+    let (scope_id, run) = RUNTIME.with(|runtime| {
       runtime.effects.set_observables(effect_id, Vec::new());
       runtime.effects.set_running(effect_id, true);
-      runtime.effects.run(effect_id)
+      (runtime.effects.scope(effect_id), runtime.effects.run(effect_id))
     });
-    let run_result = Self::rerun(observer_id, &observables, || (run.borrow_mut())());
+    Self::clear_scope(scope_id);
+    let run_result = Self::rerun(observer_id, &observables, || {
+      Self::run_in_scope(scope_id, || (run.borrow_mut())())
+    });
     if !RUNTIME.with(|runtime| runtime.effects.contains(effect_id)) {
       match run_result {
         Ok(observables) => {

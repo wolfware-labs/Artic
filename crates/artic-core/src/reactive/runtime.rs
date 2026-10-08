@@ -155,7 +155,8 @@ impl Runtime {
     RUNTIME.with(|runtime| {
       let observer_id = runtime.observers.create_observer();
       runtime.observers.mark_as_dirty(&[observer_id]);
-      let memo_id = runtime.memos.alloc(observer_id, value_id, compute);
+      let scope_id = runtime.scopes.alloc(runtime.scopes.active());
+      let memo_id = runtime.memos.alloc(observer_id, scope_id, value_id, compute);
       runtime.register_node(ReactiveNodeId::Memo(memo_id));
       memo_id
     })
@@ -169,7 +170,8 @@ impl Runtime {
     let effect_id = RUNTIME.with(|runtime| {
       let observer_id = runtime.observers.create_observer();
       runtime.observers.mark_as_dirty(&[observer_id]);
-      let effect_id = runtime.effects.alloc(observer_id, run);
+      let scope_id = runtime.scopes.alloc(runtime.scopes.active());
+      let effect_id = runtime.effects.alloc(observer_id, scope_id, run);
       runtime.register_node(ReactiveNodeId::Effect(effect_id));
       effect_id
     });

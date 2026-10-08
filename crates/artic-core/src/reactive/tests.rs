@@ -570,8 +570,8 @@ fn nested_batch_flushes_once() {
 
 // Live counts
 
-// Creating a signal, a memo and an effect raises each count; a memo also adds the signal that holds
-// its value.
+// Creating a signal, a memo and an effect raises each count. A memo also adds the signal that holds
+// its value, and a memo and an effect each add the scope that owns what their closure creates.
 #[test]
 fn live_counts_track_created_nodes() {
   let before = live_counts();
@@ -588,7 +588,7 @@ fn live_counts_track_created_nodes() {
       signals: before.signals + 2,
       memos: before.memos + 1,
       effects: before.effects + 1,
-      scopes: before.scopes,
+      scopes: before.scopes + 2,
     }
   );
 }
@@ -805,4 +805,63 @@ fn effect_can_dispose_its_own_scope() {
 
   assert_eq!(Runtime::subscriber_count(source.id()), 0);
   assert_eq!(live_counts().effects, before.effects);
+}
+
+// Inner scopes
+
+// An effect that creates an effect on every run disposes the one from its previous run first, so
+// only the latest inner effect is alive and runs.
+#[test]
+fn effect_disposes_inner_effects_before_rerun() {
+  let source = Signal::new(0);
+  let inner_runs = Rc::new(Cell::new(0));
+  let inner_runs_in_effect = Rc::clone(&inner_runs);
+  Effect::new(move || {
+    source.get();
+    let inner_runs = Rc::clone(&inner_runs_in_effect);
+    Effect::new(move || {
+      inner_runs.set(inner_runs.get() + 1);
+      source.get();
+    });
+  });
+  let after_creation = live_counts();
+
+  source.set(1);
+  flush_effects();
+  source.set(2);
+  flush_effects();
+
+  assert_eq!(live_counts(), after_creation);
+  assert_eq!(inner_runs.get(), 3, "one run per inner effect, each created once");
+}
+
+// A memo that creates a signal while computing disposes the one from its previous compute first.
+#[test]
+fn memo_disposes_inner_nodes_before_recompute() {
+  let source = Signal::new(0);
+  let memo = Memo::new(move || Signal::new(source.get()).get());
+  memo.get();
+  let after_first_compute = live_counts();
+
+  source.set(1);
+  memo.get();
+
+  assert_eq!(live_counts(), after_first_compute);
+}
+
+// Disposing a scope disposes what an effect created in it built during its runs.
+#[test]
+fn dispose_frees_nodes_created_by_an_owned_effect() {
+  let before = live_counts();
+  let scope = Scope::new_root();
+  scope.run(|| {
+    Effect::new(|| {
+      Signal::new(0);
+      Effect::new(|| {});
+    })
+  });
+
+  scope.dispose();
+
+  assert_eq!(live_counts(), before);
 }

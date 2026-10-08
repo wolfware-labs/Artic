@@ -1,5 +1,5 @@
 use crate::arena::{Arena, SlotId};
-use crate::reactive::runtime::{ObservableId, ObserverId};
+use crate::reactive::runtime::{ObservableId, ObserverId, ScopeId};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -8,6 +8,7 @@ pub struct EffectId(SlotId);
 
 struct EffectSlot {
   observer: ObserverId,
+  scope: ScopeId,
   run: Rc<RefCell<dyn FnMut()>>,
   observables: Rc<[ObservableId]>,
   is_running: bool,
@@ -26,9 +27,10 @@ impl EffectStore {
     }
   }
 
-  pub fn alloc(&self, observer: ObserverId, run: Rc<RefCell<dyn FnMut()>>) -> EffectId {
+  pub fn alloc(&self, observer: ObserverId, scope: ScopeId, run: Rc<RefCell<dyn FnMut()>>) -> EffectId {
     let effect_id = EffectId(self.slots.borrow_mut().alloc(EffectSlot {
       observer,
+      scope,
       run,
       observables: Rc::from([]),
       is_running: false,
@@ -64,6 +66,10 @@ impl EffectStore {
 
   pub fn observer(&self, effect_id: EffectId) -> ObserverId {
     self.with_slot(effect_id, |slot| slot.observer)
+  }
+
+  pub fn scope(&self, effect_id: EffectId) -> ScopeId {
+    self.with_slot(effect_id, |slot| slot.scope)
   }
 
   pub fn run(&self, effect_id: EffectId) -> Rc<RefCell<dyn FnMut()>> {
