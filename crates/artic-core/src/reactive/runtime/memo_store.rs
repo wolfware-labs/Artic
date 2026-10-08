@@ -10,7 +10,7 @@ struct MemoSlot {
   observer: ObserverId,
   value: SignalId,
   compute: Rc<dyn Fn()>,
-  observables: Vec<ObservableId>,
+  observables: Rc<[ObservableId]>,
   is_computing: bool,
 }
 
@@ -30,7 +30,7 @@ impl MemoStore {
       observer,
       value,
       compute,
-      observables: Vec::new(),
+      observables: Rc::from([]),
       is_computing: false,
     }))
   }
@@ -47,12 +47,12 @@ impl MemoStore {
     self.with_slot(memo_id, |slot| Rc::clone(&slot.compute))
   }
 
-  pub fn observables(&self, memo_id: MemoId) -> Vec<ObservableId> {
-    self.with_slot(memo_id, |slot| slot.observables.clone())
+  pub fn observables(&self, memo_id: MemoId) -> Rc<[ObservableId]> {
+    self.with_slot(memo_id, |slot| Rc::clone(&slot.observables))
   }
 
   pub fn set_observables(&self, memo_id: MemoId, observables: Vec<ObservableId>) {
-    self.with_slot(memo_id, |slot| slot.observables = observables);
+    self.with_slot(memo_id, |slot| slot.observables = Rc::from(observables));
   }
 
   pub fn is_computing(&self, memo_id: MemoId) -> bool {

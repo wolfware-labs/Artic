@@ -165,7 +165,7 @@ impl Runtime {
     if is_computing {
       panic!("memo read while it is being computed; a memo can't depend on itself");
     }
-    for observable in &observables {
+    for observable in observables.iter() {
       if Self::is_observer_dirty(observer_id) {
         break;
       }
@@ -174,7 +174,7 @@ impl Runtime {
     if !Self::is_observer_dirty(observer_id) {
       return;
     }
-    for observable in observables {
+    for observable in observables.iter() {
       observable.unsubscribe(observer_id);
     }
     let compute = RUNTIME.with(|runtime| {
