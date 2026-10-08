@@ -1,8 +1,8 @@
 //! Fine-grained reactivity: values that know who reads them.
 //!
 //! A [`Signal`] holds a value and remembers which observers read it. An observer is something that
-//! reads signals and is marked dirty when they change; [`Memo`] and [`Effect`] each use one to know
-//! when their last run is out of date. Reading a signal while an observer runs subscribes that
+//! reads signals and is marked dirty when they change; a [`Memo`] and an [`effect`] each use one to
+//! know when their last run is out of date. Reading a signal while an observer runs subscribes that
 //! observer to the signal, and writing the signal marks every subscribed observer as dirty. Nothing
 //! subscribes explicitly: the reads themselves record the dependencies.
 //!
@@ -35,7 +35,7 @@
 //!
 //! # Effects
 //!
-//! An [`Effect`] runs a closure once when created and again after something it read changes. It
+//! An [`effect`] runs a closure once when created and again after something it read changes. It
 //! doesn't run at the moment of the write: writes only mark it dirty, and it runs at the next flush
 //! point. A flush point is a call to [`flush_effects`], the end of the outermost [`batch`], and,
 //! once the dispatcher exists, the end of each dispatcher task.
@@ -50,14 +50,14 @@
 //! inputs never settle; the flush panics after 100 passes instead of looping forever.
 //!
 //! ```
-//! use artic_core::reactive::{Effect, Signal, flush_effects};
+//! use artic_core::reactive::{Signal, effect, flush_effects};
 //! use std::cell::RefCell;
 //! use std::rc::Rc;
 //!
 //! let name = Signal::new(String::from("Ada"));
 //! let title = Rc::new(RefCell::new(String::new()));
 //! let title_in_effect = Rc::clone(&title);
-//! Effect::new(move || *title_in_effect.borrow_mut() = format!("Hello, {}", name.get()));
+//! effect(move || *title_in_effect.borrow_mut() = format!("Hello, {}", name.get()));
 //!
 //! name.set(String::from("Grace"));
 //! assert_eq!(*title.borrow(), "Hello, Ada"); // not flushed yet
@@ -73,7 +73,7 @@
 //! scopes first.
 //!
 //! ```
-//! use artic_core::reactive::{Effect, Scope, Signal, flush_effects};
+//! use artic_core::reactive::{Scope, Signal, effect, flush_effects};
 //! use std::cell::Cell;
 //! use std::rc::Rc;
 //!
@@ -83,7 +83,7 @@
 //!
 //! let view = Scope::new_root();
 //! view.run(|| {
-//!   Effect::new(move || {
+//!   effect(move || {
 //!     theme.get();
 //!     border_updates_in_effect.set(border_updates_in_effect.get() + 1);
 //!   });
@@ -131,7 +131,7 @@ mod signal;
 #[cfg(test)]
 mod tests;
 
-pub use effect::Effect;
+pub use effect::effect;
 pub use live_counts::{LiveCounts, live_counts};
 pub use memo::Memo;
 pub use scope::Scope;
@@ -164,7 +164,7 @@ pub fn flush_effects() {
 /// # Examples
 ///
 /// ```
-/// use artic_core::reactive::{Effect, Signal, batch};
+/// use artic_core::reactive::{Signal, batch, effect};
 /// use std::cell::Cell;
 /// use std::rc::Rc;
 ///
@@ -172,7 +172,7 @@ pub fn flush_effects() {
 /// let last = Signal::new(String::from("Byron"));
 /// let runs = Rc::new(Cell::new(0));
 /// let runs_in_effect = Rc::clone(&runs);
-/// Effect::new(move || {
+/// effect(move || {
 ///   runs_in_effect.set(runs_in_effect.get() + 1);
 ///   format!("{} {}", first.get(), last.get());
 /// });

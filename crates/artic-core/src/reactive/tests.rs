@@ -1,5 +1,5 @@
 use crate::reactive::runtime::{ObservableId, ObserverId, Runtime};
-use crate::reactive::{Effect, LiveCounts, Memo, Scope, Signal, batch, flush_effects, live_counts};
+use crate::reactive::{LiveCounts, Memo, Scope, Signal, batch, effect, flush_effects, live_counts};
 use pretty_assertions::assert_eq;
 use std::cell::{Cell, RefCell};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -478,7 +478,7 @@ fn diamond_dependency_runs_effect_once() {
   let a = Signal::new(1);
   let b = Memo::new(move || a.get() + 1);
   let c = Memo::new(move || a.get() * 2);
-  Effect::new(move || {
+  effect(move || {
     count_run();
     b.get();
     c.get();
@@ -497,7 +497,7 @@ fn effect_sees_consistent_values() {
   let b = Memo::new(move || a.get() + 1);
   let seen = Rc::new(RefCell::new(Vec::new()));
   let seen_in_effect = Rc::clone(&seen);
-  Effect::new(move || seen_in_effect.borrow_mut().push((a.get(), b.get())));
+  effect(move || seen_in_effect.borrow_mut().push((a.get(), b.get())));
 
   for value in [2, 3, 4] {
     a.set(value);
@@ -517,9 +517,9 @@ fn effects_run_in_topological_order() {
   let deep = Memo::new(move || b.get() + c.get());
   let order = Rc::new(RefCell::new(Vec::new()));
   let order_in_deep = Rc::clone(&order);
-  Effect::new(move || order_in_deep.borrow_mut().push(("deep", deep.get())));
+  effect(move || order_in_deep.borrow_mut().push(("deep", deep.get())));
   let order_in_shallow = Rc::clone(&order);
-  Effect::new(move || order_in_shallow.borrow_mut().push(("shallow", a.get())));
+  effect(move || order_in_shallow.borrow_mut().push(("shallow", a.get())));
   order.borrow_mut().clear();
 
   a.set(10);
@@ -534,7 +534,7 @@ fn batch_coalesces_sets() {
   let (runs, count_run) = counter();
   let first = Signal::new(1);
   let second = Signal::new(1);
-  Effect::new(move || {
+  effect(move || {
     count_run();
     first.get();
     second.get();
@@ -554,7 +554,7 @@ fn batch_coalesces_sets() {
 fn nested_batch_flushes_once() {
   let (runs, count_run) = counter();
   let source = Signal::new(1);
-  Effect::new(move || {
+  effect(move || {
     count_run();
     source.get();
   });
@@ -578,7 +578,7 @@ fn live_counts_track_created_nodes() {
 
   let count = Signal::new(0);
   let double = Memo::new(move || count.get() * 2);
-  Effect::new(move || {
+  effect(move || {
     double.get();
   });
 
@@ -666,7 +666,7 @@ fn dispose_frees_all_owned_nodes() {
   scope.run(|| {
     let count = Signal::new(1);
     let double = Memo::new(move || count.get() * 2);
-    Effect::new(move || {
+    effect(move || {
       double.get();
     });
   });
@@ -695,7 +695,7 @@ fn disposed_effect_no_longer_runs() {
   let source = Signal::new(0);
   let (runs, read) = counting_reader(source);
   let scope = Scope::new_root();
-  scope.run(|| Effect::new(read));
+  scope.run(|| effect(read));
 
   scope.dispose();
   source.set(1);
@@ -711,7 +711,7 @@ fn signal_outlives_dependent_effect_scope() {
   let child = parent.child();
   let theme = parent.run(|| Signal::new(0));
   let (_, read) = counting_reader(theme);
-  child.run(|| Effect::new(read));
+  child.run(|| effect(read));
   assert_eq!(Runtime::subscriber_count(theme.id()), 1);
 
   child.dispose();
@@ -747,7 +747,7 @@ fn reader_skips_a_disposed_memo_it_read_before() {
   let seen = Rc::new(Cell::new(0));
   let seen_in_effect = Rc::clone(&seen);
   parent.run(|| {
-    Effect::new(move || {
+    effect(move || {
       if reads_in_effect.get() {
         short_lived.get();
       }
@@ -770,14 +770,14 @@ fn disposing_during_flush_keeps_later_effects_running() {
   let source = Signal::new(0);
   let first_scope = Scope::new_root();
   let (_, first) = counting_reader(source);
-  first_scope.run(|| Effect::new(first));
-  Effect::new(move || {
+  first_scope.run(|| effect(first));
+  effect(move || {
     if source.get() > 0 {
       first_scope.dispose();
     }
   });
   let (last_runs, last) = counting_reader(source);
-  Effect::new(last);
+  effect(last);
 
   source.set(1);
   flush_effects();
@@ -793,7 +793,7 @@ fn effect_can_dispose_its_own_scope() {
   let source = Signal::new(0);
   let scope = Scope::new_root();
   scope.run(|| {
-    Effect::new(move || {
+    effect(move || {
       if source.get() > 0 {
         scope.dispose();
       }
@@ -816,10 +816,10 @@ fn effect_disposes_inner_effects_before_rerun() {
   let source = Signal::new(0);
   let inner_runs = Rc::new(Cell::new(0));
   let inner_runs_in_effect = Rc::clone(&inner_runs);
-  Effect::new(move || {
+  effect(move || {
     source.get();
     let inner_runs = Rc::clone(&inner_runs_in_effect);
-    Effect::new(move || {
+    effect(move || {
       inner_runs.set(inner_runs.get() + 1);
       source.get();
     });
@@ -855,9 +855,9 @@ fn dispose_frees_nodes_created_by_an_owned_effect() {
   let before = live_counts();
   let scope = Scope::new_root();
   scope.run(|| {
-    Effect::new(|| {
+    effect(|| {
       Signal::new(0);
-      Effect::new(|| {});
+      effect(|| {});
     })
   });
 

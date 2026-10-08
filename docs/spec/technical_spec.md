@@ -64,7 +64,7 @@ Each layer builds on the ones below it. The exact dependency edges and the rules
 
 | Crate | Responsibility | Key public types |
 | --- | --- | --- |
-| `artic-core` | Signals, effects, `Property<T>`, styled-property metadata, visual/logical tree, `Object` trait, resources, dispatcher | `Signal`, `Effect`, `Property`, `Node`, `TreeArena`, `Dispatcher` |
+| `artic-core` | Signals, effects, `Property<T>`, styled-property metadata, visual/logical tree, `Object` trait, resources, dispatcher | `Signal`, `effect`, `Property`, `Node`, `TreeArena`, `Dispatcher` |
 | `artic-registry` | Generated type descriptors used by both XAML paths: type name → constructor, property name → setter/getter/type converter, content property, attached properties, events | `TypeInfo`, `PropertyInfo`, `TypeConverter`, `Registry` |
 | `artic-macros` | `#[derive(XamlType)]`, `#[derive(ViewModel)]`, `#[xaml_class]`, `xaml!` (inline) | proc macros |
 | `artic-xaml` | Parser: XML → XAML Infoset (MS-XAML §5), markup-extension grammar, diagnostics with spans | `XamlDocument`, `XamlNode`, `MarkupExtensionAst`, `Diagnostic` |
@@ -290,7 +290,7 @@ Signals are the only change-propagation mechanism; `Property<T>`, bindings, styl
 
 - `Signal<T>`: reactive cell; `get()` records a dependency when read inside an effect, `set()` marks dependents dirty. `Copy` handle into a runtime-owned arena; `!Send`, UI-thread only.
 - `Memo<T>`: derived signal, recomputed lazily when a dependency changes and its value is read.
-- `Effect`: closure re-run when its dependencies change. `set()` never runs effects directly; it marks dependents dirty and queues effects. Queued effects run in topological order (glitch-free) at a flush point: the end of the current dispatcher task, the end of the outermost `batch`, or an explicit `flush_effects()`. Memos are pull-based, so a read always sees current values.
+- `effect`: a function that registers a closure re-run when its dependencies change. `set()` never runs effects directly; it marks dependents dirty and queues effects. Queued effects run in topological order (glitch-free) at a flush point: the end of the current dispatcher task, the end of the outermost `batch`, or an explicit `flush_effects()`. Memos are pull-based, so a read always sees current values.
 - `batch(|| …)` makes its closure one flush point: several `set`s inside it produce one flush when the outermost `batch` returns. Inside a dispatcher task every task is already a flush point (D26).
 - Ownership: signals and effects belong to a `Scope`; disposing a scope (a view subtree) disposes everything created in it. No leaks when a view is unloaded, no manual unsubscribe.
 - `set()` skips propagation when `T: PartialEq` and the value is unchanged.
