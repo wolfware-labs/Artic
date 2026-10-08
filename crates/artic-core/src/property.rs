@@ -93,6 +93,27 @@ where
     self.0.with(|levels| function(levels.effective()))
   }
 
+  /// Returns the level that supplies the effective value.
+  ///
+  /// Like [`get`](Property::get), this subscribes the running observer. Clearing the winning level
+  /// changes the source even when the next level holds an equal value, and readers are marked dirty
+  /// then too.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use artic_core::property::{Precedence, Property};
+  ///
+  /// let width = Property::new(0.0);
+  /// assert_eq!(width.effective_source(), Precedence::Default);
+  ///
+  /// width.set_at(Precedence::Binding, 80.0);
+  /// assert_eq!(width.effective_source(), Precedence::Binding);
+  /// ```
+  pub fn effective_source(&self) -> Precedence {
+    self.0.with(|levels| levels.effective_source())
+  }
+
   /// Sets the `Local` level, the level for values set in code or in markup.
   pub fn set(&self, value: T) {
     self.set_at(Precedence::Local, value);
@@ -278,5 +299,39 @@ mod tests {
   #[should_panic(expected = "the Default level can't be cleared")]
   fn clear_default_is_rejected() {
     Property::new(0).clear(Precedence::Default);
+  }
+
+  // `effective_source` names the highest level that holds a value, following sets and clears.
+  #[test]
+  fn effective_source_reports_level() {
+    let property = Property::new(0);
+    assert_eq!(property.effective_source(), Precedence::Default);
+
+    for level in &LEVELS[1..] {
+      property.set_at(*level, 1);
+      assert_eq!(property.effective_source(), *level);
+    }
+    for pair in LEVELS.windows(2).rev() {
+      property.clear(pair[1]);
+      assert_eq!(property.effective_source(), pair[0]);
+    }
+  }
+
+  // Clearing the winning level wakes a reader of `effective_source` even when the level below holds
+  // an equal value, because the source changed.
+  #[test]
+  fn falling_back_to_an_equal_value_still_updates_the_source() {
+    let width = Property::new(0);
+    width.set_at(Precedence::StyleSetter, 10);
+    width.set(10);
+    let seen = Rc::new(Cell::new(Precedence::Default));
+    let seen_in_effect = Rc::clone(&seen);
+    effect(move || seen_in_effect.set(width.effective_source()));
+
+    width.clear(Precedence::Local);
+    flush_effects();
+
+    assert_eq!(seen.get(), Precedence::StyleSetter);
+    assert_eq!(width.get(), 10);
   }
 }
