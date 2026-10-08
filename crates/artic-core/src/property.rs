@@ -27,6 +27,28 @@
 //! flush_effects();
 //! assert_eq!(painted.get(), "blue");
 //! ```
+//!
+//! # Keys and metadata
+//!
+//! Every property is created with a [`PropertyKey`]: a `static` per property kind that names it,
+//! says which frame stages a change [`Affects`], and says whether it inherits. Properties on
+//! different node types are the same kind when they share the key.
+//!
+//! Once a node is in a [`TreeArena`](crate::tree::TreeArena), a change to the effective value of
+//! one of its properties adds the key's stages to the node's dirty flags right away. A write that
+//! readers can't see marks nothing.
+//!
+//! # Inheritance
+//!
+//! A property whose key inherits takes its value from the nearest logical ancestor that has a
+//! property of the same kind, when nothing above the [`Precedence::Inherited`] level is set. The
+//! level holds a link to that ancestor's property rather than a copy, so the inherited value is
+//! never stale, and a change on the ancestor marks the inheriting nodes dirty. The tree sets the
+//! link when a node moves in the logical tree; the visual tree plays no part.
+//!
+//! A property belongs to the [`Scope`](crate::reactive::Scope) it was created in, and a node to its
+//! arena. Dispose a node's scope only once the node has left the tree: a descendant that still
+//! inherits from a disposed property panics when read.
 
 mod affects;
 mod any;
@@ -56,7 +78,8 @@ use levels::Levels;
 pub enum Precedence {
   /// The value a property has when no other level is set.
   Default,
-  /// A value inherited from an ancestor node.
+  /// The value of the same kind of property on the nearest logical ancestor that has one. The tree
+  /// sets this level; [`Property::set_at`] and [`Property::clear`] refuse it.
   Inherited,
   /// A value set by a matching style.
   StyleSetter,
