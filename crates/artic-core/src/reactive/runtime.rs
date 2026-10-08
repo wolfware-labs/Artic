@@ -35,6 +35,7 @@ pub struct Runtime {
   observables: RefCell<Vec<Vec<ObservableId>>>,
   has_changes: Cell<bool>,
   is_flushing: Cell<bool>,
+  batch_depth: Cell<usize>,
 }
 
 impl Runtime {
@@ -47,6 +48,7 @@ impl Runtime {
       observables: RefCell::new(Vec::new()),
       has_changes: Cell::new(false),
       is_flushing: Cell::new(false),
+      batch_depth: Cell::new(0),
     }
   }
 
@@ -249,8 +251,17 @@ impl Runtime {
     })
   }
 
+  pub fn batch<TResult>(action: impl FnOnce() -> TResult) -> TResult {
+    let result = {
+      let _batch = BatchGuard::enter();
+      action()
+    };
+    Self::flush_effects();
+    result
+  }
+
   pub fn flush_effects() {
-    if RUNTIME.with(|runtime| runtime.is_flushing.replace(true)) {
+    if RUNTIME.with(|runtime| runtime.batch_depth.get() > 0 || runtime.is_flushing.replace(true)) {
       return;
     }
     let _flushing = FlushingGuard;
@@ -307,5 +318,20 @@ impl Drop for FlushingGuard {
         runtime.has_changes.set(true);
       }
     });
+  }
+}
+
+struct BatchGuard;
+
+impl BatchGuard {
+  fn enter() -> Self {
+    RUNTIME.with(|runtime| runtime.batch_depth.set(runtime.batch_depth.get() + 1));
+    BatchGuard
+  }
+}
+
+impl Drop for BatchGuard {
+  fn drop(&mut self) {
+    RUNTIME.with(|runtime| runtime.batch_depth.set(runtime.batch_depth.get() - 1));
   }
 }

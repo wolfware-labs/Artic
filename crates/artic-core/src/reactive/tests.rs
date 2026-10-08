@@ -1,5 +1,5 @@
 use crate::reactive::runtime::{ObservableId, ObserverId, Runtime};
-use crate::reactive::{Effect, Memo, Signal, flush_effects};
+use crate::reactive::{Effect, Memo, Signal, batch, flush_effects};
 use pretty_assertions::assert_eq;
 use std::cell::{Cell, RefCell};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -526,4 +526,44 @@ fn effects_run_in_topological_order() {
   flush_effects();
 
   assert_eq!(*order.borrow(), [("deep", 31), ("shallow", 10)]);
+}
+
+// Several writes inside one `batch` rerun an effect once.
+#[test]
+fn batch_coalesces_sets() {
+  let (runs, count_run) = counter();
+  let first = Signal::new(1);
+  let second = Signal::new(1);
+  Effect::new(move || {
+    count_run();
+    first.get();
+    second.get();
+  });
+
+  batch(|| {
+    first.set(2);
+    second.set(2);
+    first.set(3);
+  });
+
+  assert_eq!(runs.get(), 2, "one run on creation, one for the batch");
+}
+
+// A batch inside a batch doesn't flush; the outermost one flushes once when it returns.
+#[test]
+fn nested_batch_flushes_once() {
+  let (runs, count_run) = counter();
+  let source = Signal::new(1);
+  Effect::new(move || {
+    count_run();
+    source.get();
+  });
+
+  batch(|| {
+    batch(|| source.set(2));
+    assert_eq!(runs.get(), 1, "the inner batch must not flush");
+    source.set(3);
+  });
+
+  assert_eq!(runs.get(), 2);
 }

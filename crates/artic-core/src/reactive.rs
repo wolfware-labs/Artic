@@ -68,7 +68,8 @@ pub use signal::Signal;
 /// inputs, make it panic after 100 passes.
 ///
 /// Calling it while a flush is already running, for example from inside an effect, does nothing:
-/// the running flush picks up the change.
+/// the running flush picks up the change. Inside a [`batch`] it does nothing either; the outermost
+/// `batch` flushes when it returns.
 ///
 /// # Panics
 ///
@@ -76,4 +77,35 @@ pub use signal::Signal;
 /// caller; that effect and the effects not yet visited run again on the next flush.
 pub fn flush_effects() {
   runtime::Runtime::flush_effects();
+}
+
+/// Runs `action` and then flushes effects once, so all the writes inside it cause a single flush.
+///
+/// Batches nest: only the outermost `batch` flushes. If `action` panics, nothing is flushed and the
+/// panic continues; the pending effects run at the next flush point.
+///
+/// # Examples
+///
+/// ```
+/// use artic_core::reactive::{Effect, Signal, batch};
+/// use std::cell::Cell;
+/// use std::rc::Rc;
+///
+/// let first = Signal::new(String::from("Ada"));
+/// let last = Signal::new(String::from("Byron"));
+/// let runs = Rc::new(Cell::new(0));
+/// let runs_in_effect = Rc::clone(&runs);
+/// Effect::new(move || {
+///   runs_in_effect.set(runs_in_effect.get() + 1);
+///   format!("{} {}", first.get(), last.get());
+/// });
+///
+/// batch(|| {
+///   first.set(String::from("Augusta Ada"));
+///   last.set(String::from("King"));
+/// });
+/// assert_eq!(runs.get(), 2, "one run on creation, one for the whole batch");
+/// ```
+pub fn batch<TResult>(action: impl FnOnce() -> TResult) -> TResult {
+  runtime::Runtime::batch(action)
 }

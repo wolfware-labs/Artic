@@ -1,6 +1,6 @@
 // Integration tests for `Effect`, using only the public API, as app code would.
 
-use artic_core::reactive::{Effect, Memo, Signal, flush_effects};
+use artic_core::reactive::{Effect, Memo, Signal, batch, flush_effects};
 use pretty_assertions::assert_eq;
 use std::cell::{Cell, RefCell};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -228,4 +228,55 @@ fn panicking_effect_runs_again_on_next_flush() {
   flush_effects();
 
   assert_eq!(seen.get(), 2);
+}
+
+// Batching
+
+// `batch` returns what its closure returns.
+#[test]
+fn batch_returns_the_closure_result() {
+  assert_eq!(batch(|| 42), 42);
+}
+
+// `flush_effects` inside a batch waits for the batch to end.
+#[test]
+fn flush_inside_a_batch_waits_for_the_batch() {
+  let (runs, count_run) = counter();
+  let source = Signal::new(1);
+  Effect::new(move || {
+    count_run();
+    source.get();
+  });
+
+  batch(|| {
+    source.set(2);
+    flush_effects();
+    assert_eq!(runs.get(), 1);
+  });
+
+  assert_eq!(runs.get(), 2);
+}
+
+// A batch whose closure panics doesn't flush, and later batches still flush.
+#[test]
+fn panicking_batch_leaves_later_batches_working() {
+  let (runs, count_run) = counter();
+  let source = Signal::new(1);
+  Effect::new(move || {
+    count_run();
+    source.get();
+  });
+
+  let result = catch_unwind(AssertUnwindSafe(|| {
+    batch(|| {
+      source.set(2);
+      panic!("batch failed");
+    })
+  }));
+  assert!(result.is_err());
+  assert_eq!(runs.get(), 1, "a panicking batch must not flush");
+
+  batch(|| source.set(3));
+
+  assert_eq!(runs.get(), 2);
 }
