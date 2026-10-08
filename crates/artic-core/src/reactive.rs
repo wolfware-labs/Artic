@@ -132,6 +132,8 @@ mod signal;
 mod tests;
 
 pub use effect::effect;
+#[cfg(any(test, feature = "testing"))]
+pub use live_counts::assert_no_reactive_leaks;
 pub use live_counts::{LiveCounts, live_counts};
 pub use memo::Memo;
 pub use scope::Scope;
