@@ -1,6 +1,9 @@
 use crate::tree::node::TreeNode;
 use crate::tree::{NodeId, Tree, TreeArena};
+use std::collections::HashSet;
 use std::iter::{from_fn, successors};
+
+const TREES: [Tree; 2] = [Tree::Logical, Tree::Visual];
 
 impl TreeArena {
   /// Makes `child` the last child of `parent` in `tree`.
@@ -123,6 +126,42 @@ impl TreeArena {
       stack.extend(self.child_slice(tree, next).iter().rev());
       Some(next)
     })
+  }
+
+  /// Frees `id` and everything below it in either tree.
+  ///
+  /// The subtree is every node reachable from `id` through child links of either tree, so template
+  /// parts that only exist in the visual tree go too. Any freed node whose parent survives is
+  /// detached from that parent first, so no live node keeps the id of a freed child, and every child
+  /// of a freed node is freed with it.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `id` is stale.
+  #[track_caller]
+  pub fn free_subtree(&mut self, id: NodeId) {
+    self.node(id);
+    let mut subtree = HashSet::from([id]);
+    let mut pending = vec![id];
+    while let Some(node) = pending.pop() {
+      for tree in TREES {
+        for child in self.child_slice(tree, node) {
+          if subtree.insert(*child) {
+            pending.push(*child);
+          }
+        }
+      }
+    }
+    for node in &subtree {
+      for tree in TREES {
+        if self.parent(tree, *node).is_some_and(|parent| !subtree.contains(&parent)) {
+          self.detach(tree, *node);
+        }
+      }
+    }
+    for node in subtree {
+      self.free(node);
+    }
   }
 
   fn child_slice(&self, tree: Tree, id: NodeId) -> &[NodeId] {
@@ -394,5 +433,62 @@ mod tests {
     assert_eq!(arena.descendants(Tree::Logical, a).collect::<Vec<_>>(), [b, c, d, e]);
     assert_eq!(arena.descendants(Tree::Visual, a).collect::<Vec<_>>(), [e, d, b, c]);
     assert_eq!(arena.descendants(Tree::Logical, c).count(), 0);
+  }
+
+  // Freeing a control frees its logical content and the visual-only parts of its template, and
+  // nothing else.
+  #[test]
+  fn free_subtree_frees_all_descendants() {
+    let mut arena = TreeArena::new();
+    let [panel, button, border, presenter, text, sibling] = nodes(&mut arena, 6)[..] else {
+      unreachable!()
+    };
+    arena.add_child(Tree::Logical, panel, button);
+    arena.add_child(Tree::Logical, panel, sibling);
+    arena.add_child(Tree::Logical, button, text);
+    arena.add_child(Tree::Visual, panel, button);
+    arena.add_child(Tree::Visual, button, border);
+    arena.add_child(Tree::Visual, border, presenter);
+    arena.add_child(Tree::Visual, presenter, text);
+
+    arena.free_subtree(button);
+
+    assert_eq!(arena.len(), 2);
+    assert!(arena.contains(panel) && arena.contains(sibling));
+    assert_eq!(children(&arena, Tree::Logical, panel), [sibling]);
+    assert_eq!(children(&arena, Tree::Visual, panel), []);
+  }
+
+  // A node inside the subtree in one tree but under an outside parent in the other is freed, and the
+  // outside parent stops listing it.
+  #[test]
+  fn free_subtree_detaches_nodes_from_outside_parents() {
+    let mut arena = TreeArena::new();
+    let [owner, popup_root, content] = nodes(&mut arena, 3)[..] else {
+      unreachable!()
+    };
+    arena.add_child(Tree::Logical, owner, content);
+    arena.add_child(Tree::Visual, popup_root, content);
+
+    arena.free_subtree(owner);
+
+    assert!(!arena.contains(content));
+    assert_eq!(children(&arena, Tree::Visual, popup_root), []);
+    assert_eq!(arena.len(), 1);
+  }
+
+  // Freeing a root frees the whole tree.
+  #[test]
+  fn free_subtree_of_a_root_empties_the_arena() {
+    let mut arena = TreeArena::new();
+    let [root, a, b] = nodes(&mut arena, 3)[..] else {
+      unreachable!()
+    };
+    arena.add_child(Tree::Logical, root, a);
+    arena.add_child(Tree::Visual, a, b);
+
+    arena.free_subtree(root);
+
+    assert!(arena.is_empty());
   }
 }

@@ -3,6 +3,11 @@
 //! [`TreeArena`] owns every node as a `Box<dyn Object>`, and [`NodeId`] is the handle used to reach one.
 //! Handles are checked against a per-slot generation, so a handle to a freed node stops resolving instead of
 //! pointing at whatever node reuses its slot.
+//!
+//! Every node belongs to two trees at once, each with its own parent and ordered children: the logical tree
+//! the markup declares, and the visual tree that is laid out and drawn. Methods that work on links take a
+//! [`Tree`] to say which one, such as [`add_child`](TreeArena::add_child) and
+//! [`descendants`](TreeArena::descendants).
 
 mod links;
 mod node;
