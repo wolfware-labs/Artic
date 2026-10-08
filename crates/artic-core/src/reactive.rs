@@ -1,10 +1,10 @@
 //! Fine-grained reactivity: values that know who reads them.
 //!
 //! A [`Signal`] holds a value and remembers which observers read it. An observer is something that
-//! reads signals and is marked dirty when they change; a [`Memo`] uses one to know when its value is
-//! out of date. Reading a signal while an observer runs subscribes that observer to the signal, and writing the signal marks every subscribed
-//! observer as dirty, meaning its last result is out of date. Nothing subscribes explicitly: the
-//! reads themselves record the dependencies.
+//! reads signals and is marked dirty when they change; [`Memo`] and [`Effect`] each use one to know
+//! when their last run is out of date. Reading a signal while an observer runs subscribes that
+//! observer to the signal, and writing the signal marks every subscribed observer as dirty. Nothing
+//! subscribes explicitly: the reads themselves record the dependencies.
 //!
 //! The runtime that stores signal values is thread-local, and signals can only be used on the
 //! thread that created them. A `Signal<T>` is a small `Copy` handle into that runtime, so copying it
@@ -31,6 +31,38 @@
 //! let count = Signal::new(2);
 //! let is_even = Memo::new(move || count.get() % 2 == 0);
 //! assert!(is_even.get());
+//! ```
+//!
+//! # Effects
+//!
+//! An [`Effect`] runs a closure once when created and again after something it read changes. It
+//! doesn't run at the moment of the write: writes only mark it dirty, and it runs at the next flush
+//! point. A flush point is a call to [`flush_effects`], the end of the outermost [`batch`], and,
+//! once the dispatcher exists, the end of each dispatcher task.
+//!
+//! A flush visits effects in the order they were created. Each one first brings the memos it read
+//! up to date and runs only if one of its inputs actually changed. Because a memo is brought up to
+//! date when it is read, an effect never sees a fresh signal next to a stale memo, whatever order
+//! the effects run in.
+//!
+//! If an effect writes a signal during a flush, the flush makes another pass over the effects, so
+//! when it returns every effect has seen the final values. Effects that keep writing each other's
+//! inputs never settle; the flush panics after 100 passes instead of looping forever.
+//!
+//! ```
+//! use artic_core::reactive::{Effect, Signal, flush_effects};
+//! use std::cell::RefCell;
+//! use std::rc::Rc;
+//!
+//! let name = Signal::new(String::from("Ada"));
+//! let title = Rc::new(RefCell::new(String::new()));
+//! let title_in_effect = Rc::clone(&title);
+//! Effect::new(move || *title_in_effect.borrow_mut() = format!("Hello, {}", name.get()));
+//!
+//! name.set(String::from("Grace"));
+//! assert_eq!(*title.borrow(), "Hello, Ada"); // not flushed yet
+//! flush_effects();
+//! assert_eq!(*title.borrow(), "Hello, Grace");
 //! ```
 //!
 //! # Skipping writes that change nothing
