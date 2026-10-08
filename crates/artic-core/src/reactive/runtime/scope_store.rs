@@ -48,8 +48,8 @@ impl ScopeStore {
     scope_id
   }
 
-  pub fn alloc_for(&self, node: ReactiveNodeId, parent: Option<ScopeId>) -> ScopeId {
-    let scope_id = self.alloc(parent);
+  pub fn alloc_for(&self, node: ReactiveNodeId) -> ScopeId {
+    let scope_id = self.alloc(self.active());
     self.node_scopes.borrow_mut().insert(node, scope_id);
     scope_id
   }
@@ -92,8 +92,10 @@ impl ScopeStore {
     self.with_slot(scope_id, |slot| take(&mut slot.children))
   }
 
-  pub fn add_node(&self, scope_id: ScopeId, node: ReactiveNodeId) {
-    self.with_slot(scope_id, |slot| slot.nodes.push(node));
+  pub fn add_to_active(&self, node: ReactiveNodeId) {
+    if let Some(scope_id) = self.active() {
+      self.with_slot(scope_id, |slot| slot.nodes.push(node));
+    }
   }
 
   pub fn take_nodes(&self, scope_id: ScopeId) -> Vec<ReactiveNodeId> {
@@ -130,7 +132,7 @@ mod tests {
   fn take_scope_of_removes_the_entry() {
     let scopes = ScopeStore::new();
     let node = ReactiveNodeId::Signal(SignalStore::new().alloc_value(0));
-    let scope = scopes.alloc_for(node, None);
+    let scope = scopes.alloc_for(node);
 
     assert_eq!(scopes.take_scope_of(node), Some(scope));
 

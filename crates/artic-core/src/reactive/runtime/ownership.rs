@@ -105,10 +105,4 @@ impl Runtime {
   fn dispose_signal(signal_id: SignalId) {
     RUNTIME.with(|runtime| runtime.signals.free(signal_id));
   }
-
-  pub(super) fn register_node(&self, node: ReactiveNodeId) {
-    if let Some(scope_id) = self.scopes.active() {
-      self.scopes.add_node(scope_id, node);
-    }
-  }
 }

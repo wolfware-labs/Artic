@@ -71,7 +71,7 @@ impl Runtime {
   {
     RUNTIME.with(|runtime| {
       let signal_id = runtime.signals.alloc_value(value);
-      runtime.register_node(ReactiveNodeId::Signal(signal_id));
+      runtime.scopes.add_to_active(ReactiveNodeId::Signal(signal_id));
       signal_id
     })
   }
@@ -161,8 +161,8 @@ impl Runtime {
       runtime.observers.mark_as_dirty(&[observer_id]);
       let memo_id = runtime.memos.alloc(observer_id, value_id, compute);
       let node = ReactiveNodeId::Memo(memo_id);
-      runtime.scopes.alloc_for(node, runtime.scopes.active());
-      runtime.register_node(node);
+      runtime.scopes.add_to_active(node);
+      runtime.scopes.alloc_for(node);
       memo_id
     })
   }
@@ -181,8 +181,8 @@ impl Runtime {
       runtime.observers.mark_as_dirty(&[observer_id]);
       let effect_id = runtime.effects.alloc(observer_id, run);
       let node = ReactiveNodeId::Effect(effect_id);
-      runtime.scopes.alloc_for(node, runtime.scopes.active());
-      runtime.register_node(node);
+      runtime.scopes.add_to_active(node);
+      runtime.scopes.alloc_for(node);
       effect_id
     });
     Self::refresh_effect(effect_id);
