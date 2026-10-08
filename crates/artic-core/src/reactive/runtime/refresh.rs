@@ -1,4 +1,4 @@
-use crate::reactive::runtime::{EffectId, MemoId, ObservableId, ObserverId, RUNTIME, Runtime};
+use crate::reactive::runtime::{EffectId, MemoId, ObservableId, ObserverId, RUNTIME, ReactiveNodeId, Runtime};
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::thread;
 
@@ -20,7 +20,10 @@ impl Runtime {
     let (scope_id, compute) = RUNTIME.with(|runtime| {
       runtime.memos.set_observables(memo_id, Vec::new());
       runtime.memos.set_computing(memo_id, true);
-      (runtime.memos.scope(memo_id), runtime.memos.compute(memo_id))
+      (
+        runtime.scopes.scope_of(ReactiveNodeId::Memo(memo_id)),
+        runtime.memos.compute(memo_id),
+      )
     });
     Self::clear_scope(scope_id);
     let compute_result = Self::rerun(observer_id, &observables, || Self::run_in_scope(scope_id, &*compute));
@@ -57,7 +60,10 @@ impl Runtime {
     let (scope_id, run) = RUNTIME.with(|runtime| {
       runtime.effects.set_observables(effect_id, Vec::new());
       runtime.effects.set_running(effect_id, true);
-      (runtime.effects.scope(effect_id), runtime.effects.run(effect_id))
+      (
+        runtime.scopes.scope_of(ReactiveNodeId::Effect(effect_id)),
+        runtime.effects.run(effect_id),
+      )
     });
     Self::clear_scope(scope_id);
     let run_result = Self::rerun(observer_id, &observables, || {

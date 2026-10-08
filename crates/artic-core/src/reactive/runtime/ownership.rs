@@ -62,14 +62,9 @@ impl Runtime {
   }
 
   fn dispose_effect(effect_id: EffectId) {
-    let (observer_id, scope_id, observables) = RUNTIME.with(|runtime| {
-      (
-        runtime.effects.observer(effect_id),
-        runtime.effects.scope(effect_id),
-        runtime.effects.observables(effect_id),
-      )
-    });
-    Self::dispose_scope(scope_id);
+    let (observer_id, observables) =
+      RUNTIME.with(|runtime| (runtime.effects.observer(effect_id), runtime.effects.observables(effect_id)));
+    Self::dispose_scope_of(ReactiveNodeId::Effect(effect_id));
     for observable in observables.iter() {
       observable.unsubscribe(observer_id);
     }
@@ -83,15 +78,14 @@ impl Runtime {
   }
 
   fn dispose_memo(memo_id: MemoId) {
-    let (observer_id, scope_id, value_id, observables) = RUNTIME.with(|runtime| {
+    let (observer_id, value_id, observables) = RUNTIME.with(|runtime| {
       (
         runtime.memos.observer(memo_id),
-        runtime.memos.scope(memo_id),
         runtime.memos.value(memo_id),
         runtime.memos.observables(memo_id),
       )
     });
-    Self::dispose_scope(scope_id);
+    Self::dispose_scope_of(ReactiveNodeId::Memo(memo_id));
     for observable in observables.iter() {
       observable.unsubscribe(observer_id);
     }
@@ -100,6 +94,12 @@ impl Runtime {
       runtime.observers.free(observer_id);
       runtime.signals.free(value_id);
     });
+  }
+
+  fn dispose_scope_of(node: ReactiveNodeId) {
+    if let Some(scope_id) = RUNTIME.with(|runtime| runtime.scopes.take_scope_of(node)) {
+      Self::dispose_scope(scope_id);
+    }
   }
 
   fn dispose_signal(signal_id: SignalId) {
