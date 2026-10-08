@@ -8,6 +8,10 @@
 //! the markup declares, and the visual tree that is laid out and drawn. Methods that work on links take a
 //! [`Tree`] to say which one, such as [`add_child`](TreeArena::add_child) and
 //! [`descendants`](TreeArena::descendants).
+//!
+//! Every node also has dirty flags saying which frame stages it needs redone. A new node starts with
+//! layout and rendering dirty, and a change to one of its properties adds the stages the property's key
+//! affects; see [`dirty`](TreeArena::dirty).
 
 mod dirty;
 mod inheritance;
@@ -87,7 +91,10 @@ impl TreeArena {
 
   /// Moves `value` into the arena and returns the id that refers to it.
   ///
-  /// The most recently freed slot is reused if there is one; otherwise a new slot is appended.
+  /// The most recently freed slot is reused if there is one; otherwise a new slot is appended. The new
+  /// node has no parent or children in either tree and starts with layout and rendering dirty. Each
+  /// property it lists through [`Object::visit_properties`] is connected to its dirty flags, so a later
+  /// change to that property marks the node dirty.
   ///
   /// # Panics
   ///
@@ -123,6 +130,11 @@ impl TreeArena {
   /// Freeing bumps the slot's generation, which invalidates `node_id` and every copy of it. The generation
   /// wraps around after `u32::MAX - 1` reuses of the same slot, so an id kept across that many reuses
   /// could in principle match a newer node.
+  ///
+  /// The node's inheritable properties stop following their ancestors. Its tree links are not touched:
+  /// its parent still lists it among its children and its children still name it as their parent.
+  /// [`detach`](TreeArena::detach) it first, or use [`free_subtree`](TreeArena::free_subtree), which
+  /// detaches and frees a whole subtree.
   ///
   /// # Examples
   ///
