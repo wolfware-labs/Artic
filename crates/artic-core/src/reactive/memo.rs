@@ -74,7 +74,7 @@ where
       Rc::new(move || {
         let new_value = Some(compute());
         if Runtime::with_untracked_signal_value(value_id, |value: &Option<TValue>| *value != new_value) {
-          Runtime::set_memo_value(value_id, new_value);
+          Runtime::with_untracked_signal_mut_value(value_id, |value| *value = new_value);
         }
       }),
     );

@@ -96,17 +96,10 @@ impl Runtime {
     TValue: Any,
   {
     RUNTIME.with(|runtime| runtime.tracker.record_write());
-    Self::write_signal_value(signal_id, action);
+    Self::with_untracked_signal_mut_value(signal_id, action);
   }
 
-  pub fn set_memo_value<TValue>(value_id: SignalId, value: TValue)
-  where
-    TValue: Any,
-  {
-    Self::write_signal_value(value_id, |v| *v = value);
-  }
-
-  fn write_signal_value<TValue>(signal_id: SignalId, action: impl FnOnce(&mut TValue))
+  pub(crate) fn with_untracked_signal_mut_value<TValue>(signal_id: SignalId, action: impl FnOnce(&mut TValue))
   where
     TValue: Any,
   {
