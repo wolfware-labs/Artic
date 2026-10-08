@@ -53,6 +53,15 @@ impl<T> Clone for Signal<T> {
 
 impl<TValue> Copy for Signal<TValue> {}
 
+/// Two handles are equal when they refer to the same signal, whatever its value.
+impl<TValue> PartialEq for Signal<TValue> {
+  fn eq(&self, other: &Self) -> bool {
+    self.0 == other.0
+  }
+}
+
+impl<TValue> Eq for Signal<TValue> {}
+
 impl<TValue> Signal<TValue> {
   /// Creates a signal holding `initial_value`.
   ///
@@ -190,6 +199,15 @@ impl<TValue> Signal<TValue> {
   pub fn update_with(&self, action: impl FnOnce(&mut TValue) -> Change) {
     self.ensure_alive();
     Runtime::update_signal_value_with(self.0, action);
+  }
+
+  pub(crate) fn is_alive(&self) -> bool {
+    Runtime::contains_signal(self.0)
+  }
+
+  pub(crate) fn with_untracked<TResult>(&self, function: impl FnOnce(&TValue) -> TResult) -> TResult {
+    self.ensure_alive();
+    Runtime::with_untracked_signal_value(self.0, function)
   }
 
   fn ensure_alive(&self) {

@@ -40,7 +40,7 @@ impl TreeArena {
   #[track_caller]
   pub fn add_child(&mut self, tree: Tree, parent: NodeId, child: NodeId) {
     self.check_attach(tree, parent, child);
-    self.detach(tree, child);
+    self.unlink(tree, child);
     let index = self.node(parent).links(tree).children.len();
     self.attach(tree, parent, index, child);
   }
@@ -63,22 +63,25 @@ impl TreeArena {
       len -= 1;
     }
     assert!(index <= len, "child index {index} is out of range for {len} children");
-    self.detach(tree, child);
+    self.unlink(tree, child);
     self.attach(tree, parent, index, child);
   }
 
   /// Removes `node` from its parent's children in `tree` and returns that parent.
   ///
   /// Returns `None`, and changes nothing, if `node` has no parent in `tree`. The node stays in the
-  /// arena with its own children; only the link to its parent is cut.
+  /// arena with its own children; only the link to its parent is cut. In the logical tree, the
+  /// node and its descendants then inherit only from what is left above them.
   ///
   /// # Panics
   ///
   /// Panics if `node` is stale.
   #[track_caller]
   pub fn detach(&mut self, tree: Tree, node: NodeId) -> Option<NodeId> {
-    let parent = self.node_mut(node).links_mut(tree).parent.take()?;
-    self.node_mut(parent).links_mut(tree).children.retain(|child| *child != node);
+    let parent = self.unlink(tree, node)?;
+    if tree == Tree::Logical {
+      self.resolve_inheritance(node);
+    }
     Some(parent)
   }
 
@@ -155,7 +158,7 @@ impl TreeArena {
     for node in &subtree {
       for tree in TREES {
         if self.parent(tree, *node).is_some_and(|parent| !subtree.contains(&parent)) {
-          self.detach(tree, *node);
+          self.unlink(tree, *node);
         }
       }
     }
@@ -186,10 +189,20 @@ impl TreeArena {
   fn attach(&mut self, tree: Tree, parent: NodeId, index: usize, child: NodeId) {
     self.node_mut(parent).links_mut(tree).children.insert(index, child);
     self.node_mut(child).links_mut(tree).parent = Some(parent);
+    if tree == Tree::Logical {
+      self.resolve_inheritance(child);
+    }
   }
 
   #[track_caller]
-  fn node(&self, id: NodeId) -> &TreeNode {
+  fn unlink(&mut self, tree: Tree, node: NodeId) -> Option<NodeId> {
+    let parent = self.node_mut(node).links_mut(tree).parent.take()?;
+    self.node_mut(parent).links_mut(tree).children.retain(|child| *child != node);
+    Some(parent)
+  }
+
+  #[track_caller]
+  pub(super) fn node(&self, id: NodeId) -> &TreeNode {
     match self.inner.get(id.0) {
       Some(node) => node,
       None => panic!("node {id:?} is not in the arena"),
@@ -197,7 +210,7 @@ impl TreeArena {
   }
 
   #[track_caller]
-  fn node_mut(&mut self, id: NodeId) -> &mut TreeNode {
+  pub(super) fn node_mut(&mut self, id: NodeId) -> &mut TreeNode {
     match self.inner.get_mut(id.0) {
       Some(node) => node,
       None => panic!("node {id:?} is not in the arena"),

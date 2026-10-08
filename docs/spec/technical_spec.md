@@ -308,7 +308,7 @@ A `Property<T>` is a signal plus a value-precedence stack, so several sources ca
 | 5 | Inherited value (`inherits` properties only) |
 | 6 | Default |
 
-The stack lives in one signal, and each write decides whether readers can see it: only a change of the effective value or of the level supplying it marks readers dirty, so a write below the winning level wakes nobody. `affects` metadata marks the node layout- or render-dirty when the effective value changes.
+The stack lives in one signal, and each write decides whether readers can see it: only a change of the effective value or of the level supplying it marks readers dirty, so a write below the winning level wakes nobody. `affects` metadata marks the node layout- or render-dirty when the effective value changes. Each property kind has a `static PropertyKey<T>` (name, `affects`, `inherits`) shared by every node type that has it. For `inherits` properties the Inherited level holds a link to the same kind of property on the nearest logical ancestor rather than a copy, so inherited values are never stale; the tree re-points the link when a node moves in the logical tree.
 
 ### Bindings
 
