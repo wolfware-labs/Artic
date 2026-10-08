@@ -1,4 +1,4 @@
-use crate::reactive::runtime::{Runtime, SignalId};
+use crate::reactive::runtime::{ObservableId, Runtime, SignalId};
 use std::marker::PhantomData;
 
 /// A reactive value.
@@ -92,6 +92,7 @@ impl<TValue> Signal<TValue> {
   /// count.with(|_| count.set(2)); // writes `count` while it is being read
   /// ```
   pub fn with<TResult>(&self, function: impl FnOnce(&TValue) -> TResult) -> TResult {
+    Runtime::record_read(ObservableId::Signal(self.0));
     Runtime::with_signal_value(self.0, function)
   }
 
@@ -174,6 +175,7 @@ where
   ///
   /// Panics if called from inside this signal's own [`update`](Signal::update) closure.
   pub fn get(&self) -> TValue {
+    Runtime::record_read(ObservableId::Signal(self.0));
     Runtime::get_signal_value(self.0)
   }
 }
@@ -209,6 +211,13 @@ where
     if Runtime::with_untracked_signal_value(self.0, |v: &TValue| *v != new_value) {
       self.set(new_value)
     }
+  }
+}
+
+#[cfg(test)]
+impl<TValue> Signal<TValue> {
+  pub(crate) fn id(&self) -> SignalId {
+    self.0
   }
 }
 
