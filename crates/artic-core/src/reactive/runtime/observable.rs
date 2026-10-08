@@ -10,11 +10,7 @@ impl ObservableId {
   pub fn refresh(self) {
     match self {
       ObservableId::Signal(_) => {}
-      ObservableId::Memo(memo_id) => {
-        if RUNTIME.with(|runtime| runtime.memos.contains(memo_id)) {
-          Runtime::refresh_memo(memo_id);
-        }
-      }
+      ObservableId::Memo(memo_id) => Runtime::refresh_memo(memo_id),
     }
   }
 

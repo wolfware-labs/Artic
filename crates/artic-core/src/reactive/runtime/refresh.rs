@@ -4,6 +4,9 @@ use std::thread;
 
 impl Runtime {
   pub fn refresh_memo(memo_id: MemoId) {
+    if !RUNTIME.with(|runtime| runtime.memos.contains(memo_id)) {
+      return;
+    }
     let (observer_id, observables, is_computing) = RUNTIME.with(|runtime| {
       (
         runtime.memos.observer(memo_id),
