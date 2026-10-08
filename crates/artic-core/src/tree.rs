@@ -4,6 +4,7 @@
 //! Handles are checked against a per-slot generation, so a handle to a freed node stops resolving instead of
 //! pointing at whatever node reuses its slot.
 
+mod links;
 mod node;
 
 use crate::Object;
