@@ -1,7 +1,7 @@
 use crate::reactive::runtime::{ObservableId, ObserverId, Runtime};
-use crate::reactive::{Memo, Signal};
+use crate::reactive::{Effect, Memo, Signal, batch, flush_effects};
 use pretty_assertions::assert_eq;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 
@@ -467,4 +467,103 @@ fn run_tracked_records_a_memo_read_as_the_memo() {
 
   assert_eq!(observables.len(), 1);
   assert!(matches!(observables[0], ObservableId::Memo(_)));
+}
+
+// Effect
+
+// With `a -> (b, c) -> effect`, one write to `a` reaches the effect by two paths but runs it once.
+#[test]
+fn diamond_dependency_runs_effect_once() {
+  let (runs, count_run) = counter();
+  let a = Signal::new(1);
+  let b = Memo::new(move || a.get() + 1);
+  let c = Memo::new(move || a.get() * 2);
+  Effect::new(move || {
+    count_run();
+    b.get();
+    c.get();
+  });
+
+  a.set(2);
+  flush_effects();
+
+  assert_eq!(runs.get(), 2, "one run on creation, one for the write");
+}
+
+// An effect that reads a signal and a memo derived from it always sees both updated together.
+#[test]
+fn effect_sees_consistent_values() {
+  let a = Signal::new(1);
+  let b = Memo::new(move || a.get() + 1);
+  let seen = Rc::new(RefCell::new(Vec::new()));
+  let seen_in_effect = Rc::clone(&seen);
+  Effect::new(move || seen_in_effect.borrow_mut().push((a.get(), b.get())));
+
+  for value in [2, 3, 4] {
+    a.set(value);
+    flush_effects();
+  }
+
+  assert_eq!(*seen.borrow(), [(1, 2), (2, 3), (3, 4), (4, 5)]);
+}
+
+// Effects run in the order they were created, and each one sees every memo it reads already
+// updated, however long the chain of memos behind it.
+#[test]
+fn effects_run_in_topological_order() {
+  let a = Signal::new(1);
+  let b = Memo::new(move || a.get() + 1);
+  let c = Memo::new(move || a.get() * 2);
+  let deep = Memo::new(move || b.get() + c.get());
+  let order = Rc::new(RefCell::new(Vec::new()));
+  let order_in_deep = Rc::clone(&order);
+  Effect::new(move || order_in_deep.borrow_mut().push(("deep", deep.get())));
+  let order_in_shallow = Rc::clone(&order);
+  Effect::new(move || order_in_shallow.borrow_mut().push(("shallow", a.get())));
+  order.borrow_mut().clear();
+
+  a.set(10);
+  flush_effects();
+
+  assert_eq!(*order.borrow(), [("deep", 31), ("shallow", 10)]);
+}
+
+// Several writes inside one `batch` rerun an effect once.
+#[test]
+fn batch_coalesces_sets() {
+  let (runs, count_run) = counter();
+  let first = Signal::new(1);
+  let second = Signal::new(1);
+  Effect::new(move || {
+    count_run();
+    first.get();
+    second.get();
+  });
+
+  batch(|| {
+    first.set(2);
+    second.set(2);
+    first.set(3);
+  });
+
+  assert_eq!(runs.get(), 2, "one run on creation, one for the batch");
+}
+
+// A batch inside a batch doesn't flush; the outermost one flushes once when it returns.
+#[test]
+fn nested_batch_flushes_once() {
+  let (runs, count_run) = counter();
+  let source = Signal::new(1);
+  Effect::new(move || {
+    count_run();
+    source.get();
+  });
+
+  batch(|| {
+    batch(|| source.set(2));
+    assert_eq!(runs.get(), 1, "the inner batch must not flush");
+    source.set(3);
+  });
+
+  assert_eq!(runs.get(), 2);
 }

@@ -16,31 +16,17 @@ pub struct ObserverId(SlotId);
 
 pub struct ObserverStore {
   observers: RefCell<Arena<Observer>>,
-  stack: RefCell<Vec<ObserverId>>,
 }
 
 impl ObserverStore {
   pub const fn new() -> Self {
     Self {
       observers: RefCell::new(Arena::new()),
-      stack: RefCell::new(Vec::new()),
     }
   }
 
   pub fn create_observer(&self) -> ObserverId {
     ObserverId(self.observers.borrow_mut().alloc(Observer::new()))
-  }
-
-  pub fn push_observer(&self, observer: ObserverId) {
-    self.stack.borrow_mut().push(observer);
-  }
-
-  pub fn pop_observer(&self) {
-    self.stack.borrow_mut().pop();
-  }
-
-  pub fn current_observer(&self) -> Option<ObserverId> {
-    self.stack.borrow().last().copied()
   }
 
   pub fn mark_as_dirty(&self, observer_ids: &[ObserverId]) {
