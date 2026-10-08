@@ -1,3 +1,4 @@
+use crate::reactive::origin::Origin;
 use crate::reactive::runtime::{MemoId, ObservableId, Runtime};
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -35,8 +36,10 @@ use std::rc::Rc;
 /// # Panics
 ///
 /// Reading a memo from inside its own closure panics, because the memo would depend on itself.
+/// Reading a memo after the [`Scope`](crate::reactive::Scope) that owns it was disposed panics too;
+/// in debug builds the message includes where the memo was created.
 #[derive(Debug)]
-pub struct Memo<TValue>(MemoId, PhantomData<*const TValue>)
+pub struct Memo<TValue>(MemoId, Origin, PhantomData<*const TValue>)
 where
   TValue: 'static;
 
@@ -67,18 +70,22 @@ where
   /// let shout = Memo::new(move || name.with(|name| name.to_uppercase()));
   /// assert_eq!(shout.get(), "ADA");
   /// ```
+  #[track_caller]
   pub fn new(compute: impl Fn() -> TValue + 'static) -> Memo<TValue> {
     let value_id = Runtime::alloc_signal_value(None::<TValue>);
     let memo_id = Runtime::create_memo(
       value_id,
       Rc::new(move || {
         let new_value = Some(compute());
+        if !Runtime::contains_signal(value_id) {
+          return;
+        }
         if Runtime::with_untracked_signal_value(value_id, |value: &Option<TValue>| *value != new_value) {
           Runtime::with_untracked_signal_mut_value(value_id, |value| *value = new_value);
         }
       }),
     );
-    Memo(memo_id, PhantomData)
+    Memo(memo_id, Origin::caller(), PhantomData)
   }
 }
 
@@ -102,11 +109,19 @@ impl<TValue> Memo<TValue> {
   /// assert_eq!(sorted.with(|sorted| sorted[0]), 1);
   /// ```
   pub fn with<TResult>(&self, function: impl FnOnce(&TValue) -> TResult) -> TResult {
+    self.ensure_alive();
     Runtime::refresh_memo(self.0);
+    self.ensure_alive();
     Runtime::record_read(ObservableId::Memo(self.0));
     Runtime::with_signal_value(Runtime::memo_value(self.0), |value: &Option<TValue>| {
       function(value.as_ref().expect("a refreshed memo has a value"))
     })
+  }
+
+  fn ensure_alive(&self) {
+    if !Runtime::contains_memo(self.0) {
+      self.1.panic("memo used after its scope was disposed");
+    }
   }
 }
 

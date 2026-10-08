@@ -104,12 +104,27 @@ impl SignalStore {
     action_result
   }
 
+  pub fn free(&self, signal_id: SignalId) {
+    self.slots.borrow_mut().free(signal_id.0);
+  }
+
+  pub fn contains(&self, signal_id: SignalId) -> bool {
+    self.slots.borrow().contains(signal_id.0)
+  }
+
+  pub fn count(&self) -> usize {
+    self.slots.borrow().len()
+  }
+
   pub fn add_subscriber(&self, signal_id: SignalId, observer_id: ObserverId) {
     self.get_slot(signal_id).add_subscriber(observer_id);
   }
 
   pub fn remove_subscriber(&self, signal_id: SignalId, observer_id: ObserverId) {
-    self.get_slot(signal_id).remove_subscriber(observer_id);
+    let slot = self.slots.borrow().get(signal_id.0).map(Rc::clone);
+    if let Some(slot) = slot {
+      slot.remove_subscriber(observer_id);
+    }
   }
 
   pub fn with_subscribers(&self, signal_id: SignalId, action: impl FnOnce(&[ObserverId])) {

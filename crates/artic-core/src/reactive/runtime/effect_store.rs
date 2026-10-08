@@ -37,6 +37,27 @@ impl EffectStore {
     effect_id
   }
 
+  pub fn free(&self, effect_id: EffectId) {
+    self.slots.borrow_mut().free(effect_id.0);
+  }
+
+  pub fn remove_from_creation_order(&self, effect_id: EffectId) {
+    self.creation_order.borrow_mut().retain(|created| *created != effect_id);
+  }
+
+  pub fn compact_creation_order(&self) {
+    let slots = self.slots.borrow();
+    self.creation_order.borrow_mut().retain(|created| slots.contains(created.0));
+  }
+
+  pub fn contains(&self, effect_id: EffectId) -> bool {
+    self.slots.borrow().contains(effect_id.0)
+  }
+
+  pub fn count(&self) -> usize {
+    self.slots.borrow().len()
+  }
+
   pub fn nth_created(&self, index: usize) -> Option<EffectId> {
     self.creation_order.borrow().get(index).copied()
   }

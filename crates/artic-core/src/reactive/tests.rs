@@ -1,5 +1,5 @@
 use crate::reactive::runtime::{ObservableId, ObserverId, Runtime};
-use crate::reactive::{Effect, Memo, Signal, batch, flush_effects};
+use crate::reactive::{LiveCounts, Memo, Scope, Signal, batch, effect, flush_effects, live_counts};
 use pretty_assertions::assert_eq;
 use std::cell::{Cell, RefCell};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -478,7 +478,7 @@ fn diamond_dependency_runs_effect_once() {
   let a = Signal::new(1);
   let b = Memo::new(move || a.get() + 1);
   let c = Memo::new(move || a.get() * 2);
-  Effect::new(move || {
+  effect(move || {
     count_run();
     b.get();
     c.get();
@@ -497,7 +497,7 @@ fn effect_sees_consistent_values() {
   let b = Memo::new(move || a.get() + 1);
   let seen = Rc::new(RefCell::new(Vec::new()));
   let seen_in_effect = Rc::clone(&seen);
-  Effect::new(move || seen_in_effect.borrow_mut().push((a.get(), b.get())));
+  effect(move || seen_in_effect.borrow_mut().push((a.get(), b.get())));
 
   for value in [2, 3, 4] {
     a.set(value);
@@ -517,9 +517,9 @@ fn effects_run_in_topological_order() {
   let deep = Memo::new(move || b.get() + c.get());
   let order = Rc::new(RefCell::new(Vec::new()));
   let order_in_deep = Rc::clone(&order);
-  Effect::new(move || order_in_deep.borrow_mut().push(("deep", deep.get())));
+  effect(move || order_in_deep.borrow_mut().push(("deep", deep.get())));
   let order_in_shallow = Rc::clone(&order);
-  Effect::new(move || order_in_shallow.borrow_mut().push(("shallow", a.get())));
+  effect(move || order_in_shallow.borrow_mut().push(("shallow", a.get())));
   order.borrow_mut().clear();
 
   a.set(10);
@@ -534,7 +534,7 @@ fn batch_coalesces_sets() {
   let (runs, count_run) = counter();
   let first = Signal::new(1);
   let second = Signal::new(1);
-  Effect::new(move || {
+  effect(move || {
     count_run();
     first.get();
     second.get();
@@ -554,7 +554,7 @@ fn batch_coalesces_sets() {
 fn nested_batch_flushes_once() {
   let (runs, count_run) = counter();
   let source = Signal::new(1);
-  Effect::new(move || {
+  effect(move || {
     count_run();
     source.get();
   });
@@ -566,4 +566,415 @@ fn nested_batch_flushes_once() {
   });
 
   assert_eq!(runs.get(), 2);
+}
+
+// Live counts
+
+// Creating a signal, a memo and an effect raises each count. A memo also adds the signal that holds
+// its value, and a memo and an effect each add the scope that owns what their closure creates.
+#[test]
+fn live_counts_track_created_nodes() {
+  let before = live_counts();
+
+  let count = Signal::new(0);
+  let double = Memo::new(move || count.get() * 2);
+  effect(move || {
+    double.get();
+  });
+
+  assert_eq!(
+    live_counts(),
+    LiveCounts {
+      signals: before.signals + 2,
+      memos: before.memos + 1,
+      effects: before.effects + 1,
+      scopes: before.scopes + 2,
+    }
+  );
+}
+
+// Creating a root scope and a child scope raises the scope count by two.
+#[test]
+fn live_counts_track_created_scopes() {
+  let before = live_counts();
+
+  let root = Scope::new_root();
+  root.child();
+
+  assert_eq!(live_counts().scopes, before.scopes + 2);
+}
+
+// Scope
+
+// `run` makes the scope active only while its closure runs, and returns the closure's result.
+#[test]
+fn run_activates_scope_only_inside_closure() {
+  let scope = Scope::new_root();
+
+  let active = scope.run(Runtime::active_scope);
+
+  assert_eq!(active, Some(scope.id()));
+  assert_eq!(Runtime::active_scope(), None);
+}
+
+// A nested `run` activates the inner scope, and the outer one is active again once it returns.
+#[test]
+fn nested_run_restores_outer_scope() {
+  let outer = Scope::new_root();
+  let inner = outer.child();
+
+  let (during, after) = outer.run(|| (inner.run(Runtime::active_scope), Runtime::active_scope()));
+
+  assert_eq!(during, Some(inner.id()));
+  assert_eq!(after, Some(outer.id()));
+}
+
+// If the closure passed to `run` panics, the previous scope is active again and the panic reaches
+// the caller.
+#[test]
+fn run_restores_scope_when_action_panics() {
+  let outer = Scope::new_root();
+  let inner = outer.child();
+
+  let after = outer.run(|| {
+    let result = catch_unwind(AssertUnwindSafe(|| inner.run(|| panic!("boom"))));
+    assert!(result.is_err());
+    Runtime::active_scope()
+  });
+
+  assert_eq!(after, Some(outer.id()));
+}
+
+// Dispose
+
+/// Returns a run counter and an effect body that bumps it and reads `source`.
+fn counting_reader(source: Signal<i32>) -> (Rc<Cell<u32>>, impl FnMut() + 'static) {
+  let runs = Rc::new(Cell::new(0));
+  let runs_in_effect = Rc::clone(&runs);
+  (runs, move || {
+    runs_in_effect.set(runs_in_effect.get() + 1);
+    source.get();
+  })
+}
+
+// Disposing a scope frees every signal, memo and effect created in it, and the scope itself.
+#[test]
+fn dispose_frees_all_owned_nodes() {
+  let before = live_counts();
+  let scope = Scope::new_root();
+
+  scope.run(|| {
+    let count = Signal::new(1);
+    let double = Memo::new(move || count.get() * 2);
+    effect(move || {
+      double.get();
+    });
+  });
+  scope.dispose();
+
+  assert_eq!(live_counts(), before);
+}
+
+// Disposing a parent scope disposes its child scopes and what they own.
+#[test]
+fn dispose_parent_disposes_children() {
+  let before = live_counts();
+  let parent = Scope::new_root();
+  let child = parent.child();
+  child.child().run(|| Signal::new(0));
+  child.run(|| Signal::new(0));
+
+  parent.dispose();
+
+  assert_eq!(live_counts(), before);
+}
+
+// An effect whose scope was disposed doesn't run again when a signal it read changes.
+#[test]
+fn disposed_effect_no_longer_runs() {
+  let source = Signal::new(0);
+  let (runs, read) = counting_reader(source);
+  let scope = Scope::new_root();
+  scope.run(|| effect(read));
+
+  scope.dispose();
+  source.set(1);
+  flush_effects();
+
+  assert_eq!(runs.get(), 1, "only the run on creation");
+}
+
+// A signal in a parent scope stops listing an effect from a disposed child scope as a subscriber.
+#[test]
+fn signal_outlives_dependent_effect_scope() {
+  let parent = Scope::new_root();
+  let child = parent.child();
+  let theme = parent.run(|| Signal::new(0));
+  let (_, read) = counting_reader(theme);
+  child.run(|| effect(read));
+  assert_eq!(Runtime::subscriber_count(theme.id()), 1);
+
+  child.dispose();
+
+  assert_eq!(Runtime::subscriber_count(theme.id()), 0);
+}
+
+// Disposing a child scope removes it from its parent, so disposing the parent later doesn't
+// dispose it twice.
+#[test]
+fn disposed_child_is_removed_from_parent() {
+  let before = live_counts();
+  let parent = Scope::new_root();
+  let child = parent.child();
+
+  child.dispose();
+  parent.dispose();
+
+  assert_eq!(live_counts(), before);
+}
+
+// An effect that outlives a memo it read no longer refreshes it, and unsubscribing from it on the
+// next run does nothing.
+#[test]
+fn reader_skips_a_disposed_memo_it_read_before() {
+  let source = Signal::new(1);
+  let parent = Scope::new_root();
+  let child = parent.child();
+  let short_lived = child.run(|| Memo::new(move || source.get()));
+  let long_lived = Memo::new(move || source.get() * 10);
+  let reads_short_lived = Rc::new(Cell::new(true));
+  let reads_in_effect = Rc::clone(&reads_short_lived);
+  let seen = Rc::new(Cell::new(0));
+  let seen_in_effect = Rc::clone(&seen);
+  parent.run(|| {
+    effect(move || {
+      if reads_in_effect.get() {
+        short_lived.get();
+      }
+      seen_in_effect.set(long_lived.get());
+    })
+  });
+
+  child.dispose();
+  reads_short_lived.set(false);
+  source.set(2);
+  flush_effects();
+
+  assert_eq!(seen.get(), 20);
+}
+
+// An effect that disposes an earlier effect's scope during a flush doesn't make the flush skip the
+// effects created after it.
+#[test]
+fn disposing_during_flush_keeps_later_effects_running() {
+  let source = Signal::new(0);
+  let first_scope = Scope::new_root();
+  let (_, first) = counting_reader(source);
+  first_scope.run(|| effect(first));
+  effect(move || {
+    if source.get() > 0 {
+      first_scope.dispose();
+    }
+  });
+  let (last_runs, last) = counting_reader(source);
+  effect(last);
+
+  source.set(1);
+  flush_effects();
+
+  assert_eq!(last_runs.get(), 2);
+}
+
+// An effect that disposes its own scope while running is freed, and its last reads don't leave it
+// subscribed.
+#[test]
+fn effect_can_dispose_its_own_scope() {
+  let before = live_counts();
+  let source = Signal::new(0);
+  let scope = Scope::new_root();
+  scope.run(|| {
+    effect(move || {
+      if source.get() > 0 {
+        scope.dispose();
+      }
+    })
+  });
+
+  source.set(1);
+  flush_effects();
+
+  assert_eq!(Runtime::subscriber_count(source.id()), 0);
+  assert_eq!(live_counts().effects, before.effects);
+}
+
+// Inner scopes
+
+// An effect that creates an effect on every run disposes the one from its previous run first, so
+// only the latest inner effect is alive and runs.
+#[test]
+fn effect_disposes_inner_effects_before_rerun() {
+  let source = Signal::new(0);
+  let inner_runs = Rc::new(Cell::new(0));
+  let inner_runs_in_effect = Rc::clone(&inner_runs);
+  effect(move || {
+    source.get();
+    let inner_runs = Rc::clone(&inner_runs_in_effect);
+    effect(move || {
+      inner_runs.set(inner_runs.get() + 1);
+      source.get();
+    });
+  });
+  let after_creation = live_counts();
+
+  source.set(1);
+  flush_effects();
+  source.set(2);
+  flush_effects();
+
+  assert_eq!(live_counts(), after_creation);
+  assert_eq!(inner_runs.get(), 3, "one run per inner effect, each created once");
+}
+
+// A memo that creates a signal while computing disposes the one from its previous compute first.
+#[test]
+fn memo_disposes_inner_nodes_before_recompute() {
+  let source = Signal::new(0);
+  let memo = Memo::new(move || Signal::new(source.get()).get());
+  memo.get();
+  let after_first_compute = live_counts();
+
+  source.set(1);
+  memo.get();
+
+  assert_eq!(live_counts(), after_first_compute);
+}
+
+// Disposing a scope disposes what an effect created in it built during its runs.
+#[test]
+fn dispose_frees_nodes_created_by_an_owned_effect() {
+  let before = live_counts();
+  let scope = Scope::new_root();
+  scope.run(|| {
+    effect(|| {
+      Signal::new(0);
+      effect(|| {});
+    })
+  });
+
+  scope.dispose();
+
+  assert_eq!(live_counts(), before);
+}
+
+// Disposed handles
+
+/// Runs `action`, expects it to panic, and returns the panic message.
+fn panic_message(action: impl FnOnce()) -> String {
+  let payload = catch_unwind(AssertUnwindSafe(action)).expect_err("the action should panic");
+  payload
+    .downcast_ref::<String>()
+    .cloned()
+    .or_else(|| payload.downcast_ref::<&str>().map(|message| message.to_string()))
+    .expect("the panic message should be a string")
+}
+
+// Reading a signal whose scope was disposed panics, and in debug builds the message says where the
+// signal was created.
+#[test]
+fn reading_disposed_signal_panics_with_creation_location() {
+  let scope = Scope::new_root();
+  let count = scope.run(|| Signal::new(0));
+  scope.dispose();
+
+  let message = panic_message(|| {
+    count.get();
+  });
+
+  assert!(message.starts_with("signal used after its scope was disposed"), "{message}");
+  if cfg!(debug_assertions) {
+    assert!(message.contains(&format!("(created at {}:", file!())), "{message}");
+  }
+}
+
+// Writing a signal whose scope was disposed panics, even after its slot was reused by a new signal.
+#[test]
+fn writing_disposed_signal_panics_after_slot_reuse() {
+  let scope = Scope::new_root();
+  let old = scope.run(|| Signal::new(0));
+  scope.dispose();
+  let new = Signal::new(0);
+
+  let message = panic_message(|| old.set(1));
+
+  assert!(message.starts_with("signal used after its scope was disposed"), "{message}");
+  assert_eq!(new.get(), 0);
+}
+
+// Reading a memo whose scope was disposed panics.
+#[test]
+fn reading_disposed_memo_panics() {
+  let scope = Scope::new_root();
+  let memo = scope.run(|| Memo::new(|| 1));
+  scope.dispose();
+
+  let message = panic_message(|| {
+    memo.get();
+  });
+
+  assert!(message.starts_with("memo used after its scope was disposed"), "{message}");
+}
+
+// Running a disposed scope panics instead of leaving what the closure creates without an owner.
+#[test]
+fn running_disposed_scope_panics() {
+  let scope = Scope::new_root();
+  scope.dispose();
+
+  let message = panic_message(|| scope.run(|| {}));
+
+  assert!(message.starts_with("scope used after it was disposed"), "{message}");
+}
+
+// Disposing a scope twice does nothing the second time, also when its parent disposed it first.
+#[test]
+fn dispose_twice_is_a_no_op() {
+  let before = live_counts();
+  let parent = Scope::new_root();
+  let child = parent.child();
+
+  parent.dispose();
+  child.dispose();
+  parent.dispose();
+
+  assert_eq!(live_counts(), before);
+}
+
+// A memo that disposes its own scope while computing is freed and unsubscribed from what it read,
+// and the read that triggered the compute reports the memo as disposed.
+#[test]
+fn memo_can_dispose_its_own_scope() {
+  let before = live_counts();
+  let source = Signal::new(0);
+  let scope = Scope::new_root();
+  let memo = scope.run(|| {
+    Memo::new(move || {
+      if source.get() > 0 {
+        scope.dispose();
+      }
+    })
+  });
+  memo.get();
+
+  source.set(1);
+  let message = panic_message(|| memo.get());
+
+  assert!(message.starts_with("memo used after its scope was disposed"), "{message}");
+  assert_eq!(Runtime::subscriber_count(source.id()), 0);
+  assert_eq!(
+    live_counts(),
+    LiveCounts {
+      signals: before.signals + 1,
+      ..before
+    }
+  );
 }

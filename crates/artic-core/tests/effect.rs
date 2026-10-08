@@ -1,6 +1,6 @@
-// Integration tests for `Effect`, using only the public API, as app code would.
+// Integration tests for `effect`, using only the public API, as app code would.
 
-use artic_core::reactive::{Effect, Memo, Signal, batch, flush_effects};
+use artic_core::reactive::{Memo, Signal, batch, effect, flush_effects};
 use pretty_assertions::assert_eq;
 use std::cell::{Cell, RefCell};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -21,7 +21,7 @@ fn effect_runs_once_on_creation() {
   let (runs, count_run) = counter();
   let source = Signal::new(1);
 
-  Effect::new(move || {
+  effect(move || {
     count_run();
     source.get();
   });
@@ -35,7 +35,7 @@ fn set_does_not_run_the_effect() {
   let (runs, count_run) = counter();
   let source = Signal::new(1);
   let double = Memo::new(move || source.get() * 2);
-  Effect::new(move || {
+  effect(move || {
     count_run();
     double.get();
   });
@@ -52,7 +52,7 @@ fn effect_closure_keeps_its_own_state() {
   let log_in_effect = Rc::clone(&log);
   let mut runs = 0;
 
-  Effect::new(move || {
+  effect(move || {
     runs += 1;
     log_in_effect.borrow_mut().push(runs);
   });
@@ -68,7 +68,7 @@ fn flush_reruns_effect_after_a_change() {
   let source = Signal::new(1);
   let seen = Rc::new(Cell::new(0));
   let seen_in_effect = Rc::clone(&seen);
-  Effect::new(move || seen_in_effect.set(source.get()));
+  effect(move || seen_in_effect.set(source.get()));
 
   source.set(2);
   flush_effects();
@@ -81,7 +81,7 @@ fn flush_reruns_effect_after_a_change() {
 fn flush_without_changes_runs_nothing() {
   let (runs, count_run) = counter();
   let source = Signal::new(1);
-  Effect::new(move || {
+  effect(move || {
     count_run();
     source.get();
   });
@@ -98,7 +98,7 @@ fn unchanged_memo_does_not_rerun_effect() {
   let (runs, count_run) = counter();
   let source = Signal::new(2);
   let is_even = Memo::new(move || source.get() % 2 == 0);
-  Effect::new(move || {
+  effect(move || {
     count_run();
     is_even.get();
   });
@@ -115,7 +115,7 @@ fn effect_drops_stale_conditional_dependency() {
   let (runs, count_run) = counter();
   let use_detail = Signal::new(true);
   let detail = Signal::new(1);
-  Effect::new(move || {
+  effect(move || {
     count_run();
     if use_detail.get() {
       detail.get();
@@ -140,8 +140,8 @@ fn write_during_flush_settles_in_the_same_flush() {
   let total = Signal::new(0);
   let seen_total = Rc::new(Cell::new(0));
   let seen_in_effect = Rc::clone(&seen_total);
-  Effect::new(move || seen_in_effect.set(total.get()));
-  Effect::new(move || total.set(input.get() * 10));
+  effect(move || seen_in_effect.set(total.get()));
+  effect(move || total.set(input.get() * 10));
   flush_effects();
 
   input.set(2);
@@ -156,8 +156,8 @@ fn write_during_flush_settles_in_the_same_flush() {
 fn effects_that_never_settle_panic() {
   let ping = Signal::new(0);
   let pong = Signal::new(0);
-  Effect::new(move || pong.set(ping.get() + 1));
-  Effect::new(move || ping.set(pong.get() + 1));
+  effect(move || pong.set(ping.get() + 1));
+  effect(move || ping.set(pong.get() + 1));
 
   flush_effects();
 }
@@ -167,7 +167,7 @@ fn effects_that_never_settle_panic() {
 fn flush_inside_an_effect_does_nothing() {
   let (runs, count_run) = counter();
   let source = Signal::new(1);
-  Effect::new(move || {
+  effect(move || {
     count_run();
     source.get();
     flush_effects();
@@ -186,10 +186,10 @@ fn effect_created_during_a_flush_runs_and_joins_later_flushes() {
   let count_inner_run = Rc::new(count_inner_run);
   let create = Signal::new(false);
   let source = Signal::new(1);
-  Effect::new(move || {
+  effect(move || {
     if create.get() {
       let count_inner_run = Rc::clone(&count_inner_run);
-      Effect::new(move || {
+      effect(move || {
         count_inner_run();
         source.get();
       });
@@ -215,7 +215,7 @@ fn panicking_effect_runs_again_on_next_flush() {
   let source = Signal::new(1);
   let seen = Rc::new(Cell::new(0));
   let seen_in_effect = Rc::clone(&seen);
-  Effect::new(move || {
+  effect(move || {
     let value = source.get();
     assert!(!fail_in_effect.get(), "effect failed");
     seen_in_effect.set(value);
@@ -243,7 +243,7 @@ fn batch_returns_the_closure_result() {
 fn flush_inside_a_batch_waits_for_the_batch() {
   let (runs, count_run) = counter();
   let source = Signal::new(1);
-  Effect::new(move || {
+  effect(move || {
     count_run();
     source.get();
   });
@@ -262,7 +262,7 @@ fn flush_inside_a_batch_waits_for_the_batch() {
 fn panicking_batch_leaves_later_batches_working() {
   let (runs, count_run) = counter();
   let source = Signal::new(1);
-  Effect::new(move || {
+  effect(move || {
     count_run();
     source.get();
   });

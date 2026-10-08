@@ -35,12 +35,28 @@ impl MemoStore {
     }))
   }
 
+  pub fn free(&self, memo_id: MemoId) {
+    self.slots.borrow_mut().free(memo_id.0);
+  }
+
+  pub fn contains(&self, memo_id: MemoId) -> bool {
+    self.slots.borrow().contains(memo_id.0)
+  }
+
+  pub fn count(&self) -> usize {
+    self.slots.borrow().len()
+  }
+
   pub fn observer(&self, memo_id: MemoId) -> ObserverId {
     self.with_slot(memo_id, |slot| slot.observer)
   }
 
   pub fn value(&self, memo_id: MemoId) -> SignalId {
     self.with_slot(memo_id, |slot| slot.value)
+  }
+
+  pub fn find_value(&self, memo_id: MemoId) -> Option<SignalId> {
+    self.slots.borrow().get(memo_id.0).map(|slot| slot.value)
   }
 
   pub fn compute(&self, memo_id: MemoId) -> Rc<dyn Fn()> {

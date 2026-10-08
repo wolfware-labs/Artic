@@ -1,3 +1,4 @@
+use crate::reactive::origin::Origin;
 use crate::reactive::runtime::{ObservableId, Runtime, SignalId};
 use std::marker::PhantomData;
 
@@ -36,8 +37,11 @@ use std::marker::PhantomData;
 /// [`with`](Signal::with) closure panics too, because the value is borrowed for reading. Reading a
 /// signal inside its own `with` is fine, and so is reading or writing *other* signals in either
 /// closure.
+///
+/// Reading or writing a signal after the [`Scope`](crate::reactive::Scope) that owns it was disposed
+/// panics. In debug builds the message includes where the signal was created.
 #[derive(Debug)]
-pub struct Signal<TValue>(SignalId, PhantomData<*const TValue>)
+pub struct Signal<TValue>(SignalId, Origin, PhantomData<*const TValue>)
 where
   TValue: 'static;
 
@@ -60,8 +64,9 @@ impl<TValue> Signal<TValue> {
   /// let count = Signal::new(0);
   /// assert_eq!(count.get(), 0);
   /// ```
+  #[track_caller]
   pub fn new(initial_value: TValue) -> Signal<TValue> {
-    Signal(Runtime::alloc_signal_value(initial_value), PhantomData)
+    Signal(Runtime::create_signal(initial_value), Origin::caller(), PhantomData)
   }
 
   /// Calls `function` with a reference to the value and returns its result.
@@ -92,6 +97,7 @@ impl<TValue> Signal<TValue> {
   /// count.with(|_| count.set(2)); // writes `count` while it is being read
   /// ```
   pub fn with<TResult>(&self, function: impl FnOnce(&TValue) -> TResult) -> TResult {
+    self.ensure_alive();
     Runtime::record_read(ObservableId::Signal(self.0));
     Runtime::with_signal_value(self.0, function)
   }
@@ -116,6 +122,7 @@ impl<TValue> Signal<TValue> {
   /// Panics if called from inside this signal's own [`update`](Signal::update) or
   /// [`with`](Signal::with) closure.
   pub fn set(&self, new_value: TValue) {
+    self.ensure_alive();
     Runtime::set_signal_value(self.0, new_value)
   }
 
@@ -149,7 +156,14 @@ impl<TValue> Signal<TValue> {
   /// count.update(|value| *value += count.get()); // reads `count` while it is being updated
   /// ```
   pub fn update(&self, action: impl FnOnce(&mut TValue)) {
+    self.ensure_alive();
     Runtime::with_signal_mut_value(self.0, action);
+  }
+
+  fn ensure_alive(&self) {
+    if !Runtime::contains_signal(self.0) {
+      self.1.panic("signal used after its scope was disposed");
+    }
   }
 }
 
@@ -175,6 +189,7 @@ where
   ///
   /// Panics if called from inside this signal's own [`update`](Signal::update) closure.
   pub fn get(&self) -> TValue {
+    self.ensure_alive();
     Runtime::record_read(ObservableId::Signal(self.0));
     Runtime::get_signal_value(self.0)
   }
@@ -208,6 +223,7 @@ where
   /// this signal's own [`with`](Signal::with) closure with a different value, because the write
   /// happens while the value is borrowed. An equal value writes nothing there, so it doesn't panic.
   pub fn set_if_changed(&self, new_value: TValue) {
+    self.ensure_alive();
     if Runtime::with_untracked_signal_value(self.0, |v: &TValue| *v != new_value) {
       self.set(new_value)
     }

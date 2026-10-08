@@ -2,11 +2,14 @@ mod effect_store;
 mod memo_store;
 mod observable;
 mod observer_store;
+mod ownership;
 mod refresh;
 mod scheduling;
+mod scope_store;
 mod signal_store;
 mod tracking;
 
+use crate::reactive::LiveCounts;
 pub use effect_store::EffectId;
 use effect_store::EffectStore;
 pub use memo_store::MemoId;
@@ -15,6 +18,9 @@ pub use observable::ObservableId;
 pub use observer_store::ObserverId;
 use observer_store::ObserverStore;
 use scheduling::Scheduler;
+use scope_store::ReactiveNodeId;
+pub use scope_store::ScopeId;
+use scope_store::ScopeStore;
 pub use signal_store::SignalId;
 use signal_store::SignalStore;
 use std::any::Any;
@@ -34,6 +40,7 @@ pub struct Runtime {
   observers: ObserverStore,
   memos: MemoStore,
   effects: EffectStore,
+  scopes: ScopeStore,
   tracker: Tracker,
   scheduler: Scheduler,
 }
@@ -45,6 +52,7 @@ impl Runtime {
       observers: ObserverStore::new(),
       memos: MemoStore::new(),
       effects: EffectStore::new(),
+      scopes: ScopeStore::new(),
       tracker: Tracker::new(),
       scheduler: Scheduler::new(),
     }
@@ -55,6 +63,21 @@ impl Runtime {
     TValue: Any,
   {
     RUNTIME.with(|runtime| runtime.signals.alloc_value(value))
+  }
+
+  pub fn create_signal<TValue>(value: TValue) -> SignalId
+  where
+    TValue: Any,
+  {
+    RUNTIME.with(|runtime| {
+      let signal_id = runtime.signals.alloc_value(value);
+      runtime.scopes.add_to_active(ReactiveNodeId::Signal(signal_id));
+      signal_id
+    })
+  }
+
+  pub fn contains_signal(signal_id: SignalId) -> bool {
+    RUNTIME.with(|runtime| runtime.signals.contains(signal_id))
   }
 
   pub fn get_signal_value<TValue>(signal_id: SignalId) -> TValue
@@ -117,6 +140,17 @@ impl Runtime {
     RUNTIME.with(|runtime| runtime.observers.create_observer())
   }
 
+  #[cfg(test)]
+  pub fn subscriber_count(signal_id: SignalId) -> usize {
+    RUNTIME.with(|runtime| {
+      let mut count = 0;
+      runtime
+        .signals
+        .with_subscribers(signal_id, |subscribers| count = subscribers.len());
+      count
+    })
+  }
+
   pub fn is_observer_dirty(observer_id: ObserverId) -> bool {
     RUNTIME.with(|runtime| runtime.observers.is_dirty(observer_id))
   }
@@ -125,22 +159,42 @@ impl Runtime {
     RUNTIME.with(|runtime| {
       let observer_id = runtime.observers.create_observer();
       runtime.observers.mark_as_dirty(&[observer_id]);
-      runtime.memos.alloc(observer_id, value_id, compute)
+      let memo_id = runtime.memos.alloc(observer_id, value_id, compute);
+      let node = ReactiveNodeId::Memo(memo_id);
+      runtime.scopes.add_to_active(node);
+      runtime.scopes.alloc_for(node);
+      memo_id
     })
+  }
+
+  pub fn contains_memo(memo_id: MemoId) -> bool {
+    RUNTIME.with(|runtime| runtime.memos.contains(memo_id))
   }
 
   pub fn memo_value(memo_id: MemoId) -> SignalId {
     RUNTIME.with(|runtime| runtime.memos.value(memo_id))
   }
 
-  pub fn create_effect(run: Rc<RefCell<dyn FnMut()>>) -> EffectId {
+  pub fn create_effect(run: Rc<RefCell<dyn FnMut()>>) {
     let effect_id = RUNTIME.with(|runtime| {
       let observer_id = runtime.observers.create_observer();
       runtime.observers.mark_as_dirty(&[observer_id]);
-      runtime.effects.alloc(observer_id, run)
+      let effect_id = runtime.effects.alloc(observer_id, run);
+      let node = ReactiveNodeId::Effect(effect_id);
+      runtime.scopes.add_to_active(node);
+      runtime.scopes.alloc_for(node);
+      effect_id
     });
     Self::refresh_effect(effect_id);
-    effect_id
+  }
+
+  pub fn live_counts() -> LiveCounts {
+    RUNTIME.with(|runtime| LiveCounts {
+      signals: runtime.signals.count(),
+      memos: runtime.memos.count(),
+      effects: runtime.effects.count(),
+      scopes: runtime.scopes.count(),
+    })
   }
 
   fn mark_observers_as_dirty(&self, signal_id: SignalId) {
