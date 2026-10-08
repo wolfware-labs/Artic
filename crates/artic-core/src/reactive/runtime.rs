@@ -1,16 +1,15 @@
 mod memo_store;
 mod observer_store;
-mod read_store;
 mod signal_store;
 
 pub use memo_store::MemoId;
 use memo_store::MemoStore;
 pub use observer_store::ObserverId;
 use observer_store::ObserverStore;
-use read_store::ReadStore;
 pub use signal_store::SignalId;
 use signal_store::SignalStore;
 use std::any::Any;
+use std::cell::RefCell;
 use std::panic::resume_unwind;
 use std::rc::Rc;
 
@@ -30,7 +29,7 @@ pub struct Runtime {
   signals: SignalStore,
   observers: ObserverStore,
   memos: MemoStore,
-  reads: ReadStore,
+  observables: RefCell<Vec<Vec<ObservableId>>>,
 }
 
 impl Runtime {
@@ -39,7 +38,7 @@ impl Runtime {
       signals: SignalStore::new(),
       observers: ObserverStore::new(),
       memos: MemoStore::new(),
-      reads: ReadStore::new(),
+      observables: RefCell::new(Vec::new()),
     }
   }
 
@@ -112,19 +111,25 @@ impl Runtime {
   pub fn push_observer(observer_id: ObserverId) {
     RUNTIME.with(|runtime| {
       runtime.observers.push_observer(observer_id);
-      runtime.reads.push_frame();
+      runtime.observables.borrow_mut().push(Vec::new());
     })
   }
 
   pub fn pop_observer() -> Vec<ObservableId> {
     RUNTIME.with(|runtime| {
       runtime.observers.pop_observer();
-      runtime.reads.pop_frame()
+      runtime.observables.borrow_mut().pop().unwrap_or_default()
     })
   }
 
   pub fn record_read(observable: ObservableId) {
-    RUNTIME.with(|runtime| runtime.reads.record(observable))
+    RUNTIME.with(|runtime| {
+      if let Some(observables) = runtime.observables.borrow_mut().last_mut()
+        && !observables.contains(&observable)
+      {
+        observables.push(observable);
+      }
+    })
   }
 
   pub fn mark_observer_as_clean(observer_id: ObserverId) {
