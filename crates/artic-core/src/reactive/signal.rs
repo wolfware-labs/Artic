@@ -192,6 +192,11 @@ impl<TValue> Signal<TValue> {
     Runtime::update_signal_value_with(self.0, action);
   }
 
+  pub(crate) fn with_untracked<TResult>(&self, function: impl FnOnce(&TValue) -> TResult) -> TResult {
+    self.ensure_alive();
+    Runtime::with_untracked_signal_value(self.0, function)
+  }
+
   fn ensure_alive(&self) {
     if !Runtime::contains_signal(self.0) {
       self.1.panic("signal used after its scope was disposed");

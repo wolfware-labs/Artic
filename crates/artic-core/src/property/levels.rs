@@ -1,10 +1,14 @@
-use crate::property::Precedence;
+use crate::property::{Precedence, PropertyKey};
 use crate::reactive::Change;
 
 const OVERRIDES: usize = 5;
 
 #[derive(Debug)]
-pub struct Levels<T> {
+pub struct Levels<T>
+where
+  T: 'static,
+{
+  key: &'static PropertyKey<T>,
   overrides: [Option<T>; OVERRIDES],
   default: T,
 }
@@ -13,11 +17,16 @@ impl<T> Levels<T>
 where
   T: PartialEq,
 {
-  pub fn new(default: T) -> Self {
+  pub fn new(key: &'static PropertyKey<T>, default: T) -> Self {
     Self {
+      key,
       overrides: [const { None }; OVERRIDES],
       default,
     }
+  }
+
+  pub fn key(&self) -> &'static PropertyKey<T> {
+    self.key
   }
 
   pub fn effective(&self) -> &T {
@@ -78,7 +87,10 @@ where
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::property::Affects;
   use pretty_assertions::assert_eq;
+
+  static TEST: PropertyKey<i32> = PropertyKey::new("Test", Affects::NONE, false);
 
   // Each override level maps to its own slot and back.
   #[test]
@@ -99,7 +111,7 @@ mod tests {
   // Writing the winning level or a level above it is visible; writing below it is hidden.
   #[test]
   fn set_is_visible_only_at_or_above_the_winner() {
-    let mut levels = Levels::new(0);
+    let mut levels = Levels::new(&TEST, 0);
     assert_eq!(levels.set(Precedence::Binding, 1), Change::Visible);
 
     assert_eq!(levels.set(Precedence::StyleSetter, 2), Change::Hidden);
@@ -112,7 +124,7 @@ mod tests {
   // Writing the value a level already holds stores nothing and is hidden.
   #[test]
   fn set_with_the_same_value_is_hidden() {
-    let mut levels = Levels::new(0);
+    let mut levels = Levels::new(&TEST, 0);
     levels.set(Precedence::Local, 1);
 
     assert_eq!(levels.set(Precedence::Local, 1), Change::Hidden);
@@ -122,7 +134,7 @@ mod tests {
   // Writing the default is visible only while no override is set.
   #[test]
   fn set_default_is_visible_only_when_nothing_overrides_it() {
-    let mut levels = Levels::new(0);
+    let mut levels = Levels::new(&TEST, 0);
     assert_eq!(levels.set(Precedence::Default, 1), Change::Visible);
 
     levels.set(Precedence::Inherited, 2);
@@ -135,7 +147,7 @@ mod tests {
   // hidden.
   #[test]
   fn clear_is_visible_only_for_the_winner() {
-    let mut levels = Levels::new(0);
+    let mut levels = Levels::new(&TEST, 0);
     levels.set(Precedence::StyleSetter, 1);
     levels.set(Precedence::Local, 2);
 

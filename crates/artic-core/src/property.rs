@@ -6,12 +6,14 @@
 //! through.
 //!
 //! ```
-//! use artic_core::property::{Precedence, Property};
+//! use artic_core::property::{Affects, Precedence, Property, PropertyKey};
 //! use artic_core::reactive::{effect, flush_effects};
 //! use std::cell::Cell;
 //! use std::rc::Rc;
 //!
-//! let background = Property::new("white");
+//! static BACKGROUND: PropertyKey<&str> = PropertyKey::new("Background", Affects::RENDER, false);
+//!
+//! let background = Property::new(&BACKGROUND, "white");
 //! let painted = Rc::new(Cell::new(""));
 //! let painted_in_effect = Rc::clone(&painted);
 //! effect(move || painted_in_effect.set(background.get()));
@@ -26,9 +28,13 @@
 //! assert_eq!(painted.get(), "blue");
 //! ```
 
+mod affects;
+mod key;
 mod levels;
 
 use crate::reactive::Signal;
+pub use affects::Affects;
+pub use key::PropertyKey;
 use levels::Levels;
 
 /// Who supplied a property's value, from lowest to highest priority.
@@ -78,9 +84,11 @@ pub enum Precedence {
 /// # Examples
 ///
 /// ```
-/// use artic_core::property::{Precedence, Property};
+/// use artic_core::property::{Affects, Precedence, Property, PropertyKey};
 ///
-/// let width = Property::new(0.0);
+/// static WIDTH: PropertyKey<f64> = PropertyKey::new("Width", Affects::LAYOUT, false);
+///
+/// let width = Property::new(&WIDTH, 0.0);
 /// width.set_at(Precedence::StyleSetter, 50.0);
 /// width.set(100.0); // the Local level
 /// assert_eq!(width.get(), 100.0);
@@ -105,10 +113,18 @@ impl<T> Property<T>
 where
   T: PartialEq,
 {
-  /// Creates a property whose `Default` level holds `default` and whose other levels are empty.
+  /// Creates a property of the kind `key` whose `Default` level holds `default` and whose other
+  /// levels are empty.
   #[track_caller]
-  pub fn new(default: T) -> Property<T> {
-    Property(Signal::new(Levels::new(default)))
+  pub fn new(key: &'static PropertyKey<T>, default: T) -> Property<T> {
+    Property(Signal::new(Levels::new(key, default)))
+  }
+
+  /// Returns the key that identifies this property's kind and holds its metadata.
+  ///
+  /// The key never changes, so reading it doesn't subscribe the running observer.
+  pub fn key(&self) -> &'static PropertyKey<T> {
+    self.0.with_untracked(Levels::key)
   }
 
   /// Calls `function` with a reference to the effective value and returns its result.
@@ -128,9 +144,11 @@ where
   /// # Examples
   ///
   /// ```
-  /// use artic_core::property::{Precedence, Property};
+  /// use artic_core::property::{Affects, Precedence, Property, PropertyKey};
   ///
-  /// let width = Property::new(0.0);
+  /// static WIDTH: PropertyKey<f64> = PropertyKey::new("Width", Affects::LAYOUT, false);
+  ///
+  /// let width = Property::new(&WIDTH, 0.0);
   /// assert_eq!(width.effective_source(), Precedence::Default);
   ///
   /// width.set_at(Precedence::Binding, 80.0);
@@ -179,17 +197,6 @@ where
   }
 }
 
-impl<T> Default for Property<T>
-where
-  T: PartialEq + Default,
-{
-  /// Creates a property whose `Default` level holds `T::default()`.
-  #[track_caller]
-  fn default() -> Self {
-    Property::new(T::default())
-  }
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -201,6 +208,8 @@ mod tests {
 
   assert_not_impl_any!(Property<i32>: Send, Sync);
   assert_impl_all!(Property<String>: Copy);
+
+  static TEST: PropertyKey<i32> = PropertyKey::new("Test", Affects::LAYOUT, false);
 
   /// Every level, lowest first.
   const LEVELS: [Precedence; 6] = [
@@ -239,20 +248,12 @@ mod tests {
     );
   }
 
-  // A default property holds `T::default()`, supplied by the Default level.
-  #[test]
-  fn default_property_holds_the_type_default() {
-    let property = Property::<i32>::default();
-
-    assert_eq!(property.get(), 0);
-  }
-
   // For each pair of adjacent levels, the higher one's value wins over the lower one's.
   #[test]
   fn higher_level_overrides_lower() {
     for pair in LEVELS.windows(2) {
       let (lower, higher) = (pair[0], pair[1]);
-      let property = Property::new(-1);
+      let property = Property::new(&TEST, -1);
 
       property.set_at(lower, 1);
       property.set_at(higher, 2);
@@ -265,7 +266,7 @@ mod tests {
   // ones.
   #[test]
   fn clear_reverts_to_next_level() {
-    let property = Property::new(0);
+    let property = Property::new(&TEST, 0);
     property.set_at(Precedence::StyleSetter, 50);
     property.set_at(Precedence::Animation, 200);
 
@@ -280,7 +281,7 @@ mod tests {
   // write to a level below the winning one.
   #[test]
   fn effect_on_property_runs_once_per_effective_change() {
-    let width = Property::new(0);
+    let width = Property::new(&TEST, 0);
     let runs = Rc::new(Cell::new(0));
     let runs_in_effect = Rc::clone(&runs);
     effect(move || {
@@ -305,7 +306,7 @@ mod tests {
   // Setting a level to the value it already holds doesn't rerun readers.
   #[test]
   fn setting_the_same_value_does_not_rerun_readers() {
-    let width = Property::new(0);
+    let width = Property::new(&TEST, 0);
     width.set(10);
     let runs = Rc::new(Cell::new(0));
     let runs_in_effect = Rc::clone(&runs);
@@ -324,13 +325,13 @@ mod tests {
   #[test]
   #[should_panic(expected = "the Default level can't be cleared")]
   fn clear_default_is_rejected() {
-    Property::new(0).clear(Precedence::Default);
+    Property::new(&TEST, 0).clear(Precedence::Default);
   }
 
   // `effective_source` names the highest level that holds a value, following sets and clears.
   #[test]
   fn effective_source_reports_level() {
-    let property = Property::new(0);
+    let property = Property::new(&TEST, 0);
     assert_eq!(property.effective_source(), Precedence::Default);
 
     for level in &LEVELS[1..] {
@@ -347,7 +348,7 @@ mod tests {
   // an equal value, because the source changed.
   #[test]
   fn falling_back_to_an_equal_value_still_updates_the_source() {
-    let width = Property::new(0);
+    let width = Property::new(&TEST, 0);
     width.set_at(Precedence::StyleSetter, 10);
     width.set(10);
     let seen = Rc::new(Cell::new(Precedence::Default));
@@ -359,5 +360,27 @@ mod tests {
 
     assert_eq!(seen.get(), Precedence::StyleSetter);
     assert_eq!(width.get(), 10);
+  }
+
+  // A property reports the key it was created with: the same static, so the same address.
+  #[test]
+  fn property_reports_its_key() {
+    let property = Property::new(&TEST, 0);
+
+    assert!(std::ptr::eq(property.key(), &TEST));
+    assert_eq!(property.key().affects(), Affects::LAYOUT);
+    assert!(!property.key().inherits());
+  }
+
+  // Combining `Affects` values keeps every stage, and `contains` checks each one.
+  #[test]
+  fn affects_combines_stages() {
+    let mut affects = Affects::NONE;
+    affects |= Affects::RENDER;
+
+    assert!(affects.contains(Affects::RENDER));
+    assert!(!affects.contains(Affects::LAYOUT));
+    assert!((affects | Affects::LAYOUT).contains(Affects::LAYOUT | Affects::RENDER));
+    assert!(Affects::NONE.is_empty() && !affects.is_empty());
   }
 }
