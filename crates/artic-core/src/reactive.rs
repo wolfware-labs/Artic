@@ -65,6 +65,46 @@
 //! assert_eq!(*title.borrow(), "Hello, Grace");
 //! ```
 //!
+//! # Scopes
+//!
+//! A [`Scope`] owns the signals, memos and effects created while it is active, and
+//! [`Scope::dispose`] frees them all at once. This is how a closed view drops its reactive state
+//! without unsubscribing anything by hand. Scopes form a tree, and disposing one disposes its child
+//! scopes first.
+//!
+//! ```
+//! use artic_core::reactive::{Effect, Scope, Signal, flush_effects};
+//! use std::cell::Cell;
+//! use std::rc::Rc;
+//!
+//! let theme = Signal::new("light");
+//! let border_updates = Rc::new(Cell::new(0));
+//! let border_updates_in_effect = Rc::clone(&border_updates);
+//!
+//! let view = Scope::new_root();
+//! view.run(|| {
+//!   Effect::new(move || {
+//!     theme.get();
+//!     border_updates_in_effect.set(border_updates_in_effect.get() + 1);
+//!   });
+//! });
+//!
+//! view.dispose();
+//! theme.set("dark");
+//! flush_effects();
+//! assert_eq!(border_updates.get(), 1, "the disposed effect didn't run again");
+//! ```
+//!
+//! Nodes created while no scope is active have no owner and live until the thread ends.
+//!
+//! Each effect and memo also owns what its closure creates. Before the closure runs again, the
+//! nodes from its previous run are disposed, so an effect that creates an effect on every run keeps
+//! only the latest one.
+//!
+//! A signal or memo that outlives an effect that read it forgets that effect when the effect is
+//! disposed. Using a signal or memo after its scope was disposed panics; in debug builds the message
+//! says where it was created. [`live_counts`] reports how many nodes are alive, for leak checks.
+//!
 //! # Skipping writes that change nothing
 //!
 //! [`Signal::set`] and [`Signal::update`] always mark subscribers as dirty, even when the new value
