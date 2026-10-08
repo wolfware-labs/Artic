@@ -125,6 +125,8 @@ impl Source {
 #[derive(Debug)]
 pub struct Graph {
   pub scopes: Vec<Scope>,
+  /// The signal or memo of each node, or `None` for effects.
+  pub sources: Vec<Option<Source>>,
 }
 
 impl Graph {
@@ -164,7 +166,7 @@ impl Graph {
       });
       sources.push(source);
     }
-    Graph { scopes }
+    Graph { scopes, sources }
   }
 
   pub fn root(&self) -> Scope {
