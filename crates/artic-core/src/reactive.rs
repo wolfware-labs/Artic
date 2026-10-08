@@ -137,7 +137,7 @@ pub use live_counts::assert_no_reactive_leaks;
 pub use live_counts::{LiveCounts, live_counts};
 pub use memo::Memo;
 pub use scope::Scope;
-pub use signal::Signal;
+pub use signal::{Change, Signal};
 
 /// Runs every effect whose dependencies changed since it last ran.
 ///

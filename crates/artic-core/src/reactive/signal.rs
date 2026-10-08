@@ -160,6 +160,38 @@ impl<TValue> Signal<TValue> {
     Runtime::with_signal_mut_value(self.0, action);
   }
 
+  /// Changes the value in place through `action`, and marks subscribed observers as dirty only if
+  /// `action` returns [`Change::Visible`].
+  ///
+  /// Use this when only some edits matter to readers, for example a value with parts that readers
+  /// never see. The edit is always kept; a [`Change::Hidden`] edit just doesn't wake anyone, and a
+  /// flush after it runs nothing.
+  ///
+  /// If `action` panics, the value is put back with whatever changes `action` made, subscribers
+  /// are marked dirty as after a visible change, and the panic continues to the caller.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use artic_core::reactive::{Change, Signal};
+  ///
+  /// // A list whose readers only care about its length.
+  /// let items = Signal::new(vec![1, 2]);
+  /// items.update_with(|items| {
+  ///   items[0] = 10; // same length: nothing readers see changed
+  ///   Change::Hidden
+  /// });
+  /// assert_eq!(items.get(), vec![10, 2]);
+  /// ```
+  ///
+  /// # Panics
+  ///
+  /// Panics in the same cases as [`update`](Signal::update).
+  pub fn update_with(&self, action: impl FnOnce(&mut TValue) -> Change) {
+    self.ensure_alive();
+    Runtime::update_signal_value_with(self.0, action);
+  }
+
   fn ensure_alive(&self) {
     if !Runtime::contains_signal(self.0) {
       self.1.panic("signal used after its scope was disposed");
@@ -228,6 +260,15 @@ where
       self.set(new_value)
     }
   }
+}
+
+/// Whether an edit made through [`Signal::update_with`] is visible to the signal's readers.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum Change {
+  /// Readers can see the edit: subscribed observers are marked dirty.
+  Visible,
+  /// Readers can't see the edit: it is kept, but nobody is marked dirty.
+  Hidden,
 }
 
 #[cfg(test)]
