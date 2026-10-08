@@ -55,6 +55,10 @@ impl MemoStore {
     self.with_slot(memo_id, |slot| slot.value)
   }
 
+  pub fn find_value(&self, memo_id: MemoId) -> Option<SignalId> {
+    self.slots.borrow().get(memo_id.0).map(|slot| slot.value)
+  }
+
   pub fn compute(&self, memo_id: MemoId) -> Rc<dyn Fn()> {
     self.with_slot(memo_id, |slot| Rc::clone(&slot.compute))
   }

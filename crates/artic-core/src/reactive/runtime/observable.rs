@@ -18,10 +18,10 @@ impl ObservableId {
     let signal_id = match self {
       ObservableId::Signal(signal_id) => signal_id,
       ObservableId::Memo(memo_id) => {
-        if !RUNTIME.with(|runtime| runtime.memos.contains(memo_id)) {
+        let Some(value_id) = RUNTIME.with(|runtime| runtime.memos.find_value(memo_id)) else {
           return;
-        }
-        Runtime::memo_value(memo_id)
+        };
+        value_id
       }
     };
     RUNTIME.with(|runtime| runtime.signals.remove_subscriber(signal_id, observer_id));
