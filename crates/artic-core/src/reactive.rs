@@ -1,8 +1,8 @@
 //! Fine-grained reactivity: values that know who reads them.
 //!
-//! A [`Signal`] holds a value and remembers which observers read it. An observer is a computation
-//! the runtime can re-run, such as a derived value or an effect. Reading a signal while an observer
-//! runs subscribes that observer to the signal, and writing the signal marks every subscribed
+//! A [`Signal`] holds a value and remembers which observers read it. An observer is something that
+//! reads signals and is marked dirty when they change; a [`Memo`] uses one to know when its value is
+//! out of date. Reading a signal while an observer runs subscribes that observer to the signal, and writing the signal marks every subscribed
 //! observer as dirty, meaning its last result is out of date. Nothing subscribes explicitly: the
 //! reads themselves record the dependencies.
 //!
@@ -17,6 +17,20 @@
 //! let copy = count;            // a second handle to the same value
 //! count.set(5);
 //! assert_eq!(copy.get(), 5);
+//! ```
+//!
+//! # Derived values
+//!
+//! A [`Memo`] computes a value from signals and other memos and remembers it. It runs its closure
+//! only when read after a dependency changed, and a run that produces an equal value leaves the
+//! memo's own readers up to date.
+//!
+//! ```
+//! use artic_core::reactive::{Memo, Signal};
+//!
+//! let count = Signal::new(2);
+//! let is_even = Memo::new(move || count.get() % 2 == 0);
+//! assert!(is_even.get());
 //! ```
 //!
 //! # Skipping writes that change nothing
@@ -35,6 +49,7 @@
 //! The comparison inside `set_if_changed` reads the value without subscribing the running
 //! observer, so it is still only a write.
 
+mod memo;
 mod observable;
 mod runtime;
 mod signal;
@@ -43,6 +58,7 @@ mod tests;
 
 use crate::reactive::observable::ObservableId;
 use crate::reactive::runtime::{ObserverId, Runtime};
+pub use memo::Memo;
 pub use signal::Signal;
 use std::cell::RefCell;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
@@ -51,10 +67,6 @@ thread_local! {
   static READS: RefCell<Vec<Vec<ObservableId>>> = const { RefCell::new(Vec::new()) };
 }
 
-#[cfg_attr(
-  not(test),
-  expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
-)]
 pub(crate) fn run_tracked(observer_id: ObserverId, action: impl FnOnce()) -> Vec<ObservableId> {
   Runtime::mark_observer_as_clean(observer_id);
   Runtime::push_observer(observer_id);

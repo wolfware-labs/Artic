@@ -1,8 +1,10 @@
 use crate::reactive::observable::ObservableId;
 use crate::reactive::runtime::{ObserverId, Runtime};
-use crate::reactive::{Signal, run_tracked};
+use crate::reactive::{Memo, Signal, run_tracked};
 use pretty_assertions::assert_eq;
+use std::cell::Cell;
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::rc::Rc;
 
 /// Creates an observer and runs `action` as that observer, so every signal read inside subscribes it.
 fn observe(action: impl FnOnce()) -> ObserverId {
@@ -353,4 +355,115 @@ fn update_inside_observer_records_nothing() {
   count.set(5);
 
   assert!(!Runtime::is_observer_dirty(observer));
+}
+
+// Memo
+
+/// Returns a call counter and a closure that bumps it, to count how often a memo computes.
+fn counter() -> (Rc<Cell<u32>>, impl Fn() + 'static) {
+  let calls = Rc::new(Cell::new(0));
+  let calls_in_closure = Rc::clone(&calls);
+  (calls, move || calls_in_closure.set(calls_in_closure.get() + 1))
+}
+
+// Creating a memo runs nothing; the first read computes it.
+#[test]
+fn memo_not_computed_until_read() {
+  let (calls, count_call) = counter();
+  let source = Signal::new(2);
+  let double = Memo::new(move || {
+    count_call();
+    source.get() * 2
+  });
+  assert_eq!(calls.get(), 0);
+
+  assert_eq!(double.get(), 4);
+  assert_eq!(calls.get(), 1);
+}
+
+// After a dependency changes, the memo computes once on the next read and remembers the result.
+#[test]
+fn memo_recomputes_once_after_dependency_change() {
+  let (calls, count_call) = counter();
+  let source = Signal::new(2);
+  let double = Memo::new(move || {
+    count_call();
+    source.get() * 2
+  });
+  double.get();
+
+  source.set(3);
+  source.set(4);
+  assert_eq!(calls.get(), 1, "a change alone must not compute");
+
+  assert_eq!(double.get(), 8);
+  assert_eq!(double.get(), 8);
+  assert_eq!(calls.get(), 2);
+}
+
+// A dependency read only on a branch that is no longer taken stops causing computes.
+#[test]
+fn memo_drops_stale_conditional_dependency() {
+  let (calls, count_call) = counter();
+  let use_detail = Signal::new(true);
+  let detail = Signal::new(1);
+  let shown = Memo::new(move || {
+    count_call();
+    if use_detail.get() { detail.get() } else { 0 }
+  });
+  assert_eq!(shown.get(), 1);
+  use_detail.set(false);
+  assert_eq!(shown.get(), 0);
+
+  detail.set(2);
+
+  assert_eq!(shown.get(), 0);
+  assert_eq!(calls.get(), 2, "changing a dropped dependency must not compute");
+}
+
+// A change to a signal reaches the end of a chain of memos.
+#[test]
+fn memo_chain_propagates() {
+  let source = Signal::new(1);
+  let double = Memo::new(move || source.get() * 2);
+  let label = Memo::new(move || format!("value: {}", double.get()));
+  assert_eq!(label.get(), "value: 2");
+
+  source.set(5);
+
+  assert_eq!(label.get(), "value: 10");
+}
+
+// A memo that computes a value equal to its last one leaves the memos that read it up to date.
+#[test]
+fn equal_recompute_does_not_dirty_dependents() {
+  let (calls, count_call) = counter();
+  let source = Signal::new(2);
+  let is_even = Memo::new(move || source.get() % 2 == 0);
+  let label = Memo::new(move || {
+    count_call();
+    if is_even.get() { "even" } else { "odd" }
+  });
+  assert_eq!(label.get(), "even");
+
+  source.set(4);
+
+  assert_eq!(label.get(), "even");
+  assert_eq!(calls.get(), 1, "label must not compute when is_even is unchanged");
+}
+
+// A memo read inside a tracked run is returned once, as a memo and not as its inner value signal.
+#[test]
+fn run_tracked_records_a_memo_read_as_the_memo() {
+  let source = Signal::new(1);
+  let double = Memo::new(move || source.get() * 2);
+  let observer = Runtime::create_observer();
+
+  let observables = run_tracked(observer, || {
+    double.get();
+    double.with(|_| ());
+  });
+
+  assert_eq!(observables.len(), 1);
+  assert!(matches!(observables[0], ObservableId::Memo(_)));
 }

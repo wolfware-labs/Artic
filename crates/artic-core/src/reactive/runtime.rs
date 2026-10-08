@@ -85,42 +85,26 @@ impl Runtime {
     RUNTIME.with(|runtime| runtime.signals.remove_subscriber(signal_id, observer_id))
   }
 
-  #[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
-  )]
   pub fn create_observer() -> ObserverId {
     RUNTIME.with(|runtime| runtime.observers.create_observer())
   }
 
-  #[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
-  )]
   pub fn push_observer(observer_id: ObserverId) {
     RUNTIME.with(|runtime| runtime.observers.push_observer(observer_id))
   }
 
-  #[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
-  )]
   pub fn pop_observer() {
     RUNTIME.with(|runtime| runtime.observers.pop_observer())
   }
 
-  #[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
-  )]
   pub fn mark_observer_as_clean(observer_id: ObserverId) {
     RUNTIME.with(|runtime| runtime.observers.mark_as_clean(observer_id))
   }
 
-  #[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
-  )]
+  pub fn mark_observer_as_dirty(observer_id: ObserverId) {
+    RUNTIME.with(|runtime| runtime.observers.mark_as_dirty(&[observer_id]))
+  }
+
   pub fn is_observer_dirty(observer_id: ObserverId) -> bool {
     RUNTIME.with(|runtime| runtime.observers.is_dirty(observer_id))
   }
