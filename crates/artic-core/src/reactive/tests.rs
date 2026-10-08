@@ -1,3 +1,4 @@
+use crate::reactive::observable::ObservableId;
 use crate::reactive::runtime::{ObserverId, Runtime};
 use crate::reactive::{Signal, run_tracked};
 use pretty_assertions::assert_eq;
@@ -163,7 +164,62 @@ fn run_tracked_marks_observer_clean() {
   assert!(!Runtime::is_observer_dirty(observer));
 }
 
+// `run_tracked` returns every signal the action read, once each and in read order.
+#[test]
+fn run_tracked_returns_each_signal_read_once() {
+  let first = Signal::new(0);
+  let second = Signal::new(0);
+  let observer = Runtime::create_observer();
+
+  let observables = run_tracked(observer, || {
+    first.get();
+    second.with(|_| ());
+    first.get();
+  });
+
+  assert_eq!(
+    observables,
+    [ObservableId::Signal(first.id()), ObservableId::Signal(second.id())]
+  );
+}
+
+// Unsubscribing an observer from what it read stops writes from marking it dirty.
+#[test]
+fn unsubscribed_observer_is_not_marked_dirty() {
+  let count = Signal::new(0);
+  let observer = Runtime::create_observer();
+  let observables = run_tracked(observer, || {
+    count.get();
+  });
+
+  for observable in observables {
+    observable.unsubscribe(observer);
+  }
+  count.set(1);
+
+  assert!(!Runtime::is_observer_dirty(observer));
+}
+
 // Panic safety
+
+// If the action passed to `run_tracked` panics, the observer is unsubscribed from what it read before
+// the panic, because nothing returns that list to the caller.
+#[test]
+fn run_tracked_unsubscribes_reads_when_action_panics() {
+  let count = Signal::new(0);
+  let observer = Runtime::create_observer();
+
+  let result = catch_unwind(AssertUnwindSafe(|| {
+    run_tracked(observer, || {
+      count.get();
+      panic!("action failed");
+    })
+  }));
+  count.set(1);
+
+  assert!(result.is_err());
+  assert!(!Runtime::is_observer_dirty(observer));
+}
 
 // If the action passed to `run_tracked` panics, the observer is popped and the panic still reaches the caller.
 #[test]

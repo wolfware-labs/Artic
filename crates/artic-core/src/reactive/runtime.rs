@@ -81,6 +81,10 @@ impl Runtime {
     })
   }
 
+  pub fn unsubscribe(signal_id: SignalId, observer_id: ObserverId) {
+    RUNTIME.with(|runtime| runtime.signals.remove_subscriber(signal_id, observer_id))
+  }
+
   #[cfg_attr(
     not(test),
     expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")

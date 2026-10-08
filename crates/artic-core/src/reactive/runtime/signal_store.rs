@@ -42,6 +42,10 @@ impl SignalSlot {
     }
   }
 
+  fn remove_subscriber(&self, observer: ObserverId) {
+    self.subscribers.borrow_mut().retain(|subscriber| *subscriber != observer);
+  }
+
   fn get_subscribers(&self) -> Ref<'_, Vec<ObserverId>> {
     self.subscribers.borrow()
   }
@@ -102,6 +106,10 @@ impl SignalStore {
 
   pub fn add_subscriber(&self, signal_id: SignalId, observer_id: ObserverId) {
     self.get_slot(signal_id).add_subscriber(observer_id);
+  }
+
+  pub fn remove_subscriber(&self, signal_id: SignalId, observer_id: ObserverId) {
+    self.get_slot(signal_id).remove_subscriber(observer_id);
   }
 
   pub fn with_subscribers(&self, signal_id: SignalId, action: impl FnOnce(&[ObserverId])) {

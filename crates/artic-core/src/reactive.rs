@@ -35,25 +35,48 @@
 //! The comparison inside `set_if_changed` reads the value without subscribing the running
 //! observer, so it is still only a write.
 
+mod observable;
 mod runtime;
 mod signal;
 #[cfg(test)]
 mod tests;
 
+use crate::reactive::observable::ObservableId;
 use crate::reactive::runtime::{ObserverId, Runtime};
 pub use signal::Signal;
+use std::cell::RefCell;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+
+thread_local! {
+  static READS: RefCell<Vec<Vec<ObservableId>>> = const { RefCell::new(Vec::new()) };
+}
 
 #[cfg_attr(
   not(test),
   expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
 )]
-pub(crate) fn run_tracked(observer_id: ObserverId, action: impl FnOnce()) {
+pub(crate) fn run_tracked(observer_id: ObserverId, action: impl FnOnce()) -> Vec<ObservableId> {
   Runtime::mark_observer_as_clean(observer_id);
   Runtime::push_observer(observer_id);
+  READS.with(|reads| reads.borrow_mut().push(Vec::new()));
   let action_result = catch_unwind(AssertUnwindSafe(action));
+  let observables = READS.with(|reads| reads.borrow_mut().pop()).unwrap_or_default();
   Runtime::pop_observer();
   if let Err(payload) = action_result {
+    for observable in observables {
+      observable.unsubscribe(observer_id);
+    }
     resume_unwind(payload);
   }
+  observables
+}
+
+pub(crate) fn record_read(observable: ObservableId) {
+  READS.with(|reads| {
+    if let Some(observables) = reads.borrow_mut().last_mut()
+      && !observables.contains(&observable)
+    {
+      observables.push(observable);
+    }
+  });
 }
