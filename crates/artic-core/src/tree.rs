@@ -3,9 +3,18 @@
 //! [`TreeArena`] owns every node as a `Box<dyn Object>`, and [`NodeId`] is the handle used to reach one.
 //! Handles are checked against a per-slot generation, so a handle to a freed node stops resolving instead of
 //! pointing at whatever node reuses its slot.
+//!
+//! Every node belongs to two trees at once, each with its own parent and ordered children: the logical tree
+//! the markup declares, and the visual tree that is laid out and drawn. Methods that work on links take a
+//! [`Tree`] to say which one, such as [`add_child`](TreeArena::add_child) and
+//! [`descendants`](TreeArena::descendants).
+
+mod links;
+mod node;
 
 use crate::Object;
 use crate::arena::{Arena, SlotId};
+use node::TreeNode;
 use std::any::Any;
 use std::fmt::Debug;
 
@@ -38,7 +47,7 @@ use std::fmt::Debug;
 /// ```
 #[derive(Debug, Default)]
 pub struct TreeArena {
-  inner: Arena<Box<dyn Object>>,
+  inner: Arena<TreeNode>,
 }
 
 /// A handle to a node stored in a [`TreeArena`].
@@ -50,6 +59,20 @@ pub struct TreeArena {
 /// meaningful for the arena that returned it.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct NodeId(SlotId);
+
+/// Which of a node's two trees an operation works on.
+///
+/// Every node in a [`TreeArena`] belongs to two trees at once, with independent parent and child
+/// links. The *logical* tree is the structure the markup declares; names, resources and inherited
+/// values follow it. The *visual* tree is what gets measured and drawn, including the nodes a
+/// control's template adds around its content.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum Tree {
+  /// The tree the markup declares.
+  Logical,
+  /// The tree that is laid out and drawn.
+  Visual,
+}
 
 impl TreeArena {
   /// Creates an empty arena.
@@ -86,7 +109,7 @@ impl TreeArena {
   /// ```
   #[must_use = "node ID needed to get or free the node from the arena"]
   pub fn alloc(&mut self, value: Box<dyn Object>) -> NodeId {
-    let slot_id = self.inner.alloc(value);
+    let slot_id = self.inner.alloc(TreeNode::new(value));
     NodeId(slot_id)
   }
 
@@ -117,7 +140,7 @@ impl TreeArena {
   /// assert!(arena.is_empty());
   /// ```
   pub fn free(&mut self, node_id: NodeId) -> Option<Box<dyn Object>> {
-    self.inner.free(node_id.0)
+    self.inner.free(node_id.0).map(|node| node.object)
   }
 
   /// Returns a reference to the node referred to by `id`, or `None` if `id` is stale.
@@ -125,7 +148,7 @@ impl TreeArena {
   /// Use [`get_as`](TreeArena::get_as) to get the node as its concrete type.
   #[must_use]
   pub fn get(&self, id: NodeId) -> Option<&dyn Object> {
-    self.inner.get(id.0).map(Box::as_ref)
+    self.inner.get(id.0).map(|node| node.object.as_ref())
   }
 
   /// Returns a reference to the node referred to by `id` as a `T`.
@@ -166,7 +189,7 @@ impl TreeArena {
   /// Use [`get_as_mut`](TreeArena::get_as_mut) to get the node as its concrete type.
   #[must_use]
   pub fn get_mut(&mut self, id: NodeId) -> Option<&mut dyn Object> {
-    self.inner.get_mut(id.0).map(Box::as_mut)
+    self.inner.get_mut(id.0).map(|node| node.object.as_mut())
   }
 
   /// Returns a mutable reference to the node referred to by `id` as a `T`.
@@ -242,6 +265,12 @@ impl TreeArena {
   #[must_use]
   pub fn contains(&self, id: NodeId) -> bool {
     self.inner.contains(id.0)
+  }
+
+  /// Returns the parent of `id` in `tree`, or `None` if it has none or `id` is stale.
+  #[must_use]
+  pub fn parent(&self, tree: Tree, id: NodeId) -> Option<NodeId> {
+    self.inner.get(id.0)?.links(tree).parent
   }
 }
 
@@ -354,5 +383,17 @@ mod tests {
     let arena = TreeArena::default();
     assert!(arena.is_empty());
     assert_eq!(arena.len(), 0);
+  }
+
+  // A new node has no parent in either tree, and a stale id has none either.
+  #[test]
+  fn new_node_has_no_parent() {
+    let mut arena = TreeArena::new();
+    let node = arena.alloc(Box::new(Control));
+
+    assert_eq!(arena.parent(Tree::Logical, node), None);
+    assert_eq!(arena.parent(Tree::Visual, node), None);
+    arena.free(node);
+    assert_eq!(arena.parent(Tree::Logical, node), None);
   }
 }
