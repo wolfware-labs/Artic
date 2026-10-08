@@ -61,7 +61,7 @@ impl<TValue> Signal<TValue> {
   /// assert_eq!(count.get(), 0);
   /// ```
   pub fn new(initial_value: TValue) -> Signal<TValue> {
-    Signal(Runtime::alloc_signal_value(initial_value), PhantomData)
+    Signal(Runtime::create_signal(initial_value), PhantomData)
   }
 
   /// Calls `function` with a reference to the value and returns its result.

@@ -36,6 +36,9 @@ impl Runtime {
   }
 
   pub fn refresh_effect(effect_id: EffectId) {
+    if !RUNTIME.with(|runtime| runtime.effects.contains(effect_id)) {
+      return;
+    }
     let (observer_id, observables, is_running) = RUNTIME.with(|runtime| {
       (
         runtime.effects.observer(effect_id),
@@ -52,6 +55,17 @@ impl Runtime {
       runtime.effects.run(effect_id)
     });
     let run_result = Self::rerun(observer_id, &observables, || (run.borrow_mut())());
+    if !RUNTIME.with(|runtime| runtime.effects.contains(effect_id)) {
+      match run_result {
+        Ok(observables) => {
+          for observable in observables {
+            observable.unsubscribe(observer_id);
+          }
+        }
+        Err(payload) => resume_unwind(payload),
+      }
+      return;
+    }
     RUNTIME.with(|runtime| {
       runtime.effects.set_running(effect_id, false);
       match run_result {

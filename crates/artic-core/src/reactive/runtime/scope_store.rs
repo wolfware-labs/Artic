@@ -1,13 +1,22 @@
 use crate::arena::{Arena, SlotId};
+use crate::reactive::runtime::{EffectId, MemoId, SignalId};
 use std::cell::RefCell;
+use std::mem::take;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct ScopeId(SlotId);
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ReactiveNodeId {
+  Signal(SignalId),
+  Memo(MemoId),
+  Effect(EffectId),
+}
+
 struct ScopeSlot {
-  #[expect(dead_code, reason = "dispose detaches a scope from its parent (#11)")]
   parent: Option<ScopeId>,
   children: Vec<ScopeId>,
+  nodes: Vec<ReactiveNodeId>,
 }
 
 pub struct ScopeStore {
@@ -24,23 +33,49 @@ impl ScopeStore {
   }
 
   pub fn alloc(&self, parent: Option<ScopeId>) -> ScopeId {
-    let mut slots = self.slots.borrow_mut();
-    let scope_id = ScopeId(slots.alloc(ScopeSlot {
+    let scope_id = ScopeId(self.slots.borrow_mut().alloc(ScopeSlot {
       parent,
       children: Vec::new(),
+      nodes: Vec::new(),
     }));
     if let Some(parent) = parent {
-      slots
-        .get_mut(parent.0)
-        .expect("scope slot not found for the specified id")
-        .children
-        .push(scope_id);
+      self.with_slot(parent, |slot| slot.children.push(scope_id));
     }
     scope_id
   }
 
+  pub fn free(&self, scope_id: ScopeId) {
+    self.slots.borrow_mut().free(scope_id.0);
+  }
+
+  pub fn contains(&self, scope_id: ScopeId) -> bool {
+    self.slots.borrow().contains(scope_id.0)
+  }
+
   pub fn count(&self) -> usize {
     self.slots.borrow().len()
+  }
+
+  pub fn parent(&self, scope_id: ScopeId) -> Option<ScopeId> {
+    self.with_slot(scope_id, |slot| slot.parent)
+  }
+
+  pub fn remove_child(&self, scope_id: ScopeId, child_id: ScopeId) {
+    if let Some(slot) = self.slots.borrow_mut().get_mut(scope_id.0) {
+      slot.children.retain(|child| *child != child_id);
+    }
+  }
+
+  pub fn take_children(&self, scope_id: ScopeId) -> Vec<ScopeId> {
+    self.with_slot(scope_id, |slot| take(&mut slot.children))
+  }
+
+  pub fn add_node(&self, scope_id: ScopeId, node: ReactiveNodeId) {
+    self.with_slot(scope_id, |slot| slot.nodes.push(node));
+  }
+
+  pub fn take_nodes(&self, scope_id: ScopeId) -> Vec<ReactiveNodeId> {
+    self.with_slot(scope_id, |slot| take(&mut slot.nodes))
   }
 
   pub fn push_active(&self, scope_id: ScopeId) {
@@ -51,8 +86,12 @@ impl ScopeStore {
     self.active.borrow_mut().pop();
   }
 
-  #[cfg(test)]
   pub fn active(&self) -> Option<ScopeId> {
     self.active.borrow().last().copied()
+  }
+
+  fn with_slot<TResult>(&self, scope_id: ScopeId, action: impl FnOnce(&mut ScopeSlot) -> TResult) -> TResult {
+    let mut slots = self.slots.borrow_mut();
+    action(slots.get_mut(scope_id.0).expect("scope slot not found for the specified id"))
   }
 }

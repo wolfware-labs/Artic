@@ -18,6 +18,7 @@ pub use observable::ObservableId;
 pub use observer_store::ObserverId;
 use observer_store::ObserverStore;
 use scheduling::Scheduler;
+use scope_store::ReactiveNodeId;
 pub use scope_store::ScopeId;
 use scope_store::ScopeStore;
 pub use signal_store::SignalId;
@@ -62,6 +63,17 @@ impl Runtime {
     TValue: Any,
   {
     RUNTIME.with(|runtime| runtime.signals.alloc_value(value))
+  }
+
+  pub fn create_signal<TValue>(value: TValue) -> SignalId
+  where
+    TValue: Any,
+  {
+    RUNTIME.with(|runtime| {
+      let signal_id = runtime.signals.alloc_value(value);
+      runtime.register_node(ReactiveNodeId::Signal(signal_id));
+      signal_id
+    })
   }
 
   pub fn get_signal_value<TValue>(signal_id: SignalId) -> TValue
@@ -124,6 +136,17 @@ impl Runtime {
     RUNTIME.with(|runtime| runtime.observers.create_observer())
   }
 
+  #[cfg(test)]
+  pub fn subscriber_count(signal_id: SignalId) -> usize {
+    RUNTIME.with(|runtime| {
+      let mut count = 0;
+      runtime
+        .signals
+        .with_subscribers(signal_id, |subscribers| count = subscribers.len());
+      count
+    })
+  }
+
   pub fn is_observer_dirty(observer_id: ObserverId) -> bool {
     RUNTIME.with(|runtime| runtime.observers.is_dirty(observer_id))
   }
@@ -132,7 +155,9 @@ impl Runtime {
     RUNTIME.with(|runtime| {
       let observer_id = runtime.observers.create_observer();
       runtime.observers.mark_as_dirty(&[observer_id]);
-      runtime.memos.alloc(observer_id, value_id, compute)
+      let memo_id = runtime.memos.alloc(observer_id, value_id, compute);
+      runtime.register_node(ReactiveNodeId::Memo(memo_id));
+      memo_id
     })
   }
 
@@ -144,7 +169,9 @@ impl Runtime {
     let effect_id = RUNTIME.with(|runtime| {
       let observer_id = runtime.observers.create_observer();
       runtime.observers.mark_as_dirty(&[observer_id]);
-      runtime.effects.alloc(observer_id, run)
+      let effect_id = runtime.effects.alloc(observer_id, run);
+      runtime.register_node(ReactiveNodeId::Effect(effect_id));
+      effect_id
     });
     Self::refresh_effect(effect_id);
     effect_id

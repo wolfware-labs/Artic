@@ -35,6 +35,14 @@ impl MemoStore {
     }))
   }
 
+  pub fn free(&self, memo_id: MemoId) {
+    self.slots.borrow_mut().free(memo_id.0);
+  }
+
+  pub fn contains(&self, memo_id: MemoId) -> bool {
+    self.slots.borrow().contains(memo_id.0)
+  }
+
   pub fn count(&self) -> usize {
     self.slots.borrow().len()
   }

@@ -644,3 +644,165 @@ fn run_restores_scope_when_action_panics() {
 
   assert_eq!(after, Some(outer.id()));
 }
+
+// Dispose
+
+/// Returns a run counter and an effect body that bumps it and reads `source`.
+fn counting_reader(source: Signal<i32>) -> (Rc<Cell<u32>>, impl FnMut() + 'static) {
+  let runs = Rc::new(Cell::new(0));
+  let runs_in_effect = Rc::clone(&runs);
+  (runs, move || {
+    runs_in_effect.set(runs_in_effect.get() + 1);
+    source.get();
+  })
+}
+
+// Disposing a scope frees every signal, memo and effect created in it, and the scope itself.
+#[test]
+fn dispose_frees_all_owned_nodes() {
+  let before = live_counts();
+  let scope = Scope::new_root();
+
+  scope.run(|| {
+    let count = Signal::new(1);
+    let double = Memo::new(move || count.get() * 2);
+    Effect::new(move || {
+      double.get();
+    });
+  });
+  scope.dispose();
+
+  assert_eq!(live_counts(), before);
+}
+
+// Disposing a parent scope disposes its child scopes and what they own.
+#[test]
+fn dispose_parent_disposes_children() {
+  let before = live_counts();
+  let parent = Scope::new_root();
+  let child = parent.child();
+  child.child().run(|| Signal::new(0));
+  child.run(|| Signal::new(0));
+
+  parent.dispose();
+
+  assert_eq!(live_counts(), before);
+}
+
+// An effect whose scope was disposed doesn't run again when a signal it read changes.
+#[test]
+fn disposed_effect_no_longer_runs() {
+  let source = Signal::new(0);
+  let (runs, read) = counting_reader(source);
+  let scope = Scope::new_root();
+  scope.run(|| Effect::new(read));
+
+  scope.dispose();
+  source.set(1);
+  flush_effects();
+
+  assert_eq!(runs.get(), 1, "only the run on creation");
+}
+
+// A signal in a parent scope stops listing an effect from a disposed child scope as a subscriber.
+#[test]
+fn signal_outlives_dependent_effect_scope() {
+  let parent = Scope::new_root();
+  let child = parent.child();
+  let theme = parent.run(|| Signal::new(0));
+  let (_, read) = counting_reader(theme);
+  child.run(|| Effect::new(read));
+  assert_eq!(Runtime::subscriber_count(theme.id()), 1);
+
+  child.dispose();
+
+  assert_eq!(Runtime::subscriber_count(theme.id()), 0);
+}
+
+// Disposing a child scope removes it from its parent, so disposing the parent later doesn't
+// dispose it twice.
+#[test]
+fn disposed_child_is_removed_from_parent() {
+  let before = live_counts();
+  let parent = Scope::new_root();
+  let child = parent.child();
+
+  child.dispose();
+  parent.dispose();
+
+  assert_eq!(live_counts(), before);
+}
+
+// An effect that outlives a memo it read no longer refreshes it, and unsubscribing from it on the
+// next run does nothing.
+#[test]
+fn reader_skips_a_disposed_memo_it_read_before() {
+  let source = Signal::new(1);
+  let parent = Scope::new_root();
+  let child = parent.child();
+  let short_lived = child.run(|| Memo::new(move || source.get()));
+  let long_lived = Memo::new(move || source.get() * 10);
+  let reads_short_lived = Rc::new(Cell::new(true));
+  let reads_in_effect = Rc::clone(&reads_short_lived);
+  let seen = Rc::new(Cell::new(0));
+  let seen_in_effect = Rc::clone(&seen);
+  parent.run(|| {
+    Effect::new(move || {
+      if reads_in_effect.get() {
+        short_lived.get();
+      }
+      seen_in_effect.set(long_lived.get());
+    })
+  });
+
+  child.dispose();
+  reads_short_lived.set(false);
+  source.set(2);
+  flush_effects();
+
+  assert_eq!(seen.get(), 20);
+}
+
+// An effect that disposes an earlier effect's scope during a flush doesn't make the flush skip the
+// effects created after it.
+#[test]
+fn disposing_during_flush_keeps_later_effects_running() {
+  let source = Signal::new(0);
+  let first_scope = Scope::new_root();
+  let (_, first) = counting_reader(source);
+  first_scope.run(|| Effect::new(first));
+  Effect::new(move || {
+    if source.get() > 0 {
+      first_scope.dispose();
+    }
+  });
+  let (last_runs, last) = counting_reader(source);
+  Effect::new(last);
+
+  source.set(1);
+  flush_effects();
+
+  assert_eq!(last_runs.get(), 2);
+}
+
+// An effect that disposes its own scope while running is freed, and its last reads don't leave it
+// subscribed.
+#[test]
+fn effect_can_dispose_its_own_scope() {
+  let before = live_counts();
+  let source = Signal::new(0);
+  let scope = Scope::new_root();
+  scope.run(|| {
+    Effect::new(move || {
+      if source.get() > 0 {
+        scope.dispose();
+      }
+    })
+  });
+
+  source.set(1);
+  flush_effects();
+
+  assert_eq!(Runtime::subscriber_count(source.id()), 0);
+  assert_eq!(live_counts().effects, before.effects);
+}

@@ -29,6 +29,10 @@ impl ObserverStore {
     ObserverId(self.observers.borrow_mut().alloc(Observer::new()))
   }
 
+  pub fn free(&self, observer_id: ObserverId) {
+    self.observers.borrow_mut().free(observer_id.0);
+  }
+
   pub fn mark_as_dirty(&self, observer_ids: &[ObserverId]) {
     let mut observers = self.observers.borrow_mut();
     for observer_id in observer_ids {

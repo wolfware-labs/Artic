@@ -21,6 +21,10 @@ impl Scheduler {
     self.batch_depth.get() == 0 && !self.is_flushing.replace(true)
   }
 
+  pub fn is_flushing(&self) -> bool {
+    self.is_flushing.get()
+  }
+
   fn end_flush(&self) {
     self.is_flushing.set(false);
   }
@@ -53,7 +57,10 @@ impl Runtime {
       return;
     }
     let flush_result = catch_unwind(AssertUnwindSafe(Self::run_passes));
-    RUNTIME.with(|runtime| runtime.scheduler.end_flush());
+    RUNTIME.with(|runtime| {
+      runtime.scheduler.end_flush();
+      runtime.effects.compact_creation_order();
+    });
     if let Err(payload) = flush_result {
       RUNTIME.with(|runtime| runtime.tracker.record_write());
       resume_unwind(payload);
