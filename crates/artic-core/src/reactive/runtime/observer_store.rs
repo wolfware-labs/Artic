@@ -73,6 +73,15 @@ impl ObserverStore {
     not(test),
     expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
   )]
+  pub fn mark_as_clean(&self, observer_id: ObserverId) {
+    let mut observers = self.observers.borrow_mut();
+    observers.get_mut(observer_id.0).expect("observer does not exist").is_dirty = false;
+  }
+
+  #[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
+  )]
   pub fn is_dirty(&self, observer_id: ObserverId) -> bool {
     let observers = self.observers.borrow();
     observers.get(observer_id.0).expect("observer does not exist").is_dirty

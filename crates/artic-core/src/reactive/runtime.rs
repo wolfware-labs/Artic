@@ -109,6 +109,14 @@ impl Runtime {
     not(test),
     expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
   )]
+  pub fn mark_observer_as_clean(observer_id: ObserverId) {
+    RUNTIME.with(|runtime| runtime.observers.mark_as_clean(observer_id))
+  }
+
+  #[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used by Memo and Effect (#9, #10); only tests call it until then")
+  )]
   pub fn is_observer_dirty(observer_id: ObserverId) -> bool {
     RUNTIME.with(|runtime| runtime.observers.is_dirty(observer_id))
   }

@@ -147,6 +147,22 @@ fn set_leaves_unrelated_observers_clean() {
   assert!(!Runtime::is_observer_dirty(observer));
 }
 
+// Running an observer again clears its dirty flag, so only writes after the run mark it dirty.
+#[test]
+fn run_tracked_marks_observer_clean() {
+  let count = Signal::new(0);
+  let observer = observe(|| {
+    count.get();
+  });
+  count.set(1);
+
+  run_tracked(observer, || {
+    count.get();
+  });
+
+  assert!(!Runtime::is_observer_dirty(observer));
+}
+
 // Panic safety
 
 // If the action passed to `run_tracked` panics, the observer is popped and the panic still reaches the caller.
