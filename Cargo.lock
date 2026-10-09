@@ -46,6 +46,7 @@ dependencies = [
  "pretty_assertions",
  "proptest",
  "static_assertions",
+ "thiserror",
 ]
 
 [[package]]
