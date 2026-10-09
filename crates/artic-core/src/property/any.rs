@@ -2,6 +2,7 @@ use crate::property::{Affects, Property, PropertyKey};
 use crate::reactive::Change;
 use std::any::Any;
 use std::cell::Cell;
+use std::fmt::{self, Debug, Formatter};
 use std::rc::Rc;
 
 /// The identity of a property kind: the address of its [`PropertyKey`] static.
@@ -40,6 +41,12 @@ pub trait AnyProperty {
 
   /// The property as `Any`, to get the typed `Property<T>` back.
   fn as_any(&self) -> &dyn Any;
+}
+
+impl Debug for dyn AnyProperty {
+  fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+    formatter.debug_tuple("AnyProperty").field(&self.key_id()).finish()
+  }
 }
 
 impl<T> AnyProperty for Property<T>

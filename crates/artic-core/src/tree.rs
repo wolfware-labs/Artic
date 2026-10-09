@@ -13,6 +13,7 @@
 //! layout and rendering dirty, and a change to one of its properties adds the stages the property's key
 //! affects; see [`dirty`](TreeArena::dirty).
 
+mod attached;
 mod collection;
 mod dirty;
 mod inheritance;
