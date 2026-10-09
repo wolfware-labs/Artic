@@ -161,8 +161,32 @@ XamlDocument {
                                                     "Text",
                                                 ),
                                                 value: [
-                                                    Value {
-                                                        text: "{Binding Email, Mode=TwoWay}",
+                                                    MarkupExtension {
+                                                        ty: TypeRef {
+                                                            prefix: None,
+                                                            name: "Binding",
+                                                            span: Span(0, 358..365),
+                                                        },
+                                                        positional: [
+                                                            Value {
+                                                                text: "Email",
+                                                                span: Span(0, 366..371),
+                                                            },
+                                                        ],
+                                                        named: [
+                                                            Member {
+                                                                key: Property(
+                                                                    "Mode",
+                                                                ),
+                                                                value: [
+                                                                    Value {
+                                                                        text: "TwoWay",
+                                                                        span: Span(0, 378..384),
+                                                                    },
+                                                                ],
+                                                                span: Span(0, 373..377),
+                                                            },
+                                                        ],
                                                         span: Span(0, 357..385),
                                                     },
                                                 ],
@@ -224,8 +248,19 @@ XamlDocument {
                                                     "Command",
                                                 ),
                                                 value: [
-                                                    Value {
-                                                        text: "{Binding SignIn}",
+                                                    MarkupExtension {
+                                                        ty: TypeRef {
+                                                            prefix: None,
+                                                            name: "Binding",
+                                                            span: Span(0, 477..484),
+                                                        },
+                                                        positional: [
+                                                            Value {
+                                                                text: "SignIn",
+                                                                span: Span(0, 485..491),
+                                                            },
+                                                        ],
+                                                        named: [],
                                                         span: Span(0, 476..492),
                                                     },
                                                 ],

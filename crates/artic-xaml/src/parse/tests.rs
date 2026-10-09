@@ -190,6 +190,38 @@ fn attribute_values_are_normalized() {
   assert_eq!(text(&members(&root)[0].value[0]), "a b c & \n");
 }
 
+// Attribute values in braces are markup extensions, for directives too; `xmlns` values stay text.
+#[test]
+fn braced_attributes_are_markup_extensions() {
+  let source = r#"<Button xmlns:a="{urn}" Text="{Binding Name}" x:Key="{x:Type Button}" Tag="{}{x}"/>"#;
+  let root = root(source);
+
+  let XamlNode::Object { namespaces, .. } = &root else {
+    unreachable!()
+  };
+  assert_eq!(namespaces[0].uri, "{urn}");
+  let values: Vec<_> = members(&root).iter().map(|member| &member.value[0]).collect();
+  assert!(matches!(values[0], XamlNode::MarkupExtension { ty, .. } if ty.name == "Binding"));
+  assert!(matches!(values[1], XamlNode::MarkupExtension { ty, .. } if ty.name == "Type"));
+  assert_eq!(text(values[2]), "{x}");
+}
+
+// A malformed markup extension drops its attribute, and the rest of the document is still checked.
+#[test]
+fn markup_extension_errors_are_collected() {
+  let found = errors(r#"<Button Text="{Binding" Tag="{A 'x}"><Button.Tag a="1"/></Button>"#);
+
+  let messages: Vec<_> = found.iter().map(|(message, _)| message.as_str()).collect();
+  assert_eq!(
+    messages,
+    [
+      "markup extension `{Binding` is never closed",
+      "quoted value is never closed",
+      "a property element can't have attributes",
+    ]
+  );
+}
+
 // Comments, the XML declaration and processing instructions are dropped.
 #[test]
 fn comments_and_declarations_are_dropped() {

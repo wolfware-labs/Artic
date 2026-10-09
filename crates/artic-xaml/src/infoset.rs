@@ -40,8 +40,8 @@ pub enum XamlNode {
     /// Where it was written; its length can differ from `text`'s when entities were decoded.
     span: Span,
   },
-  /// A markup extension, such as `{Binding Name}`. Attribute text in braces is parsed into this by
-  /// the markup extension grammar; until then it stays a [`XamlNode::Value`].
+  /// A markup extension, such as `{Binding Name}`: an attribute value, or an argument, that starts
+  /// with `{`. A value that starts with the `{}` escape is a [`XamlNode::Value`] instead.
   MarkupExtension {
     /// The extension's type, unresolved.
     ty: TypeRef,

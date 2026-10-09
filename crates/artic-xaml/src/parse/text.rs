@@ -8,6 +8,33 @@ pub struct DecodeError {
   pub message: String,
 }
 
+/// Decoded text, and where each of its bytes was written.
+#[derive(Debug, PartialEq)]
+pub struct Decoded {
+  pub text: String,
+  pub offsets: OffsetMap,
+}
+
+/// Maps byte offsets in decoded text back to the source, past entities and line endings whose
+/// decoded length differs from the written one.
+#[derive(Debug, PartialEq)]
+pub struct OffsetMap {
+  /// Where the raw text starts in the source.
+  start: usize,
+  /// For each replacement that changed the length, the offsets just after it: in the decoded text,
+  /// then in the raw text. Sorted by both.
+  shifts: Vec<(usize, usize)>,
+}
+
+impl OffsetMap {
+  /// Returns the source offset of byte `decoded` of the decoded text.
+  pub fn source_offset(&self, decoded: usize) -> usize {
+    let after = self.shifts.partition_point(|&(shift, _)| shift <= decoded);
+    let (decoded_base, raw_base) = after.checked_sub(1).map_or((0, 0), |index| self.shifts[index]);
+    self.start + raw_base + (decoded - decoded_base)
+  }
+}
+
 /// How whitespace in the raw text is treated.
 #[derive(Clone, Copy, PartialEq)]
 pub enum Kind {
@@ -21,8 +48,9 @@ pub enum Kind {
 /// entities and character references, and normalizes line endings (and, for attributes,
 /// whitespace) the way an XML processor does. Characters written as references are never
 /// normalized.
-pub fn decode(raw: &str, offset: usize, kind: Kind) -> Result<String, DecodeError> {
+pub fn decode(raw: &str, offset: usize, kind: Kind) -> Result<Decoded, DecodeError> {
   let mut decoded = String::with_capacity(raw.len());
+  let mut shifts = Vec::new();
   let mut rest = raw.char_indices().peekable();
   while let Some((index, character)) = rest.next() {
     match character {
@@ -35,22 +63,30 @@ pub fn decode(raw: &str, offset: usize, kind: Kind) -> Result<String, DecodeErro
             message: "`&` starts an entity that has no closing `;`; write `&amp;` for a literal `&`".to_owned(),
           });
         };
-        decoded.push(resolve(&raw[index..end], offset + index)?);
+        let character = resolve(&raw[index..end], offset + index)?;
+        decoded.push(character);
+        if end - index != character.len_utf8() {
+          shifts.push((decoded.len(), end));
+        }
         while rest.peek().is_some_and(|(next, _)| *next < end) {
           rest.next();
         }
       }
       '\r' => {
+        decoded.push(if kind == Kind::Attribute { ' ' } else { '\n' });
         if rest.peek().is_some_and(|(_, next)| *next == '\n') {
           rest.next();
+          shifts.push((decoded.len(), index + 2));
         }
-        decoded.push(if kind == Kind::Attribute { ' ' } else { '\n' });
       }
       '\n' | '\t' if kind == Kind::Attribute => decoded.push(' '),
       _ => decoded.push(character),
     }
   }
-  Ok(decoded)
+  Ok(Decoded {
+    text: decoded,
+    offsets: OffsetMap { start: offset, shifts },
+  })
 }
 
 /// Normalizes line endings in CDATA text, which has no entities.
@@ -97,7 +133,7 @@ mod tests {
   #[test]
   fn entities_and_references_are_resolved() {
     assert_eq!(
-      decode("a &lt; b &amp;&amp; &#65;&#x42;", 0, Kind::Text),
+      decode("a &lt; b &amp;&amp; &#65;&#x42;", 0, Kind::Text).map(|decoded| decoded.text),
       Ok("a < b && AB".to_owned())
     );
   }
@@ -106,8 +142,22 @@ mod tests {
   // except characters written as references.
   #[test]
   fn whitespace_normalization() {
-    assert_eq!(decode("a\r\nb\rc\td", 0, Kind::Text), Ok("a\nb\nc\td".to_owned()));
-    assert_eq!(decode("a\r\nb\tc\nd&#10;e", 0, Kind::Attribute), Ok("a b c d\ne".to_owned()));
+    let text = |raw, kind| decode(raw, 0, kind).map(|decoded| decoded.text);
+    assert_eq!(text("a\r\nb\rc\td", Kind::Text), Ok("a\nb\nc\td".to_owned()));
+    assert_eq!(text("a\r\nb\tc\nd&#10;e", Kind::Attribute), Ok("a b c d\ne".to_owned()));
+  }
+
+  // Every decoded offset maps to where it was written, past entities and `\r\n`.
+  #[test]
+  fn offsets_map_back_to_source() {
+    let decoded = decode("a&amp;b\r\nc&#233;", 10, Kind::Text).expect("valid text");
+
+    assert_eq!(decoded.text, "a&b\ncé");
+    let offsets: Vec<_> = (0..=decoded.text.len())
+      .map(|byte| decoded.offsets.source_offset(byte))
+      .collect();
+    // a, &, b, \n, c, é (2 bytes), end
+    assert_eq!(offsets, [10, 11, 16, 17, 19, 20, 21, 26]);
   }
 
   // An unknown entity is reported at its position in the source, with a hint.

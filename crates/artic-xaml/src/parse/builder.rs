@@ -1,6 +1,7 @@
 //! The builder that turns tokens into infoset nodes.
 
 use super::text::{Kind, decode, normalize_line_endings};
+use super::{Fatal, duplicate_of, markup};
 use crate::diagnostics::{Diagnostic, Diagnostics, LineCol, SourceFile, SourceId, Span};
 use crate::infoset::{Directive, Member, MemberKey, NamespaceDecl, TypeRef, XamlDocument, XamlNode};
 use xmlparser::{ElementEnd, StrSpan, Token, Tokenizer};
@@ -30,9 +31,6 @@ enum OpenKind {
     value: Vec<XamlNode>,
   },
 }
-
-/// Marks a fatal error, already recorded in [`Builder::diagnostics`]: parsing stops.
-struct Fatal;
 
 pub(super) struct Builder<'a> {
   file: SourceId,
@@ -182,17 +180,25 @@ impl<'a> Builder<'a> {
       prefix.start()
     };
     let name_span = self.span(name_start, local.end());
-    let value_text = match decode(value.as_str(), value.start(), Kind::Attribute) {
-      Ok(text) => text,
+    let decoded = match decode(value.as_str(), value.start(), Kind::Attribute) {
+      Ok(decoded) => decoded,
       Err(error) => {
         let span = self.span(error.start, error.end);
         self.diagnostics.push(Diagnostic::error(span, error.message));
         return;
       }
     };
-    let value_node = XamlNode::Value {
-      text: value_text.clone(),
-      span: self.span_of(value),
+    let is_namespace = matches!((prefix.as_str(), local.as_str()), ("", "xmlns") | ("xmlns", _));
+    let value_node = if !is_namespace && decoded.text.starts_with('{') {
+      let Some(node) = markup::parse(&decoded, self.file, &mut self.diagnostics) else {
+        return;
+      };
+      node
+    } else {
+      XamlNode::Value {
+        text: decoded.text,
+        span: self.span_of(value),
+      }
     };
     let file = self.file;
     let open = self
@@ -213,9 +219,12 @@ impl<'a> Builder<'a> {
     let (prefix, local) = (prefix.as_str(), local.as_str());
     let key = match (prefix, local) {
       ("", "xmlns") | ("xmlns", _) => {
+        let XamlNode::Value { text: uri, .. } = value_node else {
+          unreachable!("namespace values aren't parsed as markup extensions");
+        };
         namespaces.push(NamespaceDecl {
           prefix: (prefix == "xmlns").then(|| local.to_owned()),
-          uri: value_text,
+          uri,
           span: Span::new(file, name_span.start, value.end() + 1),
         });
         return;
@@ -339,7 +348,7 @@ impl<'a> Builder<'a> {
 
   fn text(&mut self, text: StrSpan) {
     match decode(text.as_str(), text.start(), Kind::Text) {
-      Ok(decoded) => self.add_text(decoded, text.start(), text.end()),
+      Ok(decoded) => self.add_text(decoded.text, text.start(), text.end()),
       Err(error) => {
         let span = self.span(error.start, error.end);
         self.diagnostics.push(Diagnostic::error(span, error.message));
@@ -438,32 +447,5 @@ fn directive(name: &str) -> Directive {
     "Uid" => Directive::Uid,
     "FieldModifier" => Directive::FieldModifier,
     other => Directive::Other(other.to_owned()),
-  }
-}
-
-/// An error if `members` already sets `member`'s key, pointing at both.
-fn duplicate_of(members: &[Member], member: &Member) -> Option<Diagnostic> {
-  let first = members.iter().find(|existing| same_member(&existing.key, &member.key))?;
-  Some(
-    Diagnostic::error(member.span, "this member is set twice on the same element")
-      .with_label("set again here")
-      .with_secondary(first.span, "first set here"),
-  )
-}
-
-/// Whether two keys name the same member, wherever their owner types are written.
-fn same_member(a: &MemberKey, b: &MemberKey) -> bool {
-  match (a, b) {
-    (
-      MemberKey::Attached {
-        owner: a_owner,
-        name: a_name,
-      },
-      MemberKey::Attached {
-        owner: b_owner,
-        name: b_name,
-      },
-    ) => a_owner.prefix == b_owner.prefix && a_owner.name == b_owner.name && a_name == b_name,
-    _ => a == b,
   }
 }
