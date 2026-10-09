@@ -63,6 +63,7 @@ dependencies = [
  "artic-core",
  "pretty_assertions",
  "proptest",
+ "thiserror",
 ]
 
 [[package]]

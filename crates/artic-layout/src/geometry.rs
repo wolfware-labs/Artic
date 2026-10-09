@@ -1,5 +1,8 @@
 //! The value types layout measures and positions with, in logical pixels.
 
+mod parse;
+
+pub use parse::{GeometryProblem, ParseGeometryError};
 use std::fmt::{Display, Formatter, Result};
 
 /// A width and a height, without a position.
