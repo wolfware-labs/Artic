@@ -11,5 +11,9 @@ repository.workspace = true
 [dependencies]
 artic-core.workspace = true
 
+[dev-dependencies]
+pretty_assertions.workspace = true
+static_assertions.workspace = true
+
 [lints]
 workspace = true
