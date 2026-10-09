@@ -11,6 +11,7 @@
 //! tests.
 
 pub(crate) mod arena;
+pub mod dispatcher;
 mod object;
 pub mod property;
 pub mod reactive;
