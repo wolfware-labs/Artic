@@ -10,7 +10,7 @@
 //! use artic_xaml::parse;
 //!
 //! let mut sources = SourceMap::new();
-//! let file = sources.add("view.xaml", "<Button Width=\"100\"></Panel>");
+//! let file = sources.add("view.xaml", r#"<Button xmlns="https://artic.rs/ui"></Panel>"#);
 //! let errors = parse(&sources, file).expect_err("mismatched end tag");
 //! assert!(errors.render(&sources).contains("expected `</Button>`, found `</Panel>`"));
 //! ```

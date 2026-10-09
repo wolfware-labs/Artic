@@ -1,10 +1,14 @@
 //! The builder that turns tokens into infoset nodes.
 
-use super::text::{Kind, decode, normalize_line_endings};
-use super::{Fatal, duplicate_of, markup};
+use super::text::{Decoded, Kind, decode, normalize_line_endings};
+use super::{Fatal, duplicate_of, markup, namespace, unresolved};
 use crate::diagnostics::{Diagnostic, Diagnostics, LineCol, SourceFile, SourceId, Span};
-use crate::infoset::{Directive, Member, MemberKey, NamespaceDecl, TypeRef, XamlDocument, XamlNode};
+use crate::infoset::{Directive, Member, MemberKey, NamespaceDecl, TypeRef, XamlDocument, XamlNamespace, XamlNode};
+use std::collections::HashSet;
 use xmlparser::{ElementEnd, StrSpan, Token, Tokenizer};
+
+/// A prefix bound by an `xmlns` attribute, `None` for the default namespace, and what it stands for.
+type Binding = (Option<String>, XamlNamespace);
 
 /// An element whose end tag hasn't been reached yet.
 struct Open {
@@ -14,6 +18,8 @@ struct Open {
   start: usize,
   /// The start tag's name, for "opened here" labels.
   tag_span: Span,
+  /// The prefixes this element's `xmlns` attributes bind.
+  scope: Vec<Binding>,
   /// Text and CDATA read since the last element boundary: the decoded text and its span.
   pending_text: Option<(String, usize, usize)>,
   kind: OpenKind,
@@ -32,12 +38,31 @@ enum OpenKind {
   },
 }
 
+/// A start tag being read. Its attributes are kept as written until the tag ends: only then are all
+/// its `xmlns` declarations known, and they apply to the whole element.
+struct StartTag<'a> {
+  prefix: StrSpan<'a>,
+  local: StrSpan<'a>,
+  span: StrSpan<'a>,
+  attributes: Vec<Attribute<'a>>,
+}
+
+struct Attribute<'a> {
+  prefix: StrSpan<'a>,
+  local: StrSpan<'a>,
+  value: StrSpan<'a>,
+}
+
 pub(super) struct Builder<'a> {
   file: SourceId,
   source: &'a SourceFile,
   diagnostics: Diagnostics,
   stack: Vec<Open>,
   root: Option<XamlNode>,
+  start_tag: Option<StartTag<'a>>,
+  /// The prefixes already reported as undeclared, `None` for the default namespace, so that each is
+  /// reported once.
+  undeclared: HashSet<Option<String>>,
 }
 
 impl<'a> Builder<'a> {
@@ -48,12 +73,15 @@ impl<'a> Builder<'a> {
       diagnostics: Diagnostics::new(),
       stack: Vec::new(),
       root: None,
+      start_tag: None,
+      undeclared: HashSet::new(),
     }
   }
 
   /// Reads the whole file into its infoset, or returns every problem found.
   pub(super) fn run(mut self) -> Result<XamlDocument, Diagnostics> {
-    for token in Tokenizer::from(self.source.text()) {
+    let text: &'a str = self.source.text();
+    for token in Tokenizer::from(text) {
       let step = match token {
         Ok(token) => self.token(token),
         Err(error) => Err(self.tokenizer_error(&error)),
@@ -84,18 +112,28 @@ impl<'a> Builder<'a> {
 
   /// Handles one token. A fatal error stops parsing: the document's structure can't be trusted after
   /// it.
-  fn token(&mut self, token: Token) -> Result<(), Fatal> {
+  fn token(&mut self, token: Token<'a>) -> Result<(), Fatal> {
     match token {
       Token::ElementStart { prefix, local, span } => self.element_start(prefix, local, span),
       Token::Attribute {
         prefix, local, value, ..
       } => {
-        self.attribute(prefix, local, value);
+        let start_tag = self
+          .start_tag
+          .as_mut()
+          .expect("the tokenizer reads attributes only in a start tag");
+        start_tag.attributes.push(Attribute { prefix, local, value });
         Ok(())
       }
       Token::ElementEnd { end, span } => match end {
-        ElementEnd::Open => Ok(()),
-        ElementEnd::Empty => self.close(span.end()),
+        ElementEnd::Open => {
+          self.end_start_tag();
+          Ok(())
+        }
+        ElementEnd::Empty => {
+          self.end_start_tag();
+          self.close(span.end())
+        }
         ElementEnd::Close(prefix, local) => self.end_tag(prefix, local, span),
       },
       Token::Text { text } => {
@@ -120,79 +158,147 @@ impl<'a> Builder<'a> {
     }
   }
 
-  fn element_start(&mut self, prefix: StrSpan, local: StrSpan, span: StrSpan) -> Result<(), Fatal> {
+  fn element_start(&mut self, prefix: StrSpan<'a>, local: StrSpan<'a>, span: StrSpan<'a>) -> Result<(), Fatal> {
     self.flush_text();
-    let tag_span = self.span(span.start() + 1, local.end());
-    let tag = qualified(prefix, local);
-    let prefix_text = (!prefix.as_str().is_empty()).then(|| prefix.as_str().to_owned());
-    let kind = if let Some((owner, name)) = local.as_str().split_once('.') {
+    if local.as_str().contains('.') {
+      let tag_span = self.span(span.start() + 1, local.end());
       let Some(parent) = self.stack.last() else {
         return Err(self.fatal(Diagnostic::error(tag_span, "the root element can't be a property element")));
       };
-      let OpenKind::Object { ty, .. } = &parent.kind else {
+      if let OpenKind::PropertyElement { .. } = parent.kind {
         return Err(
           self.fatal(
             Diagnostic::error(tag_span, "a property element can't contain a property element")
               .with_secondary(parent.tag_span, "inside this property element"),
           ),
         );
-      };
-      let owner_span = self.span(local.start(), local.start() + owner.len());
-      let key = if ty.prefix == prefix_text && ty.name == owner {
-        MemberKey::Property(name.to_owned())
-      } else {
-        MemberKey::Attached {
-          owner: TypeRef {
-            prefix: prefix_text,
-            name: owner.to_owned(),
-            span: self.span(span.start() + 1, owner_span.end),
-          },
-          name: name.to_owned(),
-        }
-      };
-      OpenKind::PropertyElement { key, value: Vec::new() }
-    } else {
-      OpenKind::Object {
-        ty: TypeRef {
-          prefix: prefix_text,
-          name: local.as_str().to_owned(),
-          span: tag_span,
-        },
-        members: Vec::new(),
-        namespaces: Vec::new(),
-        content: Vec::new(),
       }
-    };
-    self.stack.push(Open {
-      tag,
-      start: span.start(),
-      tag_span,
-      pending_text: None,
-      kind,
+    }
+    self.start_tag = Some(StartTag {
+      prefix,
+      local,
+      span,
+      attributes: Vec::new(),
     });
     Ok(())
   }
 
-  fn attribute(&mut self, prefix: StrSpan, local: StrSpan, value: StrSpan) {
-    let name_start = if prefix.as_str().is_empty() {
-      local.start()
-    } else {
-      prefix.start()
-    };
-    let name_span = self.span(name_start, local.end());
-    let decoded = match decode(value.as_str(), value.start(), Kind::Attribute) {
-      Ok(decoded) => decoded,
-      Err(error) => {
-        let span = self.span(error.start, error.end);
-        self.diagnostics.push(Diagnostic::error(span, error.message));
-        return;
+  /// Opens the element whose start tag just ended: binds its `xmlns` declarations, then resolves its
+  /// type and attributes against them.
+  fn end_start_tag(&mut self) {
+    let StartTag {
+      prefix,
+      local,
+      span,
+      attributes,
+    } = self.start_tag.take().expect("an element starts before its start tag ends");
+    let tag_span = self.span(span.start() + 1, local.end());
+    let type_prefix = (!prefix.as_str().is_empty()).then(|| prefix.as_str().to_owned());
+    let (scope, kind) = if let Some((owner, name)) = local.as_str().split_once('.') {
+      for attribute in &attributes {
+        let name_span = self.span(name_start(attribute), attribute.local.end());
+        self.diagnostics.push(
+          Diagnostic::error(name_span, "a property element can't have attributes")
+            .with_secondary(tag_span, "on this property element"),
+        );
       }
-    };
-    let is_namespace = matches!((prefix.as_str(), local.as_str()), ("", "xmlns") | ("xmlns", _));
-    let value_node = if !is_namespace && decoded.text.starts_with('{') {
-      let Some(node) = markup::parse(&decoded, self.file, &mut self.diagnostics) else {
-        return;
+      let mut owner_type = TypeRef {
+        prefix: type_prefix,
+        name: owner.to_owned(),
+        namespace: unresolved(),
+        span: self.span(tag_span.start, local.start() + owner.len()),
       };
+      self.resolve_type(&[], &mut owner_type);
+      let Some(Open {
+        kind: OpenKind::Object { ty: parent, .. },
+        ..
+      }) = self.stack.last()
+      else {
+        unreachable!("a property element is always opened inside an object element");
+      };
+      let key = if same_type(parent, &owner_type) {
+        MemberKey::Property(name.to_owned())
+      } else {
+        MemberKey::Attached {
+          owner: owner_type,
+          name: name.to_owned(),
+        }
+      };
+      (Vec::new(), OpenKind::PropertyElement { key, value: Vec::new() })
+    } else {
+      let (scope, namespaces, attributes) = self.declarations(attributes);
+      let mut ty = TypeRef {
+        prefix: type_prefix,
+        name: local.as_str().to_owned(),
+        namespace: unresolved(),
+        span: tag_span,
+      };
+      self.resolve_type(&scope, &mut ty);
+      let mut members = Vec::new();
+      for attribute in attributes {
+        let Some(member) = self.member(&scope, &ty, attribute) else {
+          continue;
+        };
+        match duplicate_of(&members, &member) {
+          Some(duplicate) => self.diagnostics.push(duplicate),
+          None => members.push(member),
+        }
+      }
+      let kind = OpenKind::Object {
+        ty,
+        members,
+        namespaces,
+        content: Vec::new(),
+      };
+      (scope, kind)
+    };
+    self.stack.push(Open {
+      tag: qualified(prefix, local),
+      start: span.start(),
+      tag_span,
+      scope,
+      pending_text: None,
+      kind,
+    });
+  }
+
+  /// Splits an object element's `xmlns` declarations from its other attributes, returning the
+  /// prefixes they bind, the declarations as written, and the other attributes.
+  fn declarations(&mut self, attributes: Vec<Attribute<'a>>) -> (Vec<Binding>, Vec<NamespaceDecl>, Vec<Attribute<'a>>) {
+    let mut scope = Vec::new();
+    let mut namespaces = Vec::new();
+    let mut others = Vec::new();
+    for attribute in attributes {
+      let prefix = match (attribute.prefix.as_str(), attribute.local.as_str()) {
+        ("", "xmlns") => None,
+        ("xmlns", prefix) => Some(prefix.to_owned()),
+        _ => {
+          others.push(attribute);
+          continue;
+        }
+      };
+      let Some(uri) = self.decode_value(attribute.value) else {
+        continue;
+      };
+      scope.push((prefix.clone(), namespace::classify(&uri.text)));
+      namespaces.push(NamespaceDecl {
+        prefix,
+        uri: uri.text,
+        span: self.span(name_start(&attribute), attribute.value.end() + 1),
+      });
+    }
+    (scope, namespaces, others)
+  }
+
+  /// Turns an attribute of an object element of type `ty` into a member, with `scope` the
+  /// element's own bindings. Returns `None` after recording why it can't be one.
+  fn member(&mut self, scope: &[Binding], ty: &TypeRef, attribute: Attribute<'a>) -> Option<Member> {
+    let Attribute { prefix, local, value } = attribute;
+    let name_span = self.span(name_start(&attribute), local.end());
+    let decoded = self.decode_value(value)?;
+    let value_node = if decoded.text.starts_with('{') {
+      let mut node = markup::parse(&decoded, self.file, &mut self.diagnostics)?;
+      self.resolve_node(scope, &mut node);
       node
     } else {
       XamlNode::Value {
@@ -200,73 +306,106 @@ impl<'a> Builder<'a> {
         span: self.span_of(value),
       }
     };
-    let file = self.file;
-    let open = self
-      .stack
-      .last_mut()
-      .expect("the tokenizer reads attributes only in a start tag");
-    let tag_span = open.tag_span;
-    let OpenKind::Object {
-      ty, members, namespaces, ..
-    } = &mut open.kind
-    else {
-      self.diagnostics.push(
-        Diagnostic::error(name_span, "a property element can't have attributes")
-          .with_secondary(tag_span, "on this property element"),
-      );
-      return;
-    };
-    let (prefix, local) = (prefix.as_str(), local.as_str());
-    let key = match (prefix, local) {
-      ("", "xmlns") | ("xmlns", _) => {
-        let XamlNode::Value { text: uri, .. } = value_node else {
-          unreachable!("namespace values aren't parsed as markup extensions");
-        };
-        namespaces.push(NamespaceDecl {
-          prefix: (prefix == "xmlns").then(|| local.to_owned()),
-          uri,
-          span: Span::new(file, name_span.start, value.end() + 1),
-        });
-        return;
-      }
+    let key = match (prefix.as_str(), local.as_str()) {
       ("xml", "space") => MemberKey::Directive(Directive::XmlSpace),
-      ("x", name) => MemberKey::Directive(directive(name)),
-      (_, name) if name.contains('.') => {
+      (prefix, name) if name.contains('.') => {
         let (owner, property) = name.split_once('.').expect("contains a dot");
-        let owner_prefix = (!prefix.is_empty()).then(|| prefix.to_owned());
-        if ty.prefix == owner_prefix && ty.name == owner {
+        let mut owner_type = TypeRef {
+          prefix: (!prefix.is_empty()).then(|| prefix.to_owned()),
+          name: owner.to_owned(),
+          namespace: unresolved(),
+          span: self.span(name_span.start, name_span.start + prefix_len(prefix) + owner.len()),
+        };
+        self.resolve_type(scope, &mut owner_type);
+        if same_type(ty, &owner_type) {
           MemberKey::Property(property.to_owned())
         } else {
           MemberKey::Attached {
-            owner: TypeRef {
-              prefix: owner_prefix,
-              name: owner.to_owned(),
-              span: Span::new(file, name_span.start, name_span.start + prefix_len(prefix) + owner.len()),
-            },
+            owner: owner_type,
             name: property.to_owned(),
           }
         }
       }
       ("", name) => MemberKey::Property(name.to_owned()),
       (prefix, name) => {
-        self.diagnostics.push(
-          Diagnostic::error(name_span, format!("`{prefix}:{name}` names no property")).with_help(format!(
-            "a prefixed attribute must name an attached property, like `{prefix}:Owner.{name}`"
-          )),
-        );
-        return;
+        let prefix_span = self.span(name_span.start, name_span.start + prefix.len());
+        let is_markup = prefix != "xml" && self.resolve_prefix(scope, Some(prefix), prefix_span)? == XamlNamespace::Markup;
+        if !is_markup {
+          self.diagnostics.push(
+            Diagnostic::error(name_span, format!("`{prefix}:{name}` names no property")).with_help(format!(
+              "a prefixed attribute must name an attached property, like `{prefix}:Owner.{name}`"
+            )),
+          );
+          return None;
+        }
+        MemberKey::Directive(directive(name))
       }
     };
-    let member = Member {
+    Some(Member {
       key,
       value: vec![value_node],
       span: name_span,
-    };
-    if let Some(duplicate) = duplicate_of(members, &member) {
-      self.diagnostics.push(duplicate);
-      return;
+    })
+  }
+
+  /// Decodes an attribute value, or records why it can't be decoded.
+  fn decode_value(&mut self, value: StrSpan) -> Option<Decoded> {
+    match decode(value.as_str(), value.start(), Kind::Attribute) {
+      Ok(decoded) => Some(decoded),
+      Err(error) => {
+        let span = self.span(error.start, error.end);
+        self.diagnostics.push(Diagnostic::error(span, error.message));
+        None
+      }
     }
-    members.push(member);
+  }
+
+  /// Resolves the namespaces of the markup extensions in `node`.
+  fn resolve_node(&mut self, scope: &[Binding], node: &mut XamlNode) {
+    if let XamlNode::MarkupExtension {
+      ty, positional, named, ..
+    } = node
+    {
+      self.resolve_type(scope, ty);
+      for argument in positional
+        .iter_mut()
+        .chain(named.iter_mut().flat_map(|member| member.value.iter_mut()))
+      {
+        self.resolve_node(scope, argument);
+      }
+    }
+  }
+
+  /// Sets the namespace of `ty` to what its prefix stands for, looking in `scope` first, then in the
+  /// open elements from the innermost out.
+  fn resolve_type(&mut self, scope: &[Binding], ty: &mut TypeRef) {
+    let span = match &ty.prefix {
+      Some(prefix) => self.span(ty.span.start, ty.span.start + prefix.len()),
+      None => ty.span,
+    };
+    if let Some(namespace) = self.resolve_prefix(scope, ty.prefix.as_deref(), span) {
+      ty.namespace = namespace;
+    }
+  }
+
+  /// What `prefix` stands for, or `None` after reporting, once per prefix, that it's undeclared.
+  fn resolve_prefix(&mut self, scope: &[Binding], prefix: Option<&str>, span: Span) -> Option<XamlNamespace> {
+    let bound = scope
+      .iter()
+      .chain(self.stack.iter().rev().flat_map(|open| open.scope.iter()))
+      .find(|(bound, _)| bound.as_deref() == prefix)
+      .map(|(_, namespace)| namespace.clone());
+    if bound.is_none() && self.undeclared.insert(prefix.map(str::to_owned)) {
+      let diagnostic = match prefix {
+        Some(prefix) => Diagnostic::error(span, format!("prefix `{prefix}` is not declared")).with_help(format!(
+          "declare it here or on an ancestor, like `xmlns:{prefix}=\"using:my_app::views\"`"
+        )),
+        None => Diagnostic::error(span, "no default namespace is declared")
+          .with_help("add `xmlns=\"https://artic.rs/ui\"` to the root element"),
+      };
+      self.diagnostics.push(diagnostic);
+    }
+    bound
   }
 
   fn end_tag(&mut self, prefix: StrSpan, local: StrSpan, span: StrSpan) -> Result<(), Fatal> {
@@ -431,6 +570,20 @@ fn qualified(prefix: StrSpan, local: StrSpan) -> String {
   } else {
     format!("{}:{}", prefix.as_str(), local.as_str())
   }
+}
+
+/// Where an attribute's name starts: at its prefix, if it has one.
+fn name_start(attribute: &Attribute) -> usize {
+  if attribute.prefix.as_str().is_empty() {
+    attribute.local.start()
+  } else {
+    attribute.prefix.start()
+  }
+}
+
+/// Whether two type references name the same type, whatever prefixes they're written with.
+fn same_type(a: &TypeRef, b: &TypeRef) -> bool {
+  a.namespace == b.namespace && a.name == b.name
 }
 
 /// The length of `prefix:` in front of a name, or 0 without a prefix.

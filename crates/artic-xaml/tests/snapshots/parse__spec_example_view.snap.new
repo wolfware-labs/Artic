@@ -1,0 +1,342 @@
+---
+source: crates/artic-xaml/tests/parse.rs
+assertion_line: 15
+expression: document
+---
+XamlDocument {
+    source: SourceId(
+        0,
+    ),
+    root: Object {
+        ty: TypeRef {
+            prefix: None,
+            name: "UserControl",
+            namespace: Uri(
+                "https://artic.rs/ui",
+            ),
+            span: Span(0, 1..12),
+        },
+        members: [
+            Member {
+                key: Directive(
+                    Class,
+                ),
+                value: [
+                    Value {
+                        text: "app::views::LoginView",
+                        span: Span(0, 110..131),
+                    },
+                ],
+                span: Span(0, 101..108),
+            },
+            Member {
+                key: Directive(
+                    DataType,
+                ),
+                value: [
+                    Value {
+                        text: "app::vm::LoginVm",
+                        span: Span(0, 158..174),
+                    },
+                ],
+                span: Span(0, 146..156),
+            },
+            Member {
+                key: Property(
+                    "Resources",
+                ),
+                value: [
+                    Value {
+                        text: "\n    ",
+                        span: Span(0, 202..207),
+                    },
+                    Object {
+                        ty: TypeRef {
+                            prefix: None,
+                            name: "SolidColorBrush",
+                            namespace: Uri(
+                                "https://artic.rs/ui",
+                            ),
+                            span: Span(0, 208..223),
+                        },
+                        members: [
+                            Member {
+                                key: Directive(
+                                    Key,
+                                ),
+                                value: [
+                                    Value {
+                                        text: "Accent",
+                                        span: Span(0, 231..237),
+                                    },
+                                ],
+                                span: Span(0, 224..229),
+                            },
+                            Member {
+                                key: Property(
+                                    "Color",
+                                ),
+                                value: [
+                                    Value {
+                                        text: "#3B82F6",
+                                        span: Span(0, 246..253),
+                                    },
+                                ],
+                                span: Span(0, 239..244),
+                            },
+                        ],
+                        namespaces: [],
+                        span: Span(0, 207..256),
+                    },
+                    Value {
+                        text: "\n  ",
+                        span: Span(0, 256..259),
+                    },
+                ],
+                span: Span(0, 180..201),
+            },
+            Member {
+                key: Content,
+                value: [
+                    Value {
+                        text: "\n  ",
+                        span: Span(0, 176..179),
+                    },
+                    Value {
+                        text: "\n  ",
+                        span: Span(0, 283..286),
+                    },
+                    Object {
+                        ty: TypeRef {
+                            prefix: None,
+                            name: "StackPanel",
+                            namespace: Uri(
+                                "https://artic.rs/ui",
+                            ),
+                            span: Span(0, 287..297),
+                        },
+                        members: [
+                            Member {
+                                key: Property(
+                                    "Spacing",
+                                ),
+                                value: [
+                                    Value {
+                                        text: "8",
+                                        span: Span(0, 307..308),
+                                    },
+                                ],
+                                span: Span(0, 298..305),
+                            },
+                            Member {
+                                key: Property(
+                                    "Margin",
+                                ),
+                                value: [
+                                    Value {
+                                        text: "16",
+                                        span: Span(0, 318..320),
+                                    },
+                                ],
+                                span: Span(0, 310..316),
+                            },
+                            Member {
+                                key: Content,
+                                value: [
+                                    Value {
+                                        text: "\n    ",
+                                        span: Span(0, 322..327),
+                                    },
+                                    Object {
+                                        ty: TypeRef {
+                                            prefix: None,
+                                            name: "TextBox",
+                                            namespace: Uri(
+                                                "https://artic.rs/ui",
+                                            ),
+                                            span: Span(0, 328..335),
+                                        },
+                                        members: [
+                                            Member {
+                                                key: Directive(
+                                                    Name,
+                                                ),
+                                                value: [
+                                                    Value {
+                                                        text: "email",
+                                                        span: Span(0, 344..349),
+                                                    },
+                                                ],
+                                                span: Span(0, 336..342),
+                                            },
+                                            Member {
+                                                key: Property(
+                                                    "Text",
+                                                ),
+                                                value: [
+                                                    MarkupExtension {
+                                                        ty: TypeRef {
+                                                            prefix: None,
+                                                            name: "Binding",
+                                                            namespace: Uri(
+                                                                "https://artic.rs/ui",
+                                                            ),
+                                                            span: Span(0, 358..365),
+                                                        },
+                                                        positional: [
+                                                            Value {
+                                                                text: "Email",
+                                                                span: Span(0, 366..371),
+                                                            },
+                                                        ],
+                                                        named: [
+                                                            Member {
+                                                                key: Property(
+                                                                    "Mode",
+                                                                ),
+                                                                value: [
+                                                                    Value {
+                                                                        text: "TwoWay",
+                                                                        span: Span(0, 378..384),
+                                                                    },
+                                                                ],
+                                                                span: Span(0, 373..377),
+                                                            },
+                                                        ],
+                                                        span: Span(0, 357..385),
+                                                    },
+                                                ],
+                                                span: Span(0, 351..355),
+                                            },
+                                            Member {
+                                                key: Property(
+                                                    "Watermark",
+                                                ),
+                                                value: [
+                                                    Value {
+                                                        text: "Email",
+                                                        span: Span(0, 398..403),
+                                                    },
+                                                ],
+                                                span: Span(0, 387..396),
+                                            },
+                                        ],
+                                        namespaces: [],
+                                        span: Span(0, 327..406),
+                                    },
+                                    Value {
+                                        text: "\n    ",
+                                        span: Span(0, 406..411),
+                                    },
+                                    Object {
+                                        ty: TypeRef {
+                                            prefix: None,
+                                            name: "Button",
+                                            namespace: Uri(
+                                                "https://artic.rs/ui",
+                                            ),
+                                            span: Span(0, 412..418),
+                                        },
+                                        members: [
+                                            Member {
+                                                key: Property(
+                                                    "Classes",
+                                                ),
+                                                value: [
+                                                    Value {
+                                                        text: "primary",
+                                                        span: Span(0, 428..435),
+                                                    },
+                                                ],
+                                                span: Span(0, 419..426),
+                                            },
+                                            Member {
+                                                key: Property(
+                                                    "Content",
+                                                ),
+                                                value: [
+                                                    Value {
+                                                        text: "Sign in",
+                                                        span: Span(0, 446..453),
+                                                    },
+                                                ],
+                                                span: Span(0, 437..444),
+                                            },
+                                            Member {
+                                                key: Property(
+                                                    "Command",
+                                                ),
+                                                value: [
+                                                    MarkupExtension {
+                                                        ty: TypeRef {
+                                                            prefix: None,
+                                                            name: "Binding",
+                                                            namespace: Uri(
+                                                                "https://artic.rs/ui",
+                                                            ),
+                                                            span: Span(0, 477..484),
+                                                        },
+                                                        positional: [
+                                                            Value {
+                                                                text: "SignIn",
+                                                                span: Span(0, 485..491),
+                                                            },
+                                                        ],
+                                                        named: [],
+                                                        span: Span(0, 476..492),
+                                                    },
+                                                ],
+                                                span: Span(0, 467..474),
+                                            },
+                                            Member {
+                                                key: Property(
+                                                    "Click",
+                                                ),
+                                                value: [
+                                                    Value {
+                                                        text: "on_click",
+                                                        span: Span(0, 501..509),
+                                                    },
+                                                ],
+                                                span: Span(0, 494..499),
+                                            },
+                                        ],
+                                        namespaces: [],
+                                        span: Span(0, 411..512),
+                                    },
+                                    Value {
+                                        text: "\n  ",
+                                        span: Span(0, 512..515),
+                                    },
+                                ],
+                                span: Span(0, 322..515),
+                            },
+                        ],
+                        namespaces: [],
+                        span: Span(0, 286..528),
+                    },
+                    Value {
+                        text: "\n",
+                        span: Span(0, 528..529),
+                    },
+                ],
+                span: Span(0, 176..529),
+            },
+        ],
+        namespaces: [
+            NamespaceDecl {
+                prefix: None,
+                uri: "https://artic.rs/ui",
+                span: Span(0, 13..40),
+            },
+            NamespaceDecl {
+                prefix: Some(
+                    "x",
+                ),
+                uri: "https://artic.rs/markup",
+                span: Span(0, 54..87),
+            },
+        ],
+        span: Span(0, 0..543),
+    },
+}

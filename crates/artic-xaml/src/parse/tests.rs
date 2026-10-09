@@ -1,6 +1,6 @@
 use super::*;
 use crate::diagnostics::Span;
-use crate::infoset::{Directive, Member, MemberKey, TypeRef, XamlNode};
+use crate::infoset::{Directive, Member, MemberKey, TypeRef, XamlNamespace, XamlNode};
 use pretty_assertions::assert_eq;
 
 /// Parses `text`, panicking on errors, and returns the root node.
@@ -63,11 +63,25 @@ fn property(name: &str) -> MemberKey {
   MemberKey::Property(name.to_owned())
 }
 
-fn attached(prefix: Option<&str>, owner: &str, name: &str, span: Span) -> MemberKey {
+/// The vocabulary most tests declare as their default namespace.
+fn ui() -> XamlNamespace {
+  XamlNamespace::Uri("urn:ui".to_owned())
+}
+
+/// The namespace of an object node's type.
+fn namespace(node: &XamlNode) -> &XamlNamespace {
+  match node {
+    XamlNode::Object { ty, .. } | XamlNode::MarkupExtension { ty, .. } => &ty.namespace,
+    other => panic!("expected an object or extension, found {other:?}"),
+  }
+}
+
+fn attached(prefix: Option<&str>, owner: &str, namespace: XamlNamespace, name: &str, span: Span) -> MemberKey {
   MemberKey::Attached {
     owner: TypeRef {
       prefix: prefix.map(str::to_owned),
       name: owner.to_owned(),
+      namespace,
       span,
     },
     name: name.to_owned(),
@@ -77,7 +91,7 @@ fn attached(prefix: Option<&str>, owner: &str, name: &str, span: Span) -> Member
 // An attribute becomes a property member holding its value.
 #[test]
 fn attributes_are_properties() {
-  let root = root(r#"<Button Width="100" Content="OK"/>"#);
+  let root = root(r#"<Button xmlns="urn:ui" Width="100" Content="OK"/>"#);
 
   assert_eq!(type_name(&root), "Button");
   assert_eq!(keys(&root), [property("Width"), property("Content")]);
@@ -87,7 +101,7 @@ fn attributes_are_properties() {
 // `xmlns` attributes become namespace declarations, not members.
 #[test]
 fn xmlns_attributes_are_namespace_declarations() {
-  let root = root(r#"<Page xmlns="urn:ui" xmlns:x="urn:x"/>"#);
+  let root = root(r#"<Page xmlns="urn:ui" xmlns:x="https://artic.rs/markup"/>"#);
 
   let XamlNode::Object { namespaces, members, .. } = &root else {
     unreachable!()
@@ -96,14 +110,17 @@ fn xmlns_attributes_are_namespace_declarations() {
     .iter()
     .map(|namespace| (namespace.prefix.as_deref(), namespace.uri.as_str()))
     .collect();
-  assert_eq!(declared, [(None, "urn:ui"), (Some("x"), "urn:x")]);
+  assert_eq!(declared, [(None, "urn:ui"), (Some("x"), "https://artic.rs/markup")]);
   assert!(members.is_empty());
 }
 
-// `x:` attributes and `xml:space` are directives; an unknown `x:` name is kept as `Other`.
+// Attributes in the markup namespace and `xml:space` are directives; an unknown name is kept as
+// `Other`. The `xml` prefix needs no declaration.
 #[test]
-fn x_attributes_are_directives() {
-  let root = root(r#"<Button x:Name="ok" x:Key="k" x:Shared="false" xml:space="preserve"/>"#);
+fn markup_attributes_are_directives() {
+  let root = root(
+    r#"<Button xmlns="urn:ui" xmlns:x="https://artic.rs/markup" x:Name="ok" x:Key="k" x:Shared="false" xml:space="preserve"/>"#,
+  );
 
   assert_eq!(
     keys(&root),
@@ -119,7 +136,7 @@ fn x_attributes_are_directives() {
 // `Owner.Name` attributes are attached properties, unless the owner is the element's own type.
 #[test]
 fn dotted_attributes_are_attached_properties() {
-  let source = r#"<Button Grid.Row="1" ui:Dock.Side="Left" Button.Width="2"/>"#;
+  let source = r#"<Button xmlns="urn:ui" xmlns:d="urn:dock" Grid.Row="1" d:Dock.Side="Left" Button.Width="2"/>"#;
   let root = root(source);
 
   let span = |owner: &str| {
@@ -129,8 +146,14 @@ fn dotted_attributes_are_attached_properties() {
   assert_eq!(
     keys(&root),
     [
-      attached(None, "Grid", "Row", span("Grid")),
-      attached(Some("ui"), "Dock", "Side", span("ui:Dock")),
+      attached(None, "Grid", ui(), "Row", span("Grid")),
+      attached(
+        Some("d"),
+        "Dock",
+        XamlNamespace::Uri("urn:dock".to_owned()),
+        "Side",
+        span("d:Dock")
+      ),
       property("Width"),
     ]
   );
@@ -139,12 +162,12 @@ fn dotted_attributes_are_attached_properties() {
 // `<Type.Name>` elements are property elements; any other owner makes them attached.
 #[test]
 fn property_elements() {
-  let source = "<Button><Button.Content><Image/></Button.Content><Grid.Row>1</Grid.Row></Button>";
+  let source = "<Button xmlns=\"urn:ui\"><Button.Content><Image/></Button.Content><Grid.Row>1</Grid.Row></Button>";
   let root = root(source);
 
   let start = source.find("Grid").expect("owner in source");
   let owner = Span::new(first_file(), start, start + "Grid".len());
-  assert_eq!(keys(&root), [property("Content"), attached(None, "Grid", "Row", owner)]);
+  assert_eq!(keys(&root), [property("Content"), attached(None, "Grid", ui(), "Row", owner)]);
   assert_eq!(type_name(&members(&root)[0].value[0]), "Image");
   assert_eq!(text(&members(&root)[1].value[0]), "1");
 }
@@ -152,7 +175,7 @@ fn property_elements() {
 // Text and child objects go, in document order, into one content member after the other members.
 #[test]
 fn content_is_one_member_in_document_order() {
-  let root = root("<Panel>a<Image/>b<Panel.Tag>t</Panel.Tag></Panel>");
+  let root = root("<Panel xmlns=\"urn:ui\">a<Image/>b<Panel.Tag>t</Panel.Tag></Panel>");
 
   assert_eq!(keys(&root), [property("Tag"), MemberKey::Content]);
   let content = &members(&root)[1].value;
@@ -165,7 +188,7 @@ fn content_is_one_member_in_document_order() {
 // Entities are decoded, CDATA is kept verbatim, and adjacent text and CDATA merge into one value.
 #[test]
 fn text_and_cdata_merge_into_one_value() {
-  let root = root("<Text>a &amp; <![CDATA[<b> &amp;]]> c</Text>");
+  let root = root("<Text xmlns=\"urn:ui\">a &amp; <![CDATA[<b> &amp;]]> c</Text>");
 
   let content = &members(&root)[0].value;
   assert_eq!(content.len(), 1);
@@ -175,7 +198,7 @@ fn text_and_cdata_merge_into_one_value() {
 // Whitespace between elements is kept as text: deciding what it means is the loader's job.
 #[test]
 fn whitespace_is_kept() {
-  let root = root("<Panel>\n  <Image/>\n</Panel>");
+  let root = root("<Panel xmlns=\"urn:ui\">\n  <Image/>\n</Panel>");
 
   let content = &members(&root)[0].value;
   assert_eq!(text(&content[0]), "\n  ");
@@ -185,7 +208,7 @@ fn whitespace_is_kept() {
 // Attribute values are normalized as XML requires: whitespace characters become spaces.
 #[test]
 fn attribute_values_are_normalized() {
-  let root = root("<Text Value=\"a\r\nb\tc &amp; &#10;\"/>");
+  let root = root("<Text xmlns=\"urn:ui\" Value=\"a\r\nb\tc &amp; &#10;\"/>");
 
   assert_eq!(text(&members(&root)[0].value[0]), "a b c & \n");
 }
@@ -193,13 +216,13 @@ fn attribute_values_are_normalized() {
 // Attribute values in braces are markup extensions, for directives too; `xmlns` values stay text.
 #[test]
 fn braced_attributes_are_markup_extensions() {
-  let source = r#"<Button xmlns:a="{urn}" Text="{Binding Name}" x:Key="{x:Type Button}" Tag="{}{x}"/>"#;
+  let source = r#"<Button xmlns="urn:ui" xmlns:x="https://artic.rs/markup" xmlns:a="{urn}" Text="{Binding Name}" x:Key="{x:Type Button}" Tag="{}{x}"/>"#;
   let root = root(source);
 
   let XamlNode::Object { namespaces, .. } = &root else {
     unreachable!()
   };
-  assert_eq!(namespaces[0].uri, "{urn}");
+  assert_eq!(namespaces[2].uri, "{urn}");
   let values: Vec<_> = members(&root).iter().map(|member| &member.value[0]).collect();
   assert!(matches!(values[0], XamlNode::MarkupExtension { ty, .. } if ty.name == "Binding"));
   assert!(matches!(values[1], XamlNode::MarkupExtension { ty, .. } if ty.name == "Type"));
@@ -209,7 +232,7 @@ fn braced_attributes_are_markup_extensions() {
 // A malformed markup extension drops its attribute, and the rest of the document is still checked.
 #[test]
 fn markup_extension_errors_are_collected() {
-  let found = errors(r#"<Button Text="{Binding" Tag="{A 'x}"><Button.Tag a="1"/></Button>"#);
+  let found = errors(r#"<Button xmlns="urn:ui" Text="{Binding" Tag="{A 'x}"><Button.Tag a="1"/></Button>"#);
 
   let messages: Vec<_> = found.iter().map(|(message, _)| message.as_str()).collect();
   assert_eq!(
@@ -225,7 +248,7 @@ fn markup_extension_errors_are_collected() {
 // Comments, the XML declaration and processing instructions are dropped.
 #[test]
 fn comments_and_declarations_are_dropped() {
-  let root = root("<?xml version=\"1.0\"?>\n<!-- top --><Panel><!-- inside --><?pi data?></Panel>\n");
+  let root = root("<?xml version=\"1.0\"?>\n<!-- top --><Panel xmlns=\"urn:ui\"><!-- inside --><?pi data?></Panel>\n");
 
   assert_eq!(type_name(&root), "Panel");
   assert!(members(&root).is_empty());
@@ -260,7 +283,7 @@ fn spans_point_at_source() {
 // attribute, where the attribute starts.
 #[test]
 fn malformed_xml_reports_span() {
-  let source = "<Panel>\n  <Image Width=100/>\n</Panel>";
+  let source = "<Panel xmlns=\"urn:ui\">\n  <Image Width=100/>\n</Panel>";
 
   let found = errors(source);
 
@@ -277,7 +300,7 @@ fn malformed_xml_reports_span() {
 // A wrong end tag points at itself and at the start tag it should close.
 #[test]
 fn mismatched_end_tag() {
-  let source = "<Panel><Image></Panel>";
+  let source = "<Panel xmlns=\"urn:ui\"><Image></Panel>";
   let mut sources = SourceMap::new();
   let file = sources.add("test.xaml", source);
 
@@ -294,7 +317,7 @@ fn mismatched_end_tag() {
 // An element still open at the end of the file is reported there, pointing back at its start tag.
 #[test]
 fn unclosed_element() {
-  let source = "<Panel><Image/>";
+  let source = "<Panel xmlns=\"urn:ui\"><Image/>";
   let mut sources = SourceMap::new();
   let file = sources.add("test.xaml", source);
 
@@ -314,7 +337,7 @@ fn root_problems() {
     [("expected one root element".to_owned(), "<!-- nothing -->")]
   );
   assert_eq!(
-    errors("<A/><B/>"),
+    errors("<A xmlns=\"urn:ui\"/><B/>"),
     [("expected one root element, found more content after it".to_owned(), "")]
   );
   assert_eq!(
@@ -326,7 +349,7 @@ fn root_problems() {
 // A DTD is rejected.
 #[test]
 fn dtd_is_an_error() {
-  let found = errors("<!DOCTYPE Panel><Panel/>");
+  let found = errors("<!DOCTYPE Panel><Panel xmlns=\"urn:ui\"/>");
 
   assert_eq!(found, [("DTDs aren't supported in XAML".to_owned(), "<!DOCTYPE Panel>")]);
 }
@@ -334,11 +357,11 @@ fn dtd_is_an_error() {
 // A member set twice, by attribute or property element, is an error pointing at both.
 #[test]
 fn duplicate_members() {
-  let found = errors(r#"<Button Width="1" Width="2" Grid.Row="1" Grid.Row="2"/>"#);
+  let found = errors(r#"<Button xmlns="urn:ui" Width="1" Width="2" Grid.Row="1" Grid.Row="2"/>"#);
   let twice = "this member is set twice on the same element".to_owned();
   assert_eq!(found, [(twice.clone(), "Width"), (twice, "Grid.Row")]);
 
-  let source = r#"<Button Tag="1"><Button.Tag>2</Button.Tag></Button>"#;
+  let source = r#"<Button xmlns="urn:ui" Tag="1"><Button.Tag>2</Button.Tag></Button>"#;
   let mut sources = SourceMap::new();
   let file = sources.add("test.xaml", source);
   let diagnostics = parse(&sources, file).expect_err("duplicate");
@@ -350,7 +373,8 @@ fn duplicate_members() {
 // Misplaced attributes and elements are all reported, not only the first.
 #[test]
 fn mapping_errors_are_collected() {
-  let found = errors(r#"<Button ui:Width="1"><Button.Tag a="1"><Grid.Row/></Button.Tag></Button>"#);
+  let found =
+    errors(r#"<Button xmlns="urn:ui" xmlns:ui="urn:ui" ui:Width="1"><Button.Tag a="1"><Grid.Row/></Button.Tag></Button>"#);
 
   assert_eq!(
     found,
@@ -365,9 +389,89 @@ fn mapping_errors_are_collected() {
 // An unknown entity is an error at the entity, wherever it appears.
 #[test]
 fn unknown_entities_are_errors() {
-  let found = errors(r#"<Text Value="&nbsp;">&copy;</Text>"#);
+  let found = errors(r#"<Text xmlns="urn:ui" Value="&nbsp;">&copy;</Text>"#);
 
   assert_eq!(found.len(), 2);
   assert_eq!(found[0].1, "&nbsp;");
   assert_eq!(found[1].1, "&copy;");
+}
+
+// The default namespace and the markup namespace resolve on elements, owners and extensions.
+#[test]
+fn default_and_markup_namespaces_resolve() {
+  let root =
+    root(r#"<Button xmlns="urn:ui" xmlns:x="https://artic.rs/markup" Tag="{x:Null}" Text="{Binding}"><x:String/></Button>"#);
+
+  assert_eq!(namespace(&root), &ui());
+  let values: Vec<_> = members(&root).iter().map(|member| &member.value[0]).collect();
+  assert_eq!(namespace(values[0]), &XamlNamespace::Markup);
+  assert_eq!(namespace(values[1]), &ui());
+  assert_eq!(namespace(&members(&root)[2].value[0]), &XamlNamespace::Markup);
+}
+
+// A `using:` prefix stands for the Rust module path after it.
+#[test]
+fn using_prefix_resolves_to_path() {
+  let root = root(r#"<v:Card xmlns:v="using:my_app::views"/>"#);
+
+  assert_eq!(namespace(&root), &XamlNamespace::Using("my_app::views".to_owned()));
+}
+
+// An inner declaration shadows an outer one for its element and descendants, and ends with them.
+#[test]
+fn nested_xmlns_shadows_outer() {
+  let root =
+    root(r#"<v:Page xmlns:v="using:app::views"><v:Panel xmlns:v="using:app::widgets"><v:Card/></v:Panel><v:Header/></v:Page>"#);
+
+  let panel = &members(&root)[0].value[0];
+  let card = &members(panel)[0].value[0];
+  let header = &members(&root)[0].value[1];
+  let views = XamlNamespace::Using("app::views".to_owned());
+  let widgets = XamlNamespace::Using("app::widgets".to_owned());
+  assert_eq!(
+    [namespace(&root), namespace(panel), namespace(card), namespace(header)],
+    [&views, &widgets, &widgets, &views]
+  );
+}
+
+// An element's declarations apply to the whole element, including names written before them.
+#[test]
+fn declarations_apply_to_their_whole_element() {
+  let root = root(r#"<a:Card a:Dock.Side="Left" xmlns:a="using:app::widgets"/>"#);
+
+  let widgets = XamlNamespace::Using("app::widgets".to_owned());
+  assert_eq!(namespace(&root), &widgets);
+  assert!(matches!(&keys(&root)[0], MemberKey::Attached { owner, .. } if owner.namespace == widgets));
+}
+
+// Directives are recognized by namespace, not by the letters of the prefix.
+#[test]
+fn directives_follow_the_markup_namespace() {
+  let root = root(r#"<Button xmlns="urn:ui" xmlns:m="https://artic.rs/markup" m:Name="ok"/>"#);
+  assert_eq!(keys(&root), [MemberKey::Directive(Directive::Name)]);
+
+  let found = errors(r#"<Button xmlns="urn:ui" xmlns:x="urn:other" x:Name="ok"/>"#);
+  assert_eq!(found, [("`x:Name` names no property".to_owned(), "x:Name")]);
+}
+
+// Two prefixes for one namespace name the same types, so the owner check compares namespaces.
+#[test]
+fn prefixes_are_aliases() {
+  let root = root(r#"<a:Button xmlns:a="urn:ui" xmlns:b="urn:ui"><b:Button.Content>x</b:Button.Content></a:Button>"#);
+
+  assert_eq!(keys(&root), [property("Content")]);
+}
+
+// An undeclared prefix, or a missing default namespace, is reported once, at its first use.
+#[test]
+fn undeclared_prefixes_are_reported_once() {
+  let found = errors(r#"<Panel><a:Card/><a:Card/><Image/></Panel>"#);
+
+  assert_eq!(
+    found,
+    [
+      ("no default namespace is declared".to_owned(), "Panel"),
+      ("prefix `a` is not declared".to_owned(), "a"),
+    ]
+  );
 }
