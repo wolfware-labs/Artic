@@ -1,4 +1,4 @@
-use crate::{AttachedPropertyInfo, TypeInfo};
+use crate::{AttachedPropertyInfo, TypeInfo, XAML_TYPES};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::error::Error;
@@ -6,8 +6,8 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 /// Lookup tables over a set of [`TypeInfo`] descriptors.
 ///
-/// Build it once with [`from_types`](Registry::from_types) and keep it: every lookup returns a
-/// `&'static` descriptor, which stays valid after the registry is dropped.
+/// Build it once, usually with [`from_link_time`](Registry::from_link_time), and keep it: every
+/// lookup returns a `&'static` descriptor, which stays valid after the registry is dropped.
 #[derive(Debug, Default)]
 pub struct Registry {
   by_name: HashMap<&'static str, HashMap<&'static str, &'static TypeInfo>>,
@@ -16,6 +16,16 @@ pub struct Registry {
 }
 
 impl Registry {
+  /// Builds a registry over every type in [`XAML_TYPES`]: the types registered by the crates linked
+  /// into the binary.
+  ///
+  /// # Errors
+  ///
+  /// Returns the duplicates, as [`from_types`](Registry::from_types) does.
+  pub fn from_link_time() -> Result<Registry, RegistryError> {
+    Self::from_types(&XAML_TYPES)
+  }
+
   /// Builds a registry over `types`.
   ///
   /// # Errors

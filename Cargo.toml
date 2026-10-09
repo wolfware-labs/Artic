@@ -48,6 +48,7 @@ artic-xaml = { path = "crates/artic-xaml", version = "0.1.0" }
 artic-xaml-compiler = { path = "crates/artic-xaml-compiler", version = "0.1.0" }
 artic-xaml-runtime = { path = "crates/artic-xaml-runtime", version = "0.1.0" }
 
+linkme = "0.3.37"
 pretty_assertions = "1.4.1"
 proptest = "1.11.0"
 static_assertions = "1.1.0"
