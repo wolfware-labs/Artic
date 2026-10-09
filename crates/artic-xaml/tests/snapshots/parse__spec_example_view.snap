@@ -23,6 +23,7 @@ XamlDocument {
                 value: [
                     Value {
                         text: "app::views::LoginView",
+                        raw: "app::views::LoginView",
                         span: Span(0, 110..131),
                     },
                 ],
@@ -35,6 +36,7 @@ XamlDocument {
                 value: [
                     Value {
                         text: "app::vm::LoginVm",
+                        raw: "app::vm::LoginVm",
                         span: Span(0, 158..174),
                     },
                 ],
@@ -46,7 +48,8 @@ XamlDocument {
                 ),
                 value: [
                     Value {
-                        text: "\n    ",
+                        text: "",
+                        raw: "\n    ",
                         span: Span(0, 202..207),
                     },
                     Object {
@@ -66,6 +69,7 @@ XamlDocument {
                                 value: [
                                     Value {
                                         text: "Accent",
+                                        raw: "Accent",
                                         span: Span(0, 231..237),
                                     },
                                 ],
@@ -78,6 +82,7 @@ XamlDocument {
                                 value: [
                                     Value {
                                         text: "#3B82F6",
+                                        raw: "#3B82F6",
                                         span: Span(0, 246..253),
                                     },
                                 ],
@@ -88,7 +93,8 @@ XamlDocument {
                         span: Span(0, 207..256),
                     },
                     Value {
-                        text: "\n  ",
+                        text: "",
+                        raw: "\n  ",
                         span: Span(0, 256..259),
                     },
                 ],
@@ -98,11 +104,13 @@ XamlDocument {
                 key: Content,
                 value: [
                     Value {
-                        text: "\n  ",
+                        text: "",
+                        raw: "\n  ",
                         span: Span(0, 176..179),
                     },
                     Value {
-                        text: "\n  ",
+                        text: "",
+                        raw: "\n  ",
                         span: Span(0, 283..286),
                     },
                     Object {
@@ -122,6 +130,7 @@ XamlDocument {
                                 value: [
                                     Value {
                                         text: "8",
+                                        raw: "8",
                                         span: Span(0, 307..308),
                                     },
                                 ],
@@ -134,6 +143,7 @@ XamlDocument {
                                 value: [
                                     Value {
                                         text: "16",
+                                        raw: "16",
                                         span: Span(0, 318..320),
                                     },
                                 ],
@@ -143,7 +153,8 @@ XamlDocument {
                                 key: Content,
                                 value: [
                                     Value {
-                                        text: "\n    ",
+                                        text: "",
+                                        raw: "\n    ",
                                         span: Span(0, 322..327),
                                     },
                                     Object {
@@ -163,6 +174,7 @@ XamlDocument {
                                                 value: [
                                                     Value {
                                                         text: "email",
+                                                        raw: "email",
                                                         span: Span(0, 344..349),
                                                     },
                                                 ],
@@ -185,6 +197,7 @@ XamlDocument {
                                                         positional: [
                                                             Value {
                                                                 text: "Email",
+                                                                raw: "Email",
                                                                 span: Span(0, 366..371),
                                                             },
                                                         ],
@@ -196,6 +209,7 @@ XamlDocument {
                                                                 value: [
                                                                     Value {
                                                                         text: "TwoWay",
+                                                                        raw: "TwoWay",
                                                                         span: Span(0, 378..384),
                                                                     },
                                                                 ],
@@ -214,6 +228,7 @@ XamlDocument {
                                                 value: [
                                                     Value {
                                                         text: "Email",
+                                                        raw: "Email",
                                                         span: Span(0, 398..403),
                                                     },
                                                 ],
@@ -224,7 +239,8 @@ XamlDocument {
                                         span: Span(0, 327..406),
                                     },
                                     Value {
-                                        text: "\n    ",
+                                        text: "",
+                                        raw: "\n    ",
                                         span: Span(0, 406..411),
                                     },
                                     Object {
@@ -244,6 +260,7 @@ XamlDocument {
                                                 value: [
                                                     Value {
                                                         text: "primary",
+                                                        raw: "primary",
                                                         span: Span(0, 428..435),
                                                     },
                                                 ],
@@ -256,6 +273,7 @@ XamlDocument {
                                                 value: [
                                                     Value {
                                                         text: "Sign in",
+                                                        raw: "Sign in",
                                                         span: Span(0, 446..453),
                                                     },
                                                 ],
@@ -278,6 +296,7 @@ XamlDocument {
                                                         positional: [
                                                             Value {
                                                                 text: "SignIn",
+                                                                raw: "SignIn",
                                                                 span: Span(0, 485..491),
                                                             },
                                                         ],
@@ -294,6 +313,7 @@ XamlDocument {
                                                 value: [
                                                     Value {
                                                         text: "on_click",
+                                                        raw: "on_click",
                                                         span: Span(0, 501..509),
                                                     },
                                                 ],
@@ -304,7 +324,8 @@ XamlDocument {
                                         span: Span(0, 411..512),
                                     },
                                     Value {
-                                        text: "\n  ",
+                                        text: "",
+                                        raw: "\n  ",
                                         span: Span(0, 512..515),
                                     },
                                 ],
@@ -315,7 +336,8 @@ XamlDocument {
                         span: Span(0, 286..528),
                     },
                     Value {
-                        text: "\n",
+                        text: "",
+                        raw: "\n",
                         span: Span(0, 528..529),
                     },
                 ],

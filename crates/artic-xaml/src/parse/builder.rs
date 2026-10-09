@@ -1,6 +1,7 @@
 //! The builder that turns tokens into infoset nodes.
 
 use super::text::{Decoded, Kind, decode, normalize_line_endings};
+use super::whitespace::{self, Space};
 use super::{Fatal, duplicate_of, markup, namespace, unresolved, unsupported};
 use crate::diagnostics::{Diagnostic, Diagnostics, LineCol, SourceFile, SourceId, Span};
 use crate::infoset::{Directive, Member, MemberKey, NamespaceDecl, TypeRef, XamlDocument, XamlNamespace, XamlNode};
@@ -20,6 +21,8 @@ struct Open {
   tag_span: Span,
   /// The prefixes this element's `xmlns` attributes bind.
   scope: Vec<Binding>,
+  /// How whitespace in its text is treated: its own `xml:space`, or its parent's.
+  space: Space,
   /// Text and CDATA read since the last element boundary: the decoded text and its span.
   pending_text: Option<(String, usize, usize)>,
   kind: OpenKind,
@@ -194,6 +197,7 @@ impl<'a> Builder<'a> {
     } = self.start_tag.take().expect("an element starts before its start tag ends");
     let tag_span = self.span(span.start() + 1, local.end());
     let type_prefix = (!prefix.as_str().is_empty()).then(|| prefix.as_str().to_owned());
+    let mut space = self.stack.last().map_or(Space::Default, |open| open.space);
     let (scope, kind) = if let Some((owner, name)) = local.as_str().split_once('.') {
       for attribute in &attributes {
         let name_span = self.span(name_start(attribute), attribute.local.end());
@@ -236,6 +240,12 @@ impl<'a> Builder<'a> {
       self.resolve_type(&scope, &mut ty);
       let mut members = Vec::new();
       for attribute in attributes {
+        if (attribute.prefix.as_str(), attribute.local.as_str()) == ("xml", "space") {
+          if let Some(own) = self.xml_space(attribute.value) {
+            space = own;
+          }
+          continue;
+        }
         let Some(member) = self.member(&scope, &ty, attribute) else {
           continue;
         };
@@ -257,9 +267,26 @@ impl<'a> Builder<'a> {
       start: span.start(),
       tag_span,
       scope,
+      space,
       pending_text: None,
       kind,
     });
+  }
+
+  /// The mode an `xml:space` value sets, or `None` after recording that it's neither `default` nor
+  /// `preserve`.
+  fn xml_space(&mut self, value: StrSpan) -> Option<Space> {
+    match self.decode_value(value)?.text.as_str() {
+      "default" => Some(Space::Default),
+      "preserve" => Some(Space::Preserve),
+      _ => {
+        let span = self.span_of(value);
+        self
+          .diagnostics
+          .push(Diagnostic::error(span, "`xml:space` must be `default` or `preserve`"));
+        None
+      }
+    }
   }
 
   /// Splits an object element's `xmlns` declarations from its other attributes, returning the
@@ -319,13 +346,9 @@ impl<'a> Builder<'a> {
       self.resolve_node(scope, &mut node);
       node
     } else {
-      XamlNode::Value {
-        text: decoded.text,
-        span: self.span_of(value),
-      }
+      XamlNode::value(decoded.text, self.span_of(value))
     };
     let key = match (prefix.as_str(), local.as_str()) {
-      ("xml", "space") => MemberKey::Directive(Directive::XmlSpace),
       (prefix, name) if name.contains('.') => {
         let (owner, property) = name.split_once('.').expect("contains a dot");
         let mut owner_type = TypeRef {
@@ -461,8 +484,11 @@ impl<'a> Builder<'a> {
         ty,
         mut members,
         namespaces,
-        content,
+        mut content,
       } => {
+        if open.space == Space::Default {
+          whitespace::normalize(&mut content);
+        }
         if let (Some(first), Some(last)) = (content.first(), content.last()) {
           let content_span = self.span(first.span().start, last.span().end);
           members.push(Member {
@@ -489,7 +515,10 @@ impl<'a> Builder<'a> {
           None => self.root = Some(node),
         }
       }
-      OpenKind::PropertyElement { key, value } => {
+      OpenKind::PropertyElement { key, mut value } => {
+        if open.space == Space::Default {
+          whitespace::normalize(&mut value);
+        }
         let member = Member {
           key,
           value,
@@ -545,10 +574,7 @@ impl<'a> Builder<'a> {
     let Some((text, start, end)) = open.pending_text.take() else {
       return;
     };
-    let node = XamlNode::Value {
-      text,
-      span: Span::new(file, start, end),
-    };
+    let node = XamlNode::value(text, Span::new(file, start, end));
     match &mut open.kind {
       OpenKind::Object { content, .. } => content.push(node),
       OpenKind::PropertyElement { value, .. } => value.push(node),

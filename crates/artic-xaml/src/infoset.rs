@@ -32,11 +32,14 @@ pub enum XamlNode {
     /// The whole element, from `<` to its end tag.
     span: Span,
   },
-  /// Text: an attribute value, or text and CDATA inside an element. Entities are decoded, and
-  /// whitespace is kept as written.
+  /// Text: an attribute value, or text and CDATA inside an element, with entities decoded.
   Value {
-    /// The text.
+    /// The text. For text inside an element, after whitespace normalization: the default rules,
+    /// unless `xml:space="preserve"` is in effect; whitespace-only text is then empty, which adds
+    /// nothing. For an attribute value, the same as `raw`.
     text: String,
+    /// The text with its whitespace as written, for types whose whitespace is significant.
+    raw: String,
     /// Where it was written; its length can differ from `text`'s when entities were decoded.
     span: Span,
   },
@@ -57,6 +60,16 @@ pub enum XamlNode {
 }
 
 impl XamlNode {
+  /// A value whose whitespace isn't normalized, such as an attribute value: `text` and `raw` are
+  /// the same.
+  pub(crate) fn value(text: String, span: Span) -> XamlNode {
+    XamlNode::Value {
+      raw: text.clone(),
+      text,
+      span,
+    }
+  }
+
   /// Where the node was written.
   #[must_use]
   pub fn span(&self) -> Span {
@@ -100,10 +113,10 @@ pub enum MemberKey {
   Items,
 }
 
-/// An `x:` directive, or `xml:space`.
+/// An `x:` directive.
 ///
 /// An attribute is a directive when its prefix stands for [`XamlNamespace::Markup`], whatever the
-/// prefix is; `xml:space` is one because the `xml` prefix is always bound.
+/// prefix is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Directive {
   /// `x:Name`
@@ -118,8 +131,6 @@ pub enum Directive {
   Uid,
   /// `x:FieldModifier`
   FieldModifier,
-  /// `xml:space`
-  XmlSpace,
 }
 
 /// A type named in markup, with its namespace resolved but not yet resolved to a Rust type.
