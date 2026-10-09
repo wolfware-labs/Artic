@@ -188,10 +188,13 @@ The parser implements MS-XAML 2012 §5 (XML → XAML Infoset) for the constructs
 
 ### Not supported (compile error, with the reason)
 
+The parser's rejection table (`UNSUPPORTED` in `artic-xaml`) holds each construct below that it can detect, with the reason and the suggestion its error shows.
+
 - `x:Code`, `x:Subclass`, `x:Shared`, `x:Arguments`, `x:FactoryMethod`, `x:TypeArguments` (no generics from XAML in v1).
 - `x:Reference` (use `ElementName` binding instead).
-- WPF `Trigger`, `DataTrigger`, `EventTrigger` (selectors + pseudo-classes replace them).
-- `clr-namespace:` prefixes (use `using:`) and the Microsoft `x:` namespace URI (use `https://artic.rs/markup`, D19).
+- WPF `Trigger`, `MultiTrigger`, `DataTrigger`, `MultiDataTrigger`, `EventTrigger` in the artic UI vocabulary (selectors + pseudo-classes replace them); an app's own type of the same name under another namespace is fine.
+- `clr-namespace:` prefixes (use `using:`), the Microsoft `x:` namespace URI (use `https://artic.rs/markup`, D19) and the WPF presentation URI (use `https://artic.rs/ui`).
+- Any other name in the markup namespace than the supported directives and `x:Type`, `x:Static`, `x:Null` and the primitives.
 - Loose-XAML loading of arbitrary Rust types not marked `XamlType`.
 
 ### Infoset shape

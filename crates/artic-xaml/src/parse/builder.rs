@@ -1,7 +1,7 @@
 //! The builder that turns tokens into infoset nodes.
 
 use super::text::{Decoded, Kind, decode, normalize_line_endings};
-use super::{Fatal, duplicate_of, markup, namespace, unresolved};
+use super::{Fatal, duplicate_of, markup, namespace, unresolved, unsupported};
 use crate::diagnostics::{Diagnostic, Diagnostics, LineCol, SourceFile, SourceId, Span};
 use crate::infoset::{Directive, Member, MemberKey, NamespaceDecl, TypeRef, XamlDocument, XamlNamespace, XamlNode};
 use std::collections::HashSet;
@@ -356,7 +356,12 @@ impl<'a> Builder<'a> {
           );
           return None;
         }
-        MemberKey::Directive(directive(name))
+        let Some(directive) = directive(name) else {
+          let problem = unsupported::markup_problem(Some(prefix), name, name_span);
+          self.diagnostics.push(problem);
+          return None;
+        };
+        MemberKey::Directive(directive)
       }
     };
     Some(Member {
@@ -395,7 +400,7 @@ impl<'a> Builder<'a> {
   }
 
   /// Sets the namespace of `ty` to what its prefix stands for, looking in `scope` first, then in the
-  /// open elements from the innermost out.
+  /// open elements from the innermost out, and reports it if artic doesn't support that type.
   fn resolve_type(&mut self, scope: &[Binding], ty: &mut TypeRef) {
     let span = match &ty.prefix {
       Some(prefix) => self.span(ty.span.start, ty.span.start + prefix.len()),
@@ -403,6 +408,9 @@ impl<'a> Builder<'a> {
     };
     if let Some(namespace) = self.resolve_prefix(scope, ty.prefix.as_deref(), span) {
       ty.namespace = namespace;
+    }
+    if let Some(problem) = unsupported::type_problem(ty) {
+      self.diagnostics.push(problem);
     }
   }
 
@@ -609,14 +617,15 @@ fn prefix_len(prefix: &str) -> usize {
   if prefix.is_empty() { 0 } else { prefix.len() + 1 }
 }
 
-fn directive(name: &str) -> Directive {
+/// The directive `name` names in the markup namespace, if artic supports it.
+fn directive(name: &str) -> Option<Directive> {
   match name {
-    "Name" => Directive::Name,
-    "Key" => Directive::Key,
-    "Class" => Directive::Class,
-    "DataType" => Directive::DataType,
-    "Uid" => Directive::Uid,
-    "FieldModifier" => Directive::FieldModifier,
-    other => Directive::Other(other.to_owned()),
+    "Name" => Some(Directive::Name),
+    "Key" => Some(Directive::Key),
+    "Class" => Some(Directive::Class),
+    "DataType" => Some(Directive::DataType),
+    "Uid" => Some(Directive::Uid),
+    "FieldModifier" => Some(Directive::FieldModifier),
+    _ => None,
   }
 }

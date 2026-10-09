@@ -120,8 +120,6 @@ pub enum Directive {
   FieldModifier,
   /// `xml:space`
   XmlSpace,
-  /// Any other `x:` name, kept so a later stage can reject it with a precise message.
-  Other(String),
 }
 
 /// A type named in markup, with its namespace resolved but not yet resolved to a Rust type.

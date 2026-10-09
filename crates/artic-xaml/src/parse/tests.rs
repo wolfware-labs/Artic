@@ -114,20 +114,17 @@ fn xmlns_attributes_are_namespace_declarations() {
   assert!(members.is_empty());
 }
 
-// Attributes in the markup namespace and `xml:space` are directives; an unknown name is kept as
-// `Other`. The `xml` prefix needs no declaration.
+// Attributes in the markup namespace and `xml:space` are directives. The `xml` prefix needs no
+// declaration.
 #[test]
 fn markup_attributes_are_directives() {
-  let root = root(
-    r#"<Button xmlns="urn:ui" xmlns:x="https://artic.rs/markup" x:Name="ok" x:Key="k" x:Shared="false" xml:space="preserve"/>"#,
-  );
+  let root = root(r#"<Button xmlns="urn:ui" xmlns:x="https://artic.rs/markup" x:Name="ok" x:Key="k" xml:space="preserve"/>"#);
 
   assert_eq!(
     keys(&root),
     [
       MemberKey::Directive(Directive::Name),
       MemberKey::Directive(Directive::Key),
-      MemberKey::Directive(Directive::Other("Shared".to_owned())),
       MemberKey::Directive(Directive::XmlSpace),
     ]
   );
@@ -501,7 +498,8 @@ fn microsoft_x_uri_rejected_with_hint() {
   assert_eq!(
     found,
     [(
-      "the Microsoft XAML namespace isn't supported".to_owned(),
+      "`http://schemas.microsoft.com/winfx/2006/xaml` isn't supported: artic's XAML language namespace has its own URI"
+        .to_owned(),
       r#"xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml""#,
       Some(r#"use `xmlns:x="https://artic.rs/markup"`"#.to_owned()),
     )]
@@ -513,7 +511,10 @@ fn microsoft_x_uri_rejected_with_hint() {
 fn wpf_presentation_uri_rejected_with_hint() {
   let found = errors_with_help(r#"<Button xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"/>"#);
 
-  assert_eq!(found[0].0, "the WPF presentation namespace isn't supported");
+  assert_eq!(
+    found[0].0,
+    "`http://schemas.microsoft.com/winfx/2006/xaml/presentation` isn't supported: artic's controls are their own vocabulary"
+  );
   assert_eq!(found[0].2.as_deref(), Some(r#"use `xmlns="https://artic.rs/ui"`"#));
   assert_eq!(found.len(), 1);
 }
@@ -526,7 +527,7 @@ fn clr_namespace_rejected_with_hint() {
   assert_eq!(
     found,
     [(
-      "`clr-namespace:` isn't supported".to_owned(),
+      "`clr-namespace:` isn't supported: prefixes map to Rust modules, not .NET namespaces".to_owned(),
       r#"xmlns:v="clr-namespace:MyApp.ViewModels;assembly=MyApp""#,
       Some(r#"artic maps prefixes to Rust modules; for example `xmlns:v="using:my_app::view_models"`"#.to_owned()),
     )]
@@ -569,4 +570,152 @@ fn bad_declarations_are_errors() {
       ),
     ]
   );
+}
+
+/// The artic namespaces the rejection tests declare: triggers are rejected only in the artic UI
+/// vocabulary.
+const ARTIC: &str = r#"xmlns="https://artic.rs/ui" xmlns:x="https://artic.rs/markup""#;
+
+// Each construct of the spec's "Not supported" list is rejected at its name, in every form it can
+// take, with the reason and what to write instead.
+#[test]
+fn unsupported_constructs_are_rejected() {
+  let triggers = (
+    "styles react to state with selectors",
+    "use a selector with a pseudo-class, like `Button:pointerover`",
+  );
+  let construction = "objects are created with `Default`, then their properties are set";
+  let cases = [
+    (
+      r#"<Button {} x:Shared="False"/>"#,
+      "x:Shared",
+      "each resource is created once and shared",
+      "create one instance per use with a template",
+    ),
+    (
+      r#"<Button {} x:Subclass="a::B"/>"#,
+      "x:Subclass",
+      "the `x:Class` struct is the view's type",
+      "remove `x:Subclass`",
+    ),
+    (
+      r#"<Button {} x:TypeArguments="x:String"/>"#,
+      "x:TypeArguments",
+      "no generics from XAML in v1",
+      "use a concrete type, or wrap the generic type in a non-generic one in Rust",
+    ),
+    (
+      r#"<Button {} x:FactoryMethod="new"/>"#,
+      "x:FactoryMethod",
+      construction,
+      "set properties instead of calling a factory method",
+    ),
+    (
+      "<Panel {}><x:Arguments/></Panel>",
+      "x:Arguments",
+      construction,
+      "set properties instead of passing constructor arguments",
+    ),
+    (
+      "<Panel {}><x:Code/></Panel>",
+      "x:Code",
+      "views' logic is Rust, not inline code",
+      "put the code in the view's `#[xaml_class]` struct",
+    ),
+    (
+      r#"<Button {} Tag="{x:Reference other}"/>"#,
+      "x:Reference",
+      "elements refer to each other through bindings",
+      "use `{Binding ElementName=name}`",
+    ),
+    ("<Style {}><Trigger/></Style>", "Trigger", triggers.0, triggers.1),
+    ("<Style {}><MultiTrigger/></Style>", "MultiTrigger", triggers.0, triggers.1),
+    ("<Style {}><DataTrigger/></Style>", "DataTrigger", triggers.0, triggers.1),
+    (
+      "<Style {}><MultiDataTrigger/></Style>",
+      "MultiDataTrigger",
+      triggers.0,
+      triggers.1,
+    ),
+    ("<Style {}><EventTrigger/></Style>", "EventTrigger", triggers.0, triggers.1),
+  ];
+  for (template, construct, reason, suggestion) in cases {
+    let source = template.replace("{}", ARTIC);
+    let found = errors_with_help(&source);
+    let message = format!("`{construct}` isn't supported: {reason}");
+    assert_eq!(found, [(message, construct, Some(suggestion.to_owned()))], "in {source}");
+  }
+}
+
+// Any other name in the markup namespace is rejected with what the namespace has, whatever prefix
+// it's written with.
+#[test]
+fn unknown_x_directive_rejected() {
+  let source = format!(r#"<Button {ARTIC} xmlns:m="https://artic.rs/markup" x:Foo="1" Tag="{{m:Bar}}"><x:Baz/></Button>"#);
+
+  let found = errors_with_help(&source);
+
+  let messages: Vec<_> = found.iter().map(|(message, at, _)| (message.as_str(), *at)).collect();
+  assert_eq!(
+    messages,
+    [
+      ("`x:Foo` isn't part of the XAML language namespace", "x:Foo"),
+      ("`m:Bar` isn't part of the XAML language namespace", "m:Bar"),
+      ("`x:Baz` isn't part of the XAML language namespace", "x:Baz"),
+    ]
+  );
+  assert!(
+    found[0]
+      .2
+      .as_deref()
+      .is_some_and(|help| help.starts_with("it has directives `x:Name`"))
+  );
+}
+
+// A rejected name in the markup namespace is caught under any prefix.
+#[test]
+fn rejections_follow_the_markup_namespace() {
+  let found = errors(r#"<Panel xmlns="https://artic.rs/ui" xmlns:m="https://artic.rs/markup"><m:Code/></Panel>"#);
+
+  assert_eq!(
+    found,
+    [(
+      "`x:Code` isn't supported: views' logic is Rust, not inline code".to_owned(),
+      "m:Code"
+    )]
+  );
+}
+
+// Triggers are rejected only in the artic UI vocabulary: an app's own `Trigger` type is fine.
+#[test]
+fn own_trigger_types_are_allowed() {
+  let root = root(r#"<Style xmlns="https://artic.rs/ui" xmlns:my="using:my_app::styles"><my:Trigger/></Style>"#);
+
+  assert_eq!(type_name(&members(&root)[0].value[0]), "Trigger");
+}
+
+// The table holds every construct of the spec's "Not supported" list (§4) the parser can detect;
+// loose XAML of types not marked `XamlType` needs the registry.
+#[test]
+fn table_lists_the_spec_constructs() {
+  let spec = [
+    "x:Code",
+    "x:Subclass",
+    "x:Shared",
+    "x:Arguments",
+    "x:FactoryMethod",
+    "x:TypeArguments",
+    "x:Reference",
+    "Trigger",
+    "DataTrigger",
+    "EventTrigger",
+    "clr-namespace:",
+    "http://schemas.microsoft.com/winfx/2006/xaml",
+  ];
+  for construct in spec {
+    assert!(
+      unsupported::UNSUPPORTED.iter().any(|row| row.construct == construct),
+      "{construct} is missing"
+    );
+  }
 }

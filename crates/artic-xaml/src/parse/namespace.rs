@@ -1,12 +1,12 @@
 //! What `xmlns` declarations bind prefixes to, and the declarations artic rejects.
 
 use super::text::Decoded;
-use super::unresolved;
+use super::{unresolved, unsupported};
 use crate::diagnostics::{Diagnostic, Diagnostics, SourceId, Span};
 use crate::infoset::XamlNamespace;
 
 const MARKUP_URI: &str = "https://artic.rs/markup";
-const UI_URI: &str = "https://artic.rs/ui";
+pub(super) const UI_URI: &str = "https://artic.rs/ui";
 
 /// The namespace an `xmlns` or `xmlns:prefix` declaration (`prefix` is `None` for the default
 /// namespace) binds, written at `declaration` with the value `uri`.
@@ -25,8 +25,10 @@ pub(super) fn classify(
     Some(prefix) => format!("xmlns:{prefix}"),
     None => "xmlns".to_owned(),
   };
-  let mut reject = |problem: &str, help: String, meant: XamlNamespace| {
-    diagnostics.push(Diagnostic::error(declaration, problem).with_help(help));
+  // The table gives the message; the help names the author's own prefix.
+  let mut reject = |construct: &str, help: String, meant: XamlNamespace| {
+    let rejection = unsupported::rejection(construct, declaration).expect("rejected namespaces are in the table");
+    diagnostics.push(rejection.with_help(help));
     meant
   };
   let text = uri.text.as_str();
@@ -50,7 +52,7 @@ pub(super) fn classify(
       "artic maps prefixes to Rust modules; for example `{attribute}=\"using:{}\"`",
       rust_path(namespace)
     );
-    return reject("`clr-namespace:` isn't supported", help, unresolved());
+    return reject("clr-namespace:", help, unresolved());
   }
   match text {
     MARKUP_URI => XamlNamespace::Markup,
@@ -58,13 +60,11 @@ pub(super) fn classify(
       diagnostics.push(Diagnostic::error(declaration, "a namespace can't be empty"));
       unresolved()
     }
-    "http://schemas.microsoft.com/winfx/2006/xaml" => reject(
-      "the Microsoft XAML namespace isn't supported",
-      format!("use `{attribute}=\"{MARKUP_URI}\"`"),
-      XamlNamespace::Markup,
-    ),
+    "http://schemas.microsoft.com/winfx/2006/xaml" => {
+      reject(text, format!("use `{attribute}=\"{MARKUP_URI}\"`"), XamlNamespace::Markup)
+    }
     "http://schemas.microsoft.com/winfx/2006/xaml/presentation" => reject(
-      "the WPF presentation namespace isn't supported",
+      text,
       format!("use `{attribute}=\"{UI_URI}\"`"),
       XamlNamespace::Uri(UI_URI.to_owned()),
     ),
