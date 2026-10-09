@@ -4,6 +4,7 @@
 //! server) reports through these types, so problems look the same wherever they are found.
 
 mod diagnostic;
+mod render;
 mod source;
 
 pub use diagnostic::{Diagnostic, Diagnostics, Label, Severity};
