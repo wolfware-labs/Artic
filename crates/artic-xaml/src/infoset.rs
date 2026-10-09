@@ -24,8 +24,8 @@ pub enum XamlNode {
   Object {
     /// The element's type, unresolved.
     ty: TypeRef,
-    /// The object's members, in document order: attributes first, then property elements and
-    /// content as they appear.
+    /// The object's members: attributes in order, then property elements in order, then the
+    /// content, if any, as one member.
     members: Vec<Member>,
     /// The namespace prefixes this element declares with `xmlns` attributes.
     namespaces: Vec<NamespaceDecl>,

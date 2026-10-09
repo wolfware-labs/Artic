@@ -2,3 +2,6 @@
 
 pub mod diagnostics;
 pub mod infoset;
+mod parse;
+
+pub use parse::parse;
