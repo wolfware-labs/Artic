@@ -108,7 +108,7 @@ dependencies = [
 name = "artic-registry-fixture-a"
 version = "0.1.0"
 dependencies = [
- "artic-core",
+ "artic-macros",
  "artic-registry",
 ]
 
@@ -116,7 +116,7 @@ dependencies = [
 name = "artic-registry-fixture-b"
 version = "0.1.0"
 dependencies = [
- "artic-core",
+ "artic-macros",
  "artic-registry",
 ]
 
