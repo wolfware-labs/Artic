@@ -1,0 +1,8 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/syntax/no_root.xaml
+---
+invalid/syntax/no_root.xaml:1:1: error: expected one root element
+1 | <!-- nothing but a comment -->
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

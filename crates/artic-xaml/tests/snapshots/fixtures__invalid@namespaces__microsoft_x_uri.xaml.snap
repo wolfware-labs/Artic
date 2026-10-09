@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/namespaces/microsoft_x_uri.xaml
+---
+invalid/namespaces/microsoft_x_uri.xaml:1:37: error: `http://schemas.microsoft.com/winfx/2006/xaml` isn't supported: artic's XAML language namespace has its own URI
+1 | <Button xmlns="https://artic.rs/ui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Name="ok"/>
+  |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: use `xmlns:x="https://artic.rs/markup"`

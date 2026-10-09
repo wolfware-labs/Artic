@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/text/comments_and_declarations.xaml
+---
+Object Panel [https://artic.rs/ui] 3:2..3:7
+  xmlns "https://artic.rs/ui" 3:8..3:35
+  content 3:62..3:70
+    Object Image [https://artic.rs/ui] 3:63..3:68

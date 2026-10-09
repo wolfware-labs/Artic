@@ -1,0 +1,4 @@
+<!-- Quotes protect commas and braces; \ escapes; quotes written as entities are quotes. -->
+<TextBlock xmlns="https://artic.rs/ui"
+           Text="{Binding Text, FallbackValue='a, b {c}'}"
+           Tag="{A &quot;it's&quot;, 'say \'hi\'', a\,b}"/>

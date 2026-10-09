@@ -1,0 +1,11 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/members/nested_property_element.xaml
+---
+invalid/members/nested_property_element.xaml:3:6: error: a property element can't contain a property element
+3 |     <Grid.Row>1</Grid.Row>
+  |      ^^^^^^^^
+  ::: invalid/members/nested_property_element.xaml:2:4
+2 |   <Button.Content>
+  |    -------------- inside this property element

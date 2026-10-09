@@ -1,0 +1,3 @@
+<Button xmlns="https://artic.rs/ui">
+  <Button.Content Tag="1">x</Button.Content>
+</Button>

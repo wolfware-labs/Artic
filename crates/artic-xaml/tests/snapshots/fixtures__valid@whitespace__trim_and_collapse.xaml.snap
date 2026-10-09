@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/whitespace/trim_and_collapse.xaml
+---
+Object TextBlock [https://artic.rs/ui] 1:2..1:11
+  xmlns "https://artic.rs/ui" 1:12..1:39
+  content 1:40..3:1
+    Value "Hello world" raw "\n    Hello \t   world\n" 1:40..3:1

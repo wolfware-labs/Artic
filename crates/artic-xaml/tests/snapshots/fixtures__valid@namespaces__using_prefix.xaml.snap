@@ -1,0 +1,7 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/namespaces/using_prefix.xaml
+---
+Object v:Card [using:my_app::views] 1:2..1:8
+  xmlns:v "using:my_app::views" 1:9..1:38

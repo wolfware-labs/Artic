@@ -1,0 +1,10 @@
+<!-- Every markup extension the spec and design docs show. -->
+<Panel xmlns="https://artic.rs/ui" xmlns:x="https://artic.rs/markup">
+  <Button A="{Binding}" B="{Binding Id}" C="{Binding Save}" D="{Binding SignIn}"/>
+  <Button A="{Binding Email, Mode=TwoWay}" B="{Binding Path=Name, Mode=TwoWay}"/>
+  <Button A="{Binding RelativeSource={RelativeSource TemplatedParent}}" B="{RelativeSource TemplatedParent}"/>
+  <Button A="{TemplateBinding Prop}" B="{Localize Key}"/>
+  <Button A="{StaticResource}" B="{StaticResource Accent}" C="{StaticResource Gap}" D="{StaticResource Key}"/>
+  <Button A="{DynamicResource}" B="{DynamicResource AccentHover}" C="{DynamicResource Key}"/>
+  <Button A="{x:Null}" B="{x:Static}" C="{x:Static local::CONSTANTS::MAX}" D="{x:Type Button}"/>
+</Panel>

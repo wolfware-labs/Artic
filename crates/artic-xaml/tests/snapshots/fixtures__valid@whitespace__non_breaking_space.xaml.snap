@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/whitespace/non_breaking_space.xaml
+---
+Object TextBlock [https://artic.rs/ui] 2:2..2:11
+  xmlns "https://artic.rs/ui" 2:12..2:39
+  content 2:40..2:58
+    Value "a\u{a0}\u{a0}b" raw "  a\u{a0}\u{a0}b  " 2:40..2:58

@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/unsupported/data_trigger.xaml
+---
+invalid/unsupported/data_trigger.xaml:2:4: error: `DataTrigger` isn't supported: styles react to state with selectors
+2 |   <DataTrigger/>
+  |    ^^^^^^^^^^^
+help: use a selector with a pseudo-class, like `Button:pointerover`

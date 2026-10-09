@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/namespaces/clr_namespace.xaml
+---
+invalid/namespaces/clr_namespace.xaml:1:36: error: `clr-namespace:` isn't supported: prefixes map to Rust modules, not .NET namespaces
+1 | <Panel xmlns="https://artic.rs/ui" xmlns:v="clr-namespace:MyApp.ViewModels;assembly=MyApp"/>
+  |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: artic maps prefixes to Rust modules; for example `xmlns:v="using:my_app::view_models"`

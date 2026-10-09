@@ -1,0 +1,11 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/markup-extension/unclosed_quote.xaml
+---
+invalid/markup-extension/unclosed_quote.xaml:1:80: error: quoted value is never closed
+1 | <TextBox xmlns="https://artic.rs/ui" Text="{Binding Email, FallbackValue='none}"/>
+  |                                                                                ^
+  ::: invalid/markup-extension/unclosed_quote.xaml:1:74
+1 | <TextBox xmlns="https://artic.rs/ui" Text="{Binding Email, FallbackValue='none}"/>
+  |                                                                          - opened here

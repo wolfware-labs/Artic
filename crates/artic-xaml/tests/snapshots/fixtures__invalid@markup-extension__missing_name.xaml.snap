@@ -1,0 +1,8 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/markup-extension/missing_name.xaml
+---
+invalid/markup-extension/missing_name.xaml:1:45: error: expected a markup extension name
+1 | <TextBox xmlns="https://artic.rs/ui" Text="{ Binding}"/>
+  |                                             ^

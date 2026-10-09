@@ -1,0 +1,11 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/markup-extension/duplicate_named_argument.xaml
+---
+invalid/markup-extension/duplicate_named_argument.xaml:1:73: error: this member is set twice on the same element
+1 | <TextBox xmlns="https://artic.rs/ui" Text="{Binding Email, Mode=OneWay, Mode=TwoWay}"/>
+  |                                                                         ^^^^ set again here
+  ::: invalid/markup-extension/duplicate_named_argument.xaml:1:60
+1 | <TextBox xmlns="https://artic.rs/ui" Text="{Binding Email, Mode=OneWay, Mode=TwoWay}"/>
+  |                                                            ---- first set here

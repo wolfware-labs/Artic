@@ -1,0 +1,2 @@
+<!-- An owner that is the element's own type is a plain property. -->
+<Button xmlns="https://artic.rs/ui" Button.Width="2"/>

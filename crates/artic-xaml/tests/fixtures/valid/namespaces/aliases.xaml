@@ -1,0 +1,2 @@
+<!-- Two prefixes for one URI name the same types: b:Button.Content is a plain property. -->
+<a:Button xmlns:a="https://artic.rs/ui" xmlns:b="https://artic.rs/ui"><b:Button.Content>x</b:Button.Content></a:Button>

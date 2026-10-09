@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/syntax/dtd.xaml
+---
+invalid/syntax/dtd.xaml:1:1: error: DTDs aren't supported in XAML
+1 | <!DOCTYPE Panel>
+  | ^^^^^^^^^^^^^^^^
+help: remove the `<!DOCTYPE …>` declaration

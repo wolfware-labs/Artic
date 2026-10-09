@@ -1,0 +1,22 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/markup-types/extensions.xaml
+---
+Object Style [https://artic.rs/ui] 1:2..1:7
+  xmlns "https://artic.rs/ui" 1:8..1:35
+  xmlns:x "https://artic.rs/markup" 1:36..1:69
+  directive Key 1:70..1:75
+    MarkupExtension x:Type [markup] 1:78..1:84
+      positional
+        Value "Button" 1:85..1:91
+  TargetType 1:94..1:104
+    MarkupExtension x:Type [markup] 1:107..1:113
+      positional
+        Value "Button" 1:114..1:120
+  Tag 1:123..1:126
+    MarkupExtension x:Null [markup] 1:129..1:135
+  Width 1:138..1:143
+    MarkupExtension x:Static [markup] 1:146..1:154
+      positional
+        Value "app::SIZES::WIDE" 1:155..1:171

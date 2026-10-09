@@ -1,0 +1,2 @@
+<!-- Only space, tab, CR and LF are whitespace: a non-breaking space is content. -->
+<TextBlock xmlns="https://artic.rs/ui">  a&#160;&#160;b  </TextBlock>

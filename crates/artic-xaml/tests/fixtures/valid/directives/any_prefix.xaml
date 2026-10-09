@@ -1,0 +1,2 @@
+<!-- A directive is an attribute in the markup namespace, whatever its prefix. -->
+<Button xmlns="https://artic.rs/ui" xmlns:m="https://artic.rs/markup" m:Name="ok"/>

@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/members/prefixed_without_owner.xaml
+---
+invalid/members/prefixed_without_owner.xaml:1:68: error: `ui:Width` names no property
+1 | <Button xmlns="https://artic.rs/ui" xmlns:ui="https://artic.rs/ui" ui:Width="1"/>
+  |                                                                    ^^^^^^^^
+help: a prefixed attribute must name an attached property, like `ui:Owner.Width`

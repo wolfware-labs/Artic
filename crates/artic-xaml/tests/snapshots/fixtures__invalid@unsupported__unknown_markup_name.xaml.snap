@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/unsupported/unknown_markup_name.xaml
+---
+invalid/unsupported/unknown_markup_name.xaml:1:71: error: `x:Foo` isn't part of the XAML language namespace
+1 | <Button xmlns="https://artic.rs/ui" xmlns:x="https://artic.rs/markup" x:Foo="1"/>
+  |                                                                       ^^^^^
+help: it has directives `x:Name`, `x:Key`, `x:Class`, `x:DataType`, `x:Uid` and `x:FieldModifier`; types `x:Type`, `x:Static`, `x:Null`, `x:String`, `x:Int32`, `x:Double` and `x:Boolean`

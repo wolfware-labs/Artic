@@ -1,0 +1,8 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/markup-extension/empty_argument.xaml
+---
+invalid/markup-extension/empty_argument.xaml:1:59: error: expected an argument
+1 | <TextBox xmlns="https://artic.rs/ui" Text="{Binding Email,}"/>
+  |                                                           ^

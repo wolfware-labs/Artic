@@ -1,0 +1,1 @@
+<Style xmlns="https://artic.rs/ui" xmlns:x="https://artic.rs/markup" x:Key="{x:Type Button}" TargetType="{x:Type Button}" Tag="{x:Null}" Width="{x:Static app::SIZES::WIDE}"/>

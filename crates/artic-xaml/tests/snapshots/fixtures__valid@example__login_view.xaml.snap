@@ -1,0 +1,55 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/example/login_view.xaml
+---
+Object UserControl [https://artic.rs/ui] 1:2..1:13
+  xmlns "https://artic.rs/ui" 1:14..1:41
+  xmlns:x "https://artic.rs/markup" 2:14..2:47
+  directive Class 3:14..3:21
+    Value "app::views::LoginView" 3:23..3:44
+  directive DataType 4:14..4:24
+    Value "app::vm::LoginVm" 4:26..4:42
+  Resources 5:4..5:25
+    Value "" raw "\n    " 5:26..6:5
+    Object SolidColorBrush [https://artic.rs/ui] 6:6..6:21
+      directive Key 6:22..6:27
+        Value "Accent" 6:29..6:35
+      Color 6:37..6:42
+        Value "#3B82F6" 6:44..6:51
+    Value "" raw "\n  " 6:54..7:3
+  content 4:44..13:1
+    Value "" raw "\n  " 4:44..5:3
+    Value "" raw "\n  " 7:27..8:3
+    Object StackPanel [https://artic.rs/ui] 8:4..8:14
+      Spacing 8:15..8:22
+        Value "8" 8:24..8:25
+      Margin 8:27..8:33
+        Value "16" 8:35..8:37
+      content 8:39..12:3
+        Value "" raw "\n    " 8:39..9:5
+        Object TextBox [https://artic.rs/ui] 9:6..9:13
+          directive Name 9:14..9:20
+            Value "email" 9:22..9:27
+          Text 9:29..9:33
+            MarkupExtension Binding [https://artic.rs/ui] 9:36..9:43
+              positional
+                Value "Email" 9:44..9:49
+              Mode 9:51..9:55
+                Value "TwoWay" 9:56..9:62
+          Watermark 9:65..9:74
+            Value "Email" 9:76..9:81
+        Value "" raw "\n    " 9:84..10:5
+        Object Button [https://artic.rs/ui] 10:6..10:12
+          Classes 10:13..10:20
+            Value "primary" 10:22..10:29
+          Content 10:31..10:38
+            Value "Sign in" 10:40..10:47
+          Command 11:13..11:20
+            MarkupExtension Binding [https://artic.rs/ui] 11:23..11:30
+              positional
+                Value "SignIn" 11:31..11:37
+          Click 11:40..11:45
+            Value "on_click" 11:47..11:55
+        Value "" raw "\n  " 11:58..12:3
+    Value "" raw "\n" 12:16..13:1

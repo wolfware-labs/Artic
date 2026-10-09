@@ -1,0 +1,8 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/syntax/property_element_root.xaml
+---
+invalid/syntax/property_element_root.xaml:1:2: error: the root element can't be a property element
+1 | <Button.Content xmlns="https://artic.rs/ui"/>
+  |  ^^^^^^^^^^^^^^

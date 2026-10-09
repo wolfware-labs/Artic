@@ -1,0 +1,3 @@
+<Grid xmlns="https://artic.rs/ui" xmlns:d="using:app::docking">
+  <Button Grid.Row="1" Grid.Column="2" d:Dock.Side="Left"/>
+</Grid>

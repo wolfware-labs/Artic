@@ -1,0 +1,8 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/markup-extension/missing_comma.xaml
+---
+invalid/markup-extension/missing_comma.xaml:1:61: error: expected `,` or `}`, found `M`
+1 | <TextBox xmlns="https://artic.rs/ui" Text="{Binding 'Email' Mode}"/>
+  |                                                             ^

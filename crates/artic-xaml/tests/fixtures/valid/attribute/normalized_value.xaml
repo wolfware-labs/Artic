@@ -1,0 +1,3 @@
+<!-- XML attribute normalization: line breaks and tabs become spaces; a reference is kept. -->
+<TextBlock xmlns="https://artic.rs/ui" Text="two
+lines	tab &amp; &#10;break"/>

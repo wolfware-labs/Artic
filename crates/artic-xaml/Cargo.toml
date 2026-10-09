@@ -12,7 +12,7 @@ repository.workspace = true
 xmlparser.workspace = true
 
 [dev-dependencies]
-insta.workspace = true
+insta = { workspace = true, features = ["glob"] }
 pretty_assertions.workspace = true
 
 [lints]

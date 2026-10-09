@@ -1,0 +1,4 @@
+<!-- Any other URI names a vocabulary that registered types declare. -->
+<Panel xmlns="https://artic.rs/ui" xmlns:charts="https://acme.dev/charts">
+  <charts:PieChart/>
+</Panel>

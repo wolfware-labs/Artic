@@ -1,0 +1,2 @@
+<!-- Content is one member, after the property elements, whatever the order in the file. -->
+<Panel xmlns="https://artic.rs/ui">first<Panel.Tag>tag</Panel.Tag><Image/>last</Panel>

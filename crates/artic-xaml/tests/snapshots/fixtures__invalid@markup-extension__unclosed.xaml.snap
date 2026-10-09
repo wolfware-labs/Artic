@@ -1,0 +1,11 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/markup-extension/unclosed.xaml
+---
+invalid/markup-extension/unclosed.xaml:1:58: error: markup extension `{Binding` is never closed
+1 | <TextBox xmlns="https://artic.rs/ui" Text="{Binding Email"/>
+  |                                                          ^
+  ::: invalid/markup-extension/unclosed.xaml:1:44
+1 | <TextBox xmlns="https://artic.rs/ui" Text="{Binding Email"/>
+  |                                            -------- opened here

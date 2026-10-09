@@ -1,0 +1,104 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/markup-extension/spec_examples.xaml
+---
+Object Panel [https://artic.rs/ui] 2:2..2:7
+  xmlns "https://artic.rs/ui" 2:8..2:35
+  xmlns:x "https://artic.rs/markup" 2:36..2:69
+  content 2:70..10:1
+    Value "" raw "\n  " 2:70..3:3
+    Object Button [https://artic.rs/ui] 3:4..3:10
+      A 3:11..3:12
+        MarkupExtension Binding [https://artic.rs/ui] 3:15..3:22
+      B 3:25..3:26
+        MarkupExtension Binding [https://artic.rs/ui] 3:29..3:36
+          positional
+            Value "Id" 3:37..3:39
+      C 3:42..3:43
+        MarkupExtension Binding [https://artic.rs/ui] 3:46..3:53
+          positional
+            Value "Save" 3:54..3:58
+      D 3:61..3:62
+        MarkupExtension Binding [https://artic.rs/ui] 3:65..3:72
+          positional
+            Value "SignIn" 3:73..3:79
+    Value "" raw "\n  " 3:83..4:3
+    Object Button [https://artic.rs/ui] 4:4..4:10
+      A 4:11..4:12
+        MarkupExtension Binding [https://artic.rs/ui] 4:15..4:22
+          positional
+            Value "Email" 4:23..4:28
+          Mode 4:30..4:34
+            Value "TwoWay" 4:35..4:41
+      B 4:44..4:45
+        MarkupExtension Binding [https://artic.rs/ui] 4:48..4:55
+          Path 4:56..4:60
+            Value "Name" 4:61..4:65
+          Mode 4:67..4:71
+            Value "TwoWay" 4:72..4:78
+    Value "" raw "\n  " 4:82..5:3
+    Object Button [https://artic.rs/ui] 5:4..5:10
+      A 5:11..5:12
+        MarkupExtension Binding [https://artic.rs/ui] 5:15..5:22
+          RelativeSource 5:23..5:37
+            MarkupExtension RelativeSource [https://artic.rs/ui] 5:39..5:53
+              positional
+                Value "TemplatedParent" 5:54..5:69
+      B 5:73..5:74
+        MarkupExtension RelativeSource [https://artic.rs/ui] 5:77..5:91
+          positional
+            Value "TemplatedParent" 5:92..5:107
+    Value "" raw "\n  " 5:111..6:3
+    Object Button [https://artic.rs/ui] 6:4..6:10
+      A 6:11..6:12
+        MarkupExtension TemplateBinding [https://artic.rs/ui] 6:15..6:30
+          positional
+            Value "Prop" 6:31..6:35
+      B 6:38..6:39
+        MarkupExtension Localize [https://artic.rs/ui] 6:42..6:50
+          positional
+            Value "Key" 6:51..6:54
+    Value "" raw "\n  " 6:58..7:3
+    Object Button [https://artic.rs/ui] 7:4..7:10
+      A 7:11..7:12
+        MarkupExtension StaticResource [https://artic.rs/ui] 7:15..7:29
+      B 7:32..7:33
+        MarkupExtension StaticResource [https://artic.rs/ui] 7:36..7:50
+          positional
+            Value "Accent" 7:51..7:57
+      C 7:60..7:61
+        MarkupExtension StaticResource [https://artic.rs/ui] 7:64..7:78
+          positional
+            Value "Gap" 7:79..7:82
+      D 7:85..7:86
+        MarkupExtension StaticResource [https://artic.rs/ui] 7:89..7:103
+          positional
+            Value "Key" 7:104..7:107
+    Value "" raw "\n  " 7:111..8:3
+    Object Button [https://artic.rs/ui] 8:4..8:10
+      A 8:11..8:12
+        MarkupExtension DynamicResource [https://artic.rs/ui] 8:15..8:30
+      B 8:33..8:34
+        MarkupExtension DynamicResource [https://artic.rs/ui] 8:37..8:52
+          positional
+            Value "AccentHover" 8:53..8:64
+      C 8:67..8:68
+        MarkupExtension DynamicResource [https://artic.rs/ui] 8:71..8:86
+          positional
+            Value "Key" 8:87..8:90
+    Value "" raw "\n  " 8:94..9:3
+    Object Button [https://artic.rs/ui] 9:4..9:10
+      A 9:11..9:12
+        MarkupExtension x:Null [markup] 9:15..9:21
+      B 9:24..9:25
+        MarkupExtension x:Static [markup] 9:28..9:36
+      C 9:39..9:40
+        MarkupExtension x:Static [markup] 9:43..9:51
+          positional
+            Value "local::CONSTANTS::MAX" 9:52..9:73
+      D 9:76..9:77
+        MarkupExtension x:Type [markup] 9:80..9:86
+          positional
+            Value "Button" 9:87..9:93
+    Value "" raw "\n" 9:97..10:1

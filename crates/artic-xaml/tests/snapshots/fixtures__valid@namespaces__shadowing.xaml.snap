@@ -1,0 +1,18 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/namespaces/shadowing.xaml
+---
+Object v:Page [using:app::views] 1:2..1:8
+  xmlns:v "using:app::views" 1:9..1:35
+  content 1:36..6:1
+    Value "" raw "\n  " 1:36..2:3
+    Object v:Panel [using:app::widgets] 2:4..2:11
+      xmlns:v "using:app::widgets" 2:12..2:40
+      content 2:41..4:3
+        Value "" raw "\n    " 2:41..3:5
+        Object v:Card [using:app::widgets] 3:6..3:12
+        Value "" raw "\n  " 3:14..4:3
+    Value "" raw "\n  " 4:13..5:3
+    Object v:Header [using:app::views] 5:4..5:12
+    Value "" raw "\n" 5:14..6:1

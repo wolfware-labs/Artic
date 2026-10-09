@@ -1,0 +1,15 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/whitespace/preserve_and_default.xaml
+---
+Object Panel [https://artic.rs/ui] 1:2..1:7
+  xmlns "https://artic.rs/ui" 1:8..1:35
+  content 1:57..1:150
+    Value "  kept  " 1:57..1:65
+    Object Panel [https://artic.rs/ui] 1:66..1:71
+      content 1:92..1:106
+        Value "normalized" raw "  normalized  " 1:92..1:106
+    Object TextBlock [https://artic.rs/ui] 1:115..1:124
+      content 1:125..1:138
+        Value "  inherited  " 1:125..1:138

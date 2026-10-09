@@ -1,0 +1,8 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/markup-extension/text_after_extension.xaml
+---
+invalid/markup-extension/text_after_extension.xaml:1:87: error: unexpected text after the markup extension
+1 | <TextBox xmlns="https://artic.rs/ui" xmlns:x="https://artic.rs/markup" Text="{x:Null} or not"/>
+  |                                                                                       ^^^^^^

@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/unsupported/x_subclass.xaml
+---
+invalid/unsupported/x_subclass.xaml:1:96: error: `x:Subclass` isn't supported: the `x:Class` struct is the view's type
+1 | <UserControl xmlns="https://artic.rs/ui" xmlns:x="https://artic.rs/markup" x:Class="app::Main" x:Subclass="app::Base"/>
+  |                                                                                                ^^^^^^^^^^
+help: remove `x:Subclass`
