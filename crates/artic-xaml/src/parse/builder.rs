@@ -266,7 +266,7 @@ impl<'a> Builder<'a> {
   /// prefixes they bind, the declarations as written, and the other attributes.
   fn declarations(&mut self, attributes: Vec<Attribute<'a>>) -> (Vec<Binding>, Vec<NamespaceDecl>, Vec<Attribute<'a>>) {
     let mut scope = Vec::new();
-    let mut namespaces = Vec::new();
+    let mut namespaces: Vec<NamespaceDecl> = Vec::new();
     let mut others = Vec::new();
     for attribute in attributes {
       let prefix = match (attribute.prefix.as_str(), attribute.local.as_str()) {
@@ -277,14 +277,32 @@ impl<'a> Builder<'a> {
           continue;
         }
       };
+      let span = self.span(name_start(&attribute), attribute.value.end() + 1);
+      if let Some(reserved @ ("xml" | "xmlns")) = prefix.as_deref() {
+        self
+          .diagnostics
+          .push(Diagnostic::error(span, format!("the `{reserved}` prefix is reserved")));
+        continue;
+      }
+      if let Some(first) = namespaces.iter().find(|declared| declared.prefix == prefix) {
+        let message = match &prefix {
+          Some(prefix) => format!("prefix `{prefix}` is declared twice on this element"),
+          None => "the default namespace is declared twice on this element".to_owned(),
+        };
+        self
+          .diagnostics
+          .push(Diagnostic::error(span, message).with_secondary(first.span, "first declared here"));
+        continue;
+      }
       let Some(uri) = self.decode_value(attribute.value) else {
         continue;
       };
-      scope.push((prefix.clone(), namespace::classify(&uri.text)));
+      let namespace = namespace::classify(prefix.as_deref(), &uri, self.file, span, &mut self.diagnostics);
+      scope.push((prefix.clone(), namespace));
       namespaces.push(NamespaceDecl {
         prefix,
         uri: uri.text,
-        span: self.span(name_start(&attribute), attribute.value.end() + 1),
+        span,
       });
     }
     (scope, namespaces, others)

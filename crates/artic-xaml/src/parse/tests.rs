@@ -475,3 +475,98 @@ fn undeclared_prefixes_are_reported_once() {
     ]
   );
 }
+
+/// Parses `text`, expecting errors, and returns each error's message, the text it points at, and its
+/// help.
+fn errors_with_help(text: &str) -> Vec<(String, &str, Option<String>)> {
+  let mut sources = SourceMap::new();
+  let file = sources.add("test.xaml", text);
+  let diagnostics = parse(&sources, file).expect_err("the document has errors");
+  diagnostics
+    .iter()
+    .map(|diagnostic| {
+      let at = &text[diagnostic.span.start..diagnostic.span.end];
+      (diagnostic.message.clone(), at, diagnostic.help.clone())
+    })
+    .collect()
+}
+
+// The Microsoft `x:` URI is rejected on its declaration, with the artic URI under the same prefix;
+// its uses are still directives, so they add no errors.
+#[test]
+fn microsoft_x_uri_rejected_with_hint() {
+  let found =
+    errors_with_help(r#"<Button xmlns="urn:ui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Name="ok"/>"#);
+
+  assert_eq!(
+    found,
+    [(
+      "the Microsoft XAML namespace isn't supported".to_owned(),
+      r#"xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml""#,
+      Some(r#"use `xmlns:x="https://artic.rs/markup"`"#.to_owned()),
+    )]
+  );
+}
+
+// The WPF presentation URI is rejected with the artic UI URI.
+#[test]
+fn wpf_presentation_uri_rejected_with_hint() {
+  let found = errors_with_help(r#"<Button xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"/>"#);
+
+  assert_eq!(found[0].0, "the WPF presentation namespace isn't supported");
+  assert_eq!(found[0].2.as_deref(), Some(r#"use `xmlns="https://artic.rs/ui"`"#));
+  assert_eq!(found.len(), 1);
+}
+
+// `clr-namespace:` is rejected with a `using:` path made from the .NET namespace.
+#[test]
+fn clr_namespace_rejected_with_hint() {
+  let found = errors_with_help(r#"<v:Card xmlns:v="clr-namespace:MyApp.ViewModels;assembly=MyApp"/>"#);
+
+  assert_eq!(
+    found,
+    [(
+      "`clr-namespace:` isn't supported".to_owned(),
+      r#"xmlns:v="clr-namespace:MyApp.ViewModels;assembly=MyApp""#,
+      Some(r#"artic maps prefixes to Rust modules; for example `xmlns:v="using:my_app::view_models"`"#.to_owned()),
+    )]
+  );
+}
+
+// A `using:` path must be a module path from a crate name; the error points at the bad segment, as
+// written (`Vec&lt;T&gt;` is `Vec<T>` once decoded).
+#[test]
+fn invalid_using_paths_are_errors() {
+  let cases = [
+    ("using:", "`using:` needs a Rust module path", ""),
+    ("using:crate::views", "a `using:` path starts with a crate name", "crate"),
+    ("using:::app", "a `using:` path starts with a crate name", ""),
+    ("using:app::::views", "empty segment in a `using:` path", ""),
+    ("using:app::", "empty segment in a `using:` path", ""),
+    ("using:my-app::views", "`my-app` isn't a Rust identifier", "my-app"),
+    ("using:app::Vec&lt;T&gt;", "`Vec<T>` isn't a Rust identifier", "Vec&lt;T&gt;"),
+    ("using:app::type", "`type` is a Rust keyword", "type"),
+  ];
+  for (uri, message, at) in cases {
+    let source = format!(r#"<v:Card xmlns:v="{uri}"/>"#);
+    assert_eq!(errors(&source), [(message.to_owned(), at)], "for {uri:?}");
+  }
+}
+
+// An empty URI, a reserved prefix and a prefix declared twice on one element are errors.
+#[test]
+fn bad_declarations_are_errors() {
+  let found = errors(r#"<Button xmlns="urn:ui" xmlns:a="" xmlns:xml="urn:x" xmlns:b="urn:b" xmlns:b="urn:c"/>"#);
+
+  assert_eq!(
+    found,
+    [
+      ("a namespace can't be empty".to_owned(), r#"xmlns:a="""#),
+      ("the `xml` prefix is reserved".to_owned(), r#"xmlns:xml="urn:x""#),
+      (
+        "prefix `b` is declared twice on this element".to_owned(),
+        r#"xmlns:b="urn:c""#
+      ),
+    ]
+  );
+}
