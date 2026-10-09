@@ -1,4 +1,4 @@
-use crate::reactive::runtime::{ObservableId, ObserverId, Runtime};
+use crate::reactive::runtime::{Node, ObserverId, Runtime};
 use crate::reactive::{
   Change, LiveCounts, Memo, Scope, Signal, assert_no_reactive_leaks, batch, effect, flush_effects, live_counts,
 };
@@ -180,10 +180,7 @@ fn run_tracked_returns_each_signal_read_once() {
     first.get();
   });
 
-  assert_eq!(
-    observables,
-    [ObservableId::Signal(first.id()), ObservableId::Signal(second.id())]
-  );
+  assert_eq!(observables, [Node::Signal(first.id()), Node::Signal(second.id())]);
 }
 
 // Unsubscribing an observer from what it read stops writes from marking it dirty.
@@ -468,7 +465,7 @@ fn run_tracked_records_a_memo_read_as_the_memo() {
   });
 
   assert_eq!(observables.len(), 1);
-  assert!(matches!(observables[0], ObservableId::Memo(_)));
+  assert!(matches!(observables[0], Node::Memo(_)));
 }
 
 // Effect

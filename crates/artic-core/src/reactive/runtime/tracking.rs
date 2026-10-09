@@ -1,10 +1,10 @@
-use crate::reactive::runtime::{ObservableId, ObserverId, RUNTIME, Runtime, SignalId};
+use crate::reactive::runtime::{Node, ObserverId, RUNTIME, Runtime, SignalId};
 use std::cell::{Cell, RefCell};
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
 struct Frame {
   observer: ObserverId,
-  observables: Vec<ObservableId>,
+  observables: Vec<Node>,
 }
 
 pub struct Tracker {
@@ -27,7 +27,7 @@ impl Tracker {
     });
   }
 
-  fn pop(&self) -> Vec<ObservableId> {
+  fn pop(&self) -> Vec<Node> {
     self
       .frames
       .borrow_mut()
@@ -48,7 +48,7 @@ impl Tracker {
     self.has_writes.replace(false)
   }
 
-  fn record(&self, observable: ObservableId) {
+  fn record(&self, observable: Node) {
     if let Some(frame) = self.frames.borrow_mut().last_mut()
       && !frame.observables.contains(&observable)
     {
@@ -58,7 +58,7 @@ impl Tracker {
 }
 
 impl Runtime {
-  pub fn run_tracked(observer_id: ObserverId, action: impl FnOnce()) -> Vec<ObservableId> {
+  pub fn run_tracked(observer_id: ObserverId, action: impl FnOnce()) -> Vec<Node> {
     RUNTIME.with(|runtime| {
       runtime.observers.mark_as_clean(observer_id);
       runtime.tracker.push(observer_id);
@@ -74,7 +74,7 @@ impl Runtime {
     observables
   }
 
-  pub fn record_read(observable: ObservableId) {
+  pub fn record_read(observable: Node) {
     RUNTIME.with(|runtime| runtime.tracker.record(observable))
   }
 

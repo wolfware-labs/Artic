@@ -1,4 +1,4 @@
-use crate::reactive::runtime::{EffectId, MemoId, RUNTIME, ReactiveNodeId, Runtime, ScopeId, SignalId};
+use crate::reactive::runtime::{EffectId, MemoId, Node, RUNTIME, Runtime, ScopeId, SignalId};
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
 impl Runtime {
@@ -45,17 +45,17 @@ impl Runtime {
       Self::dispose_scope(child);
     }
     for node in &nodes {
-      if let ReactiveNodeId::Effect(effect_id) = node {
+      if let Node::Effect(effect_id) = node {
         Self::dispose_effect(*effect_id);
       }
     }
     for node in &nodes {
-      if let ReactiveNodeId::Memo(memo_id) = node {
+      if let Node::Memo(memo_id) = node {
         Self::dispose_memo(*memo_id);
       }
     }
     for node in &nodes {
-      if let ReactiveNodeId::Signal(signal_id) = node {
+      if let Node::Signal(signal_id) = node {
         Self::dispose_signal(*signal_id);
       }
     }
@@ -64,7 +64,7 @@ impl Runtime {
   fn dispose_effect(effect_id: EffectId) {
     let (observer_id, observables) =
       RUNTIME.with(|runtime| (runtime.effects.observer(effect_id), runtime.effects.observables(effect_id)));
-    Self::dispose_scope_of(ReactiveNodeId::Effect(effect_id));
+    Self::dispose_scope_of(Node::Effect(effect_id));
     for observable in observables.iter() {
       observable.unsubscribe(observer_id);
     }
@@ -85,7 +85,7 @@ impl Runtime {
         runtime.memos.observables(memo_id),
       )
     });
-    Self::dispose_scope_of(ReactiveNodeId::Memo(memo_id));
+    Self::dispose_scope_of(Node::Memo(memo_id));
     for observable in observables.iter() {
       observable.unsubscribe(observer_id);
     }
@@ -96,7 +96,7 @@ impl Runtime {
     });
   }
 
-  fn dispose_scope_of(node: ReactiveNodeId) {
+  fn dispose_scope_of(node: Node) {
     if let Some(scope_id) = RUNTIME.with(|runtime| runtime.scopes.take_scope_of(node)) {
       Self::dispose_scope(scope_id);
     }

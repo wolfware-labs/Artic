@@ -1,4 +1,4 @@
-use crate::reactive::runtime::{EffectId, MemoId, ObservableId, ObserverId, RUNTIME, ReactiveNodeId, Runtime};
+use crate::reactive::runtime::{EffectId, MemoId, Node, ObserverId, RUNTIME, Runtime};
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::thread;
 
@@ -23,10 +23,7 @@ impl Runtime {
     let (scope_id, compute) = RUNTIME.with(|runtime| {
       runtime.memos.set_observables(memo_id, Vec::new());
       runtime.memos.set_computing(memo_id, true);
-      (
-        runtime.scopes.scope_of(ReactiveNodeId::Memo(memo_id)),
-        runtime.memos.compute(memo_id),
-      )
+      (runtime.scopes.scope_of(Node::Memo(memo_id)), runtime.memos.compute(memo_id))
     });
     Self::clear_scope(scope_id);
     let compute_result = Self::rerun(observer_id, &observables, || Self::run_in_scope(scope_id, &*compute));
@@ -64,7 +61,7 @@ impl Runtime {
       runtime.effects.set_observables(effect_id, Vec::new());
       runtime.effects.set_running(effect_id, true);
       (
-        runtime.scopes.scope_of(ReactiveNodeId::Effect(effect_id)),
+        runtime.scopes.scope_of(Node::Effect(effect_id)),
         runtime.effects.run(effect_id),
       )
     });
@@ -88,7 +85,7 @@ impl Runtime {
     })
   }
 
-  fn refresh_observables(observer_id: ObserverId, observables: &[ObservableId]) -> bool {
+  fn refresh_observables(observer_id: ObserverId, observables: &[Node]) -> bool {
     for observable in observables {
       if Self::is_observer_dirty(observer_id) {
         break;
@@ -98,7 +95,7 @@ impl Runtime {
     Self::is_observer_dirty(observer_id)
   }
 
-  fn discard_run(observer_id: ObserverId, run_result: thread::Result<Vec<ObservableId>>) {
+  fn discard_run(observer_id: ObserverId, run_result: thread::Result<Vec<Node>>) {
     match run_result {
       Ok(observables) => {
         for observable in observables {
@@ -109,7 +106,7 @@ impl Runtime {
     }
   }
 
-  fn rerun(observer_id: ObserverId, observables: &[ObservableId], action: impl FnOnce()) -> thread::Result<Vec<ObservableId>> {
+  fn rerun(observer_id: ObserverId, observables: &[Node], action: impl FnOnce()) -> thread::Result<Vec<Node>> {
     for observable in observables {
       observable.unsubscribe(observer_id);
     }

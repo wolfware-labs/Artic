@@ -1,6 +1,6 @@
 mod effect_store;
 mod memo_store;
-mod observable;
+mod node;
 mod observer_store;
 mod ownership;
 mod refresh;
@@ -14,11 +14,10 @@ pub use effect_store::EffectId;
 use effect_store::EffectStore;
 pub use memo_store::MemoId;
 use memo_store::MemoStore;
-pub use observable::ObservableId;
+pub use node::Node;
 pub use observer_store::ObserverId;
 use observer_store::ObserverStore;
 use scheduling::Scheduler;
-use scope_store::ReactiveNodeId;
 pub use scope_store::ScopeId;
 use scope_store::ScopeStore;
 pub use signal_store::SignalId;
@@ -71,7 +70,7 @@ impl Runtime {
   {
     RUNTIME.with(|runtime| {
       let signal_id = runtime.signals.alloc_value(value);
-      runtime.scopes.add_to_active(ReactiveNodeId::Signal(signal_id));
+      runtime.scopes.add_to_active(Node::Signal(signal_id));
       signal_id
     })
   }
@@ -178,7 +177,7 @@ impl Runtime {
       let observer_id = runtime.observers.create_observer();
       runtime.observers.mark_as_dirty(&[observer_id]);
       let memo_id = runtime.memos.alloc(observer_id, value_id, compute);
-      let node = ReactiveNodeId::Memo(memo_id);
+      let node = Node::Memo(memo_id);
       runtime.scopes.add_to_active(node);
       runtime.scopes.alloc_for(node);
       memo_id
@@ -198,7 +197,7 @@ impl Runtime {
       let observer_id = runtime.observers.create_observer();
       runtime.observers.mark_as_dirty(&[observer_id]);
       let effect_id = runtime.effects.alloc(observer_id, run);
-      let node = ReactiveNodeId::Effect(effect_id);
+      let node = Node::Effect(effect_id);
       runtime.scopes.add_to_active(node);
       runtime.scopes.alloc_for(node);
       effect_id

@@ -1,5 +1,5 @@
 use crate::arena::{Arena, SlotId};
-use crate::reactive::runtime::{EffectId, MemoId, SignalId};
+use crate::reactive::runtime::Node;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, DefaultHasher};
@@ -8,23 +8,16 @@ use std::mem::take;
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct ScopeId(SlotId);
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-pub enum ReactiveNodeId {
-  Signal(SignalId),
-  Memo(MemoId),
-  Effect(EffectId),
-}
-
 struct ScopeSlot {
   parent: Option<ScopeId>,
   children: Vec<ScopeId>,
-  nodes: Vec<ReactiveNodeId>,
+  nodes: Vec<Node>,
 }
 
 pub struct ScopeStore {
   slots: RefCell<Arena<ScopeSlot>>,
   active: RefCell<Vec<ScopeId>>,
-  node_scopes: RefCell<HashMap<ReactiveNodeId, ScopeId, BuildHasherDefault<DefaultHasher>>>,
+  node_scopes: RefCell<HashMap<Node, ScopeId, BuildHasherDefault<DefaultHasher>>>,
 }
 
 impl ScopeStore {
@@ -48,13 +41,13 @@ impl ScopeStore {
     scope_id
   }
 
-  pub fn alloc_for(&self, node: ReactiveNodeId) -> ScopeId {
+  pub fn alloc_for(&self, node: Node) -> ScopeId {
     let scope_id = self.alloc(self.active());
     self.node_scopes.borrow_mut().insert(node, scope_id);
     scope_id
   }
 
-  pub fn scope_of(&self, node: ReactiveNodeId) -> ScopeId {
+  pub fn scope_of(&self, node: Node) -> ScopeId {
     *self
       .node_scopes
       .borrow()
@@ -62,7 +55,7 @@ impl ScopeStore {
       .expect("scope not found for the specified node")
   }
 
-  pub fn take_scope_of(&self, node: ReactiveNodeId) -> Option<ScopeId> {
+  pub fn take_scope_of(&self, node: Node) -> Option<ScopeId> {
     self.node_scopes.borrow_mut().remove(&node)
   }
 
@@ -92,13 +85,13 @@ impl ScopeStore {
     self.with_slot(scope_id, |slot| take(&mut slot.children))
   }
 
-  pub fn add_to_active(&self, node: ReactiveNodeId) {
+  pub fn add_to_active(&self, node: Node) {
     if let Some(scope_id) = self.active() {
       self.with_slot(scope_id, |slot| slot.nodes.push(node));
     }
   }
 
-  pub fn take_nodes(&self, scope_id: ScopeId) -> Vec<ReactiveNodeId> {
+  pub fn take_nodes(&self, scope_id: ScopeId) -> Vec<Node> {
     self.with_slot(scope_id, |slot| take(&mut slot.nodes))
   }
 
@@ -131,7 +124,7 @@ mod tests {
   #[test]
   fn take_scope_of_removes_the_entry() {
     let scopes = ScopeStore::new();
-    let node = ReactiveNodeId::Signal(SignalStore::new().alloc_value(0));
+    let node = Node::Signal(SignalStore::new().alloc_value(0));
     let scope = scopes.alloc_for(node);
 
     assert_eq!(scopes.take_scope_of(node), Some(scope));

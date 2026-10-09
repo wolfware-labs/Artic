@@ -1,5 +1,5 @@
 use crate::arena::{Arena, SlotId};
-use crate::reactive::runtime::{ObservableId, ObserverId, SignalId};
+use crate::reactive::runtime::{Node, ObserverId, SignalId};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -10,7 +10,7 @@ struct MemoSlot {
   observer: ObserverId,
   value: SignalId,
   compute: Rc<dyn Fn()>,
-  observables: Rc<[ObservableId]>,
+  observables: Rc<[Node]>,
   is_computing: bool,
 }
 
@@ -63,11 +63,11 @@ impl MemoStore {
     self.with_slot(memo_id, |slot| Rc::clone(&slot.compute))
   }
 
-  pub fn observables(&self, memo_id: MemoId) -> Rc<[ObservableId]> {
+  pub fn observables(&self, memo_id: MemoId) -> Rc<[Node]> {
     self.with_slot(memo_id, |slot| Rc::clone(&slot.observables))
   }
 
-  pub fn set_observables(&self, memo_id: MemoId, observables: Vec<ObservableId>) {
+  pub fn set_observables(&self, memo_id: MemoId, observables: Vec<Node>) {
     self.with_slot(memo_id, |slot| slot.observables = Rc::from(observables));
   }
 
