@@ -151,7 +151,9 @@ The loader path needs a way to turn markup into typed property values. The origi
 
 - `https://artic.rs/ui` — default vocabulary (`xmlns="…"`).
 - `https://artic.rs/markup`: the `x:` language namespace (D19). The directives follow MS-XAML, but the URI is artic's own. The Microsoft URI (`http://schemas.microsoft.com/winfx/2006/xaml`) is rejected with a hint showing the replacement. Editor support comes from the generated XSD and the language server.
-- `using:my_crate::views` — maps a Rust module path to a prefix; resolved through the registry's recorded Rust paths.
+- `using:my_crate::views` — maps a Rust module path to a prefix; resolved through the registry's recorded Rust paths. The path starts with the crate name (never `crate::`) and is checked as Rust path syntax by the parser.
+- Any other URI names a vocabulary that registered types declare with `#[xaml(namespace = "…")]`, such as a control library's own URI. The parser accepts it; a back end reports a URI no registered type declares.
+- Prefixes follow XML scoping: a declaration applies to its whole element (even names written before it) and its descendants, and an inner declaration shadows an outer one. The `xml` prefix is always bound. The WPF presentation URI and `clr-namespace:` are rejected with the artic form as a hint.
 
 ### Open question
 
@@ -203,13 +205,14 @@ pub enum XamlNode {
 }
 pub struct Member { key: MemberKey, value: Vec<XamlNode>, span: Span }
 pub enum MemberKey { Property(String), Attached { owner: TypeRef, name: String }, Directive(Directive), Content, Items }
-pub struct TypeRef { prefix: Option<String>, name: String, span: Span }
+pub struct TypeRef { prefix: Option<String>, name: String, namespace: XamlNamespace, span: Span }
+pub enum XamlNamespace { Markup, Uri(String), Using(String) }
 pub struct NamespaceDecl { prefix: Option<String>, uri: String, span: Span }
 ```
 
 An object's members are its attributes in order, then its property elements in order, then everything written directly inside it (text, CDATA and child objects, in document order) as one `Content` member. An attribute value that starts with `{` is a `MarkupExtension`, unless it starts with the `{}` escape; its named arguments are `Member`s, since each sets a property of the extension. The parser never emits `Items`: whether content fills a collection depends on the registry, so the back ends decide. Text keeps its whitespace as written, with entities decoded; the [whitespace rules](#whitespace) are applied by the back ends, which know each type's whitespace mode. The parser reads XML with `xmlparser`, a tokenizer that reports byte spans; it rejects DTDs.
 
-Type references stay unresolved (`TypeRef { prefix, name }`) in the infoset; resolution against the registry is the first step of each back end, so parser tests need no registry.
+The parser resolves each type reference's prefix to its `XamlNamespace` (element types, attached property owners and markup extension names alike) and keeps the prefix as written for tooling. Directives are attributes whose prefix resolves to `Markup`. Resolving `TypeRef { namespace, name }` to a Rust type against the registry is the first step of each back end, so parser tests need no registry.
 
 ### Whitespace
 

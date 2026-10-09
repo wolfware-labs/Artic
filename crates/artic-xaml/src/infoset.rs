@@ -3,8 +3,8 @@
 //! An infoset keeps what the markup means and forgets how it was written: `Content="Hi"`,
 //! `<Button.Content>Hi</Button.Content>` and `<Button>Hi</Button>` all become an object with one
 //! member holding the text. Every piece keeps the [`Span`] it came from, so later stages can point
-//! at it. Type references stay unresolved: turning `p:Name` into a Rust type needs the registry,
-//! which this crate doesn't depend on.
+//! at it. Type references carry the namespace their prefix stands for, but turning them into Rust
+//! types needs the registry, which this crate doesn't depend on.
 
 use crate::diagnostics::{SourceId, Span};
 
