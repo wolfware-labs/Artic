@@ -43,7 +43,10 @@ fn spec_markup_extensions() {
   ];
   for example in examples {
     let mut sources = SourceMap::new();
-    let file = sources.add("example.xaml", format!(r#"<Button Tag="{example}"/>"#));
+    let file = sources.add(
+      "example.xaml",
+      format!(r#"<Button xmlns="https://artic.rs/ui" xmlns:x="https://artic.rs/markup" Tag="{example}"/>"#),
+    );
 
     let document = parse(&sources, file).unwrap_or_else(|diagnostics| panic!("{}", diagnostics.render(&sources)));
 

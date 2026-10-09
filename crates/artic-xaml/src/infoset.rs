@@ -3,8 +3,8 @@
 //! An infoset keeps what the markup means and forgets how it was written: `Content="Hi"`,
 //! `<Button.Content>Hi</Button.Content>` and `<Button>Hi</Button>` all become an object with one
 //! member holding the text. Every piece keeps the [`Span`] it came from, so later stages can point
-//! at it. Type references stay unresolved: turning `p:Name` into a Rust type needs the registry,
-//! which this crate doesn't depend on.
+//! at it. Type references carry the namespace their prefix stands for, but turning them into Rust
+//! types needs the registry, which this crate doesn't depend on.
 
 use crate::diagnostics::{SourceId, Span};
 
@@ -102,8 +102,8 @@ pub enum MemberKey {
 
 /// An `x:` directive, or `xml:space`.
 ///
-/// Directives are recognized by their prefix here; checking that the prefix really maps to the
-/// markup namespace happens with namespace resolution.
+/// An attribute is a directive when its prefix stands for [`XamlNamespace::Markup`], whatever the
+/// prefix is; `xml:space` is one because the `xml` prefix is always bound.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Directive {
   /// `x:Name`
@@ -124,15 +124,29 @@ pub enum Directive {
   Other(String),
 }
 
-/// A type named in markup, not yet resolved to a Rust type.
+/// A type named in markup, with its namespace resolved but not yet resolved to a Rust type.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeRef {
-  /// The namespace prefix, such as `local` in `local:Gauge`, or `None` for the default namespace.
+  /// The namespace prefix as written, such as `local` in `local:Gauge`, or `None` for the default
+  /// namespace.
   pub prefix: Option<String>,
   /// The type's name.
   pub name: String,
+  /// The namespace the prefix stands for where the name is written.
+  pub namespace: XamlNamespace,
   /// Where the name was written.
   pub span: Span,
+}
+
+/// What a namespace prefix stands for: the vocabulary a type name comes from.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum XamlNamespace {
+  /// `https://artic.rs/markup`, the XAML language itself: `x:Name`, `{x:Null}`, `<x:String>`.
+  Markup,
+  /// A vocabulary URI declared by XAML types, such as `https://artic.rs/ui`.
+  Uri(String),
+  /// A Rust module path written as `using:my_app::views`, without the `using:`.
+  Using(String),
 }
 
 /// A namespace prefix declared with `xmlns` or `xmlns:prefix`.

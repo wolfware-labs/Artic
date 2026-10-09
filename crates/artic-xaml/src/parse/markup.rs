@@ -2,7 +2,7 @@
 //! `{Binding Email, Mode=TwoWay}`.
 
 use super::text::{Decoded, OffsetMap};
-use super::{Fatal, duplicate_of};
+use super::{Fatal, duplicate_of, unresolved};
 use crate::diagnostics::{Diagnostic, Diagnostics, SourceId, Span};
 use crate::infoset::{Member, MemberKey, TypeRef, XamlNode};
 
@@ -80,6 +80,7 @@ impl<'a> Parser<'a> {
     let ty = TypeRef {
       prefix,
       name: local.to_owned(),
+      namespace: unresolved(),
       span: self.span(name_start, self.position),
     };
     let mut positional = Vec::new();

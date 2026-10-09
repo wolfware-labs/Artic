@@ -10,6 +10,9 @@ XamlDocument {
         ty: TypeRef {
             prefix: None,
             name: "UserControl",
+            namespace: Uri(
+                "https://artic.rs/ui",
+            ),
             span: Span(0, 1..12),
         },
         members: [
@@ -50,6 +53,9 @@ XamlDocument {
                         ty: TypeRef {
                             prefix: None,
                             name: "SolidColorBrush",
+                            namespace: Uri(
+                                "https://artic.rs/ui",
+                            ),
                             span: Span(0, 208..223),
                         },
                         members: [
@@ -103,6 +109,9 @@ XamlDocument {
                         ty: TypeRef {
                             prefix: None,
                             name: "StackPanel",
+                            namespace: Uri(
+                                "https://artic.rs/ui",
+                            ),
                             span: Span(0, 287..297),
                         },
                         members: [
@@ -141,6 +150,9 @@ XamlDocument {
                                         ty: TypeRef {
                                             prefix: None,
                                             name: "TextBox",
+                                            namespace: Uri(
+                                                "https://artic.rs/ui",
+                                            ),
                                             span: Span(0, 328..335),
                                         },
                                         members: [
@@ -165,6 +177,9 @@ XamlDocument {
                                                         ty: TypeRef {
                                                             prefix: None,
                                                             name: "Binding",
+                                                            namespace: Uri(
+                                                                "https://artic.rs/ui",
+                                                            ),
                                                             span: Span(0, 358..365),
                                                         },
                                                         positional: [
@@ -216,6 +231,9 @@ XamlDocument {
                                         ty: TypeRef {
                                             prefix: None,
                                             name: "Button",
+                                            namespace: Uri(
+                                                "https://artic.rs/ui",
+                                            ),
                                             span: Span(0, 412..418),
                                         },
                                         members: [
@@ -252,6 +270,9 @@ XamlDocument {
                                                         ty: TypeRef {
                                                             prefix: None,
                                                             name: "Binding",
+                                                            namespace: Uri(
+                                                                "https://artic.rs/ui",
+                                                            ),
                                                             span: Span(0, 477..484),
                                                         },
                                                         positional: [

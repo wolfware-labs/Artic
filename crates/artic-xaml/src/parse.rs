@@ -2,12 +2,13 @@
 
 mod builder;
 mod markup;
+mod namespace;
 #[cfg(test)]
 mod tests;
 mod text;
 
 use crate::diagnostics::{Diagnostic, Diagnostics, SourceId, SourceMap};
-use crate::infoset::{Member, MemberKey, XamlDocument};
+use crate::infoset::{Member, MemberKey, XamlDocument, XamlNamespace};
 use builder::Builder;
 
 /// Parses the XAML file `file` of `sources` into its infoset.
@@ -25,7 +26,7 @@ use builder::Builder;
 /// use artic_xaml::parse;
 ///
 /// let mut sources = SourceMap::new();
-/// let file = sources.add("view.xaml", r#"<Button Width="100">OK</Button>"#);
+/// let file = sources.add("view.xaml", r#"<Button xmlns="https://artic.rs/ui" Width="100">OK</Button>"#);
 /// let document = parse(&sources, file).expect("valid XAML");
 /// let XamlNode::Object { ty, members, .. } = &document.root else { unreachable!() };
 /// assert_eq!(ty.name, "Button");
@@ -51,7 +52,7 @@ fn duplicate_of(members: &[Member], member: &Member) -> Option<Diagnostic> {
   )
 }
 
-/// Whether two keys name the same member, wherever their owner types are written.
+/// Whether two keys name the same member, whatever prefixes their owner types are written with.
 fn same_member(a: &MemberKey, b: &MemberKey) -> bool {
   match (a, b) {
     (
@@ -63,7 +64,13 @@ fn same_member(a: &MemberKey, b: &MemberKey) -> bool {
         owner: b_owner,
         name: b_name,
       },
-    ) => a_owner.prefix == b_owner.prefix && a_owner.name == b_owner.name && a_name == b_name,
+    ) => a_owner.namespace == b_owner.namespace && a_owner.name == b_owner.name && a_name == b_name,
     _ => a == b,
   }
+}
+
+/// The namespace of a [`TypeRef`](crate::infoset::TypeRef) until the builder resolves it. It stays
+/// only in documents with errors, which [`parse`] never returns.
+fn unresolved() -> XamlNamespace {
+  XamlNamespace::Uri(String::new())
 }
