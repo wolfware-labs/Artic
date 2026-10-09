@@ -1,7 +1,7 @@
 mod effect_store;
+mod graph;
 mod memo_store;
 mod node;
-mod observer_store;
 mod ownership;
 mod refresh;
 mod scheduling;
@@ -13,11 +13,10 @@ mod value_cell;
 use crate::reactive::{Change, LiveCounts};
 pub use effect_store::EffectId;
 use effect_store::EffectStore;
+use graph::DependencyGraph;
 pub use memo_store::MemoId;
 use memo_store::MemoStore;
 pub use node::Node;
-pub use observer_store::ObserverId;
-use observer_store::ObserverStore;
 use scheduling::Scheduler;
 pub use scope_store::ScopeId;
 use scope_store::ScopeStore;
@@ -37,10 +36,10 @@ thread_local! {
 
 pub struct Runtime {
   signals: SignalStore,
-  observers: ObserverStore,
   memos: MemoStore,
   effects: EffectStore,
   scopes: ScopeStore,
+  graph: DependencyGraph,
   tracker: Tracker,
   scheduler: Scheduler,
 }
@@ -49,20 +48,13 @@ impl Runtime {
   const fn new() -> Self {
     Self {
       signals: SignalStore::new(),
-      observers: ObserverStore::new(),
       memos: MemoStore::new(),
       effects: EffectStore::new(),
       scopes: ScopeStore::new(),
+      graph: DependencyGraph::new(),
       tracker: Tracker::new(),
       scheduler: Scheduler::new(),
     }
-  }
-
-  pub fn alloc_signal_value<TValue>(value: TValue) -> SignalId
-  where
-    TValue: Any,
-  {
-    RUNTIME.with(|runtime| runtime.signals.alloc_value(value))
   }
 
   pub fn create_signal<TValue>(value: TValue) -> SignalId
@@ -91,10 +83,8 @@ impl Runtime {
   where
     TValue: Any,
   {
-    RUNTIME.with(|runtime| {
-      runtime.subscribe_current_observer(signal_id);
-      Self::with_untracked_signal_value(signal_id, action)
-    })
+    Self::record_read(Node::Signal(signal_id));
+    Self::with_untracked_signal_value(signal_id, action)
   }
 
   pub(crate) fn with_untracked_signal_value<TValue, TResult>(
@@ -118,17 +108,10 @@ impl Runtime {
   where
     TValue: Any,
   {
-    RUNTIME.with(|runtime| runtime.tracker.record_write());
-    Self::with_untracked_signal_mut_value(signal_id, action);
-  }
-
-  pub(crate) fn with_untracked_signal_mut_value<TValue>(signal_id: SignalId, action: impl FnOnce(&mut TValue))
-  where
-    TValue: Any,
-  {
     RUNTIME.with(|runtime| {
+      runtime.tracker.record_write();
       let action_result = runtime.signals.with_signal_mut_value(signal_id, action);
-      runtime.mark_observers_as_dirty(signal_id);
+      runtime.mark_subscribers_dirty(Node::Signal(signal_id));
       if let Err(payload) = action_result {
         resume_unwind(payload);
       }
@@ -143,19 +126,21 @@ impl Runtime {
       Ok(Change::Hidden) => {}
       Ok(Change::Visible) => {
         runtime.tracker.record_write();
-        runtime.mark_observers_as_dirty(signal_id);
+        runtime.mark_subscribers_dirty(Node::Signal(signal_id));
       }
       Err(payload) => {
         runtime.tracker.record_write();
-        runtime.mark_observers_as_dirty(signal_id);
+        runtime.mark_subscribers_dirty(Node::Signal(signal_id));
         resume_unwind(payload);
       }
     })
   }
 
   #[cfg(test)]
-  pub fn create_observer() -> ObserverId {
-    RUNTIME.with(|runtime| runtime.observers.create_observer())
+  pub fn create_observer() -> Node {
+    let node = Node::Memo(Self::create_memo(Box::new(()), Rc::new(|_| {})));
+    RUNTIME.with(|runtime| runtime.set_dirty(node, false));
+    node
   }
 
   #[cfg(test)]
@@ -163,21 +148,33 @@ impl Runtime {
     RUNTIME.with(|runtime| {
       let mut count = 0;
       runtime
-        .signals
-        .with_subscribers(signal_id, |subscribers| count = subscribers.len());
+        .graph
+        .with_subscribers(Node::Signal(signal_id), |subscribers| count = subscribers.len());
       count
     })
   }
 
-  pub fn is_observer_dirty(observer_id: ObserverId) -> bool {
-    RUNTIME.with(|runtime| runtime.observers.is_dirty(observer_id))
+  #[cfg(test)]
+  pub fn clear_sources(node: Node) {
+    RUNTIME.with(|runtime| runtime.graph.clear_sources(node));
   }
 
-  pub fn create_memo(value_id: SignalId, compute: Rc<dyn Fn()>) -> MemoId {
+  #[cfg(test)]
+  pub fn sources(node: Node) -> Vec<Node> {
+    RUNTIME.with(|runtime| (0..).map_while(|index| runtime.graph.source_at(node, index)).collect())
+  }
+
+  pub fn is_dirty(node: Node) -> bool {
+    RUNTIME.with(|runtime| match node {
+      Node::Memo(memo_id) => runtime.memos.is_dirty(memo_id),
+      Node::Effect(effect_id) => runtime.effects.is_dirty(effect_id),
+      Node::Signal(_) => false,
+    })
+  }
+
+  pub fn create_memo(initial_value: Box<dyn Any>, compute: Rc<dyn Fn(MemoId)>) -> MemoId {
     RUNTIME.with(|runtime| {
-      let observer_id = runtime.observers.create_observer();
-      runtime.observers.mark_as_dirty(&[observer_id]);
-      let memo_id = runtime.memos.alloc(observer_id, value_id, compute);
+      let memo_id = runtime.memos.alloc(initial_value, compute);
       let node = Node::Memo(memo_id);
       runtime.scopes.add_to_active(node);
       runtime.scopes.alloc_for(node);
@@ -189,15 +186,28 @@ impl Runtime {
     RUNTIME.with(|runtime| runtime.memos.contains(memo_id))
   }
 
-  pub fn memo_value(memo_id: MemoId) -> SignalId {
-    RUNTIME.with(|runtime| runtime.memos.value(memo_id))
+  pub fn with_memo_value<TValue, TResult>(memo_id: MemoId, action: impl FnOnce(&TValue) -> TResult) -> TResult
+  where
+    TValue: Any,
+  {
+    RUNTIME.with(|runtime| runtime.memos.value(memo_id)).with(action)
+  }
+
+  pub fn set_memo_value<TValue>(memo_id: MemoId, value: TValue)
+  where
+    TValue: Any,
+  {
+    let cell = RUNTIME.with(|runtime| runtime.memos.value(memo_id));
+    let write_result = cell.with_mut(|current: &mut TValue| *current = value);
+    RUNTIME.with(|runtime| runtime.mark_subscribers_dirty(Node::Memo(memo_id)));
+    if let Err(payload) = write_result {
+      resume_unwind(payload);
+    }
   }
 
   pub fn create_effect(run: Rc<RefCell<dyn FnMut()>>) {
     let effect_id = RUNTIME.with(|runtime| {
-      let observer_id = runtime.observers.create_observer();
-      runtime.observers.mark_as_dirty(&[observer_id]);
-      let effect_id = runtime.effects.alloc(observer_id, run);
+      let effect_id = runtime.effects.alloc(run);
       let node = Node::Effect(effect_id);
       runtime.scopes.add_to_active(node);
       runtime.scopes.alloc_for(node);
@@ -215,9 +225,19 @@ impl Runtime {
     })
   }
 
-  fn mark_observers_as_dirty(&self, signal_id: SignalId) {
-    self.signals.with_subscribers(signal_id, |subscribers| {
-      self.observers.mark_as_dirty(subscribers);
+  fn mark_subscribers_dirty(&self, node: Node) {
+    self.graph.with_subscribers(node, |subscribers| {
+      for subscriber in subscribers {
+        self.set_dirty(*subscriber, true);
+      }
     });
+  }
+
+  fn set_dirty(&self, node: Node, is_dirty: bool) {
+    match node {
+      Node::Memo(memo_id) => self.memos.set_dirty(memo_id, is_dirty),
+      Node::Effect(effect_id) => self.effects.set_dirty(effect_id, is_dirty),
+      Node::Signal(_) => unreachable!("a signal reads nothing, so it is never dirty"),
+    }
   }
 }

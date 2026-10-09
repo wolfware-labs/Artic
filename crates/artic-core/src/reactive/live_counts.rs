@@ -3,8 +3,8 @@ use crate::reactive::runtime::Runtime;
 /// How many reactive nodes are alive on the current thread.
 ///
 /// Leak checks take a snapshot before some work and compare it with one taken after disposing
-/// that work's scope: every count should be back where it started. The counts are raw: `signals`
-/// includes the signal that holds each memo's value.
+/// that work's scope: every count should be back where it started. The counts are raw: `scopes`
+/// includes the scope each memo and effect keeps for what its closure creates.
 ///
 /// # Examples
 ///
@@ -17,7 +17,7 @@ use crate::reactive::runtime::Runtime;
 /// ```
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
 pub struct LiveCounts {
-  /// Live signals, including the ones that hold memo values.
+  /// Live signals.
   pub signals: usize,
   /// Live memos.
   pub memos: usize,

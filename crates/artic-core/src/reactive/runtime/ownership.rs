@@ -62,37 +62,21 @@ impl Runtime {
   }
 
   fn dispose_effect(effect_id: EffectId) {
-    let (observer_id, observables) =
-      RUNTIME.with(|runtime| (runtime.effects.observer(effect_id), runtime.effects.observables(effect_id)));
     Self::dispose_scope_of(Node::Effect(effect_id));
-    for observable in observables.iter() {
-      observable.unsubscribe(observer_id);
-    }
     RUNTIME.with(|runtime| {
+      runtime.graph.remove(Node::Effect(effect_id));
       runtime.effects.free(effect_id);
       if !runtime.scheduler.is_flushing() {
         runtime.effects.remove_from_creation_order(effect_id);
       }
-      runtime.observers.free(observer_id);
     });
   }
 
   fn dispose_memo(memo_id: MemoId) {
-    let (observer_id, value_id, observables) = RUNTIME.with(|runtime| {
-      (
-        runtime.memos.observer(memo_id),
-        runtime.memos.value(memo_id),
-        runtime.memos.observables(memo_id),
-      )
-    });
     Self::dispose_scope_of(Node::Memo(memo_id));
-    for observable in observables.iter() {
-      observable.unsubscribe(observer_id);
-    }
     RUNTIME.with(|runtime| {
+      runtime.graph.remove(Node::Memo(memo_id));
       runtime.memos.free(memo_id);
-      runtime.observers.free(observer_id);
-      runtime.signals.free(value_id);
     });
   }
 
@@ -103,6 +87,9 @@ impl Runtime {
   }
 
   fn dispose_signal(signal_id: SignalId) {
-    RUNTIME.with(|runtime| runtime.signals.free(signal_id));
+    RUNTIME.with(|runtime| {
+      runtime.graph.remove(Node::Signal(signal_id));
+      runtime.signals.free(signal_id);
+    });
   }
 }

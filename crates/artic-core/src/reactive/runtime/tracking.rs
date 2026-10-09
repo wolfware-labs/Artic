@@ -1,43 +1,30 @@
-use crate::reactive::runtime::{Node, ObserverId, RUNTIME, Runtime, SignalId};
+use crate::reactive::runtime::{Node, RUNTIME, Runtime};
 use std::cell::{Cell, RefCell};
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
-struct Frame {
-  observer: ObserverId,
-  observables: Vec<Node>,
-}
-
 pub struct Tracker {
-  frames: RefCell<Vec<Frame>>,
+  running: RefCell<Vec<Node>>,
   has_writes: Cell<bool>,
 }
 
 impl Tracker {
   pub const fn new() -> Self {
     Self {
-      frames: RefCell::new(Vec::new()),
+      running: RefCell::new(Vec::new()),
       has_writes: Cell::new(false),
     }
   }
 
-  fn push(&self, observer: ObserverId) {
-    self.frames.borrow_mut().push(Frame {
-      observer,
-      observables: Vec::new(),
-    });
+  fn push(&self, node: Node) {
+    self.running.borrow_mut().push(node);
   }
 
-  fn pop(&self) -> Vec<Node> {
-    self
-      .frames
-      .borrow_mut()
-      .pop()
-      .map(|frame| frame.observables)
-      .unwrap_or_default()
+  fn pop(&self) {
+    self.running.borrow_mut().pop();
   }
 
-  fn current_observer(&self) -> Option<ObserverId> {
-    self.frames.borrow().last().map(|frame| frame.observer)
+  fn current(&self) -> Option<Node> {
+    self.running.borrow().last().copied()
   }
 
   pub fn record_write(&self) {
@@ -47,40 +34,27 @@ impl Tracker {
   pub fn take_writes(&self) -> bool {
     self.has_writes.replace(false)
   }
-
-  fn record(&self, observable: Node) {
-    if let Some(frame) = self.frames.borrow_mut().last_mut()
-      && !frame.observables.contains(&observable)
-    {
-      frame.observables.push(observable);
-    }
-  }
 }
 
 impl Runtime {
-  pub fn run_tracked(observer_id: ObserverId, action: impl FnOnce()) -> Vec<Node> {
+  pub fn run_tracked(node: Node, action: impl FnOnce()) {
     RUNTIME.with(|runtime| {
-      runtime.observers.mark_as_clean(observer_id);
-      runtime.tracker.push(observer_id);
+      runtime.set_dirty(node, false);
+      runtime.tracker.push(node);
     });
     let action_result = catch_unwind(AssertUnwindSafe(action));
-    let observables = RUNTIME.with(|runtime| runtime.tracker.pop());
+    RUNTIME.with(|runtime| runtime.tracker.pop());
     if let Err(payload) = action_result {
-      for observable in observables {
-        observable.unsubscribe(observer_id);
-      }
+      RUNTIME.with(|runtime| runtime.graph.clear_sources(node));
       resume_unwind(payload);
     }
-    observables
   }
 
-  pub fn record_read(observable: Node) {
-    RUNTIME.with(|runtime| runtime.tracker.record(observable))
-  }
-
-  pub(super) fn subscribe_current_observer(&self, signal_id: SignalId) {
-    if let Some(observer_id) = self.tracker.current_observer() {
-      self.signals.add_subscriber(signal_id, observer_id);
-    }
+  pub fn record_read(source: Node) {
+    RUNTIME.with(|runtime| {
+      if let Some(reader) = runtime.tracker.current() {
+        runtime.graph.add_edge(source, reader);
+      }
+    })
   }
 }

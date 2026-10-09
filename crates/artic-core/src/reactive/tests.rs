@@ -1,4 +1,4 @@
-use crate::reactive::runtime::{Node, ObserverId, Runtime};
+use crate::reactive::runtime::{Node, Runtime};
 use crate::reactive::{
   Change, LiveCounts, Memo, Scope, Signal, assert_no_reactive_leaks, batch, effect, flush_effects, live_counts,
 };
@@ -8,7 +8,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 
 /// Creates an observer and runs `action` as that observer, so every signal read inside subscribes it.
-fn observe(action: impl FnOnce()) -> ObserverId {
+fn observe(action: impl FnOnce()) -> Node {
   let observer = Runtime::create_observer();
   Runtime::run_tracked(observer, action);
   observer
@@ -23,7 +23,7 @@ fn get_outside_observer_records_nothing() {
   count.get();
   count.set(1);
 
-  assert!(!Runtime::is_observer_dirty(observer));
+  assert!(!Runtime::is_dirty(observer));
 }
 
 // Reading a signal inside `run_tracked` records the running observer as a subscriber.
@@ -36,7 +36,7 @@ fn get_inside_observer_records_dependency() {
 
   count.set(1);
 
-  assert!(Runtime::is_observer_dirty(observer));
+  assert!(Runtime::is_dirty(observer));
 }
 
 // `set` marks every observer that read the signal as dirty.
@@ -49,13 +49,13 @@ fn set_marks_dependents_dirty() {
   let second = observe(|| {
     count.get();
   });
-  assert!(!Runtime::is_observer_dirty(first));
-  assert!(!Runtime::is_observer_dirty(second));
+  assert!(!Runtime::is_dirty(first));
+  assert!(!Runtime::is_dirty(second));
 
   count.set(1);
 
-  assert!(Runtime::is_observer_dirty(first));
-  assert!(Runtime::is_observer_dirty(second));
+  assert!(Runtime::is_dirty(first));
+  assert!(Runtime::is_dirty(second));
 }
 
 // `set_if_changed` with a value equal to the current one does not mark dependents dirty (`PartialEq`
@@ -69,7 +69,7 @@ fn equal_set_does_not_propagate() {
 
   count.set_if_changed(1);
 
-  assert!(!Runtime::is_observer_dirty(observer));
+  assert!(!Runtime::is_dirty(observer));
 }
 
 // `set` marks dependents dirty even when the new value equals the current one.
@@ -82,7 +82,7 @@ fn set_with_equal_value_still_marks_dependents_dirty() {
 
   count.set(1);
 
-  assert!(Runtime::is_observer_dirty(observer));
+  assert!(Runtime::is_dirty(observer));
 }
 
 // `set_if_changed` with a different value marks dependents dirty, the same as `set`.
@@ -95,7 +95,7 @@ fn set_if_changed_with_new_value_marks_dependents_dirty() {
 
   count.set_if_changed(2);
 
-  assert!(Runtime::is_observer_dirty(observer));
+  assert!(Runtime::is_dirty(observer));
 }
 
 // The comparison inside `set_if_changed` does not subscribe the running observer: it is a write.
@@ -106,7 +106,7 @@ fn set_if_changed_inside_observer_records_nothing() {
 
   count.set(5);
 
-  assert!(!Runtime::is_observer_dirty(observer));
+  assert!(!Runtime::is_dirty(observer));
 }
 
 // Tracking and dirty marking
@@ -121,7 +121,7 @@ fn with_inside_observer_records_dependency() {
 
   name.set(String::from("Grace"));
 
-  assert!(Runtime::is_observer_dirty(observer));
+  assert!(Runtime::is_dirty(observer));
 }
 
 // `update` marks dependents dirty, the same as `set`.
@@ -134,7 +134,7 @@ fn update_marks_dependents_dirty() {
 
   items.update(|items| items.push(3));
 
-  assert!(Runtime::is_observer_dirty(observer));
+  assert!(Runtime::is_dirty(observer));
 }
 
 // An observer that read a different signal is not marked dirty.
@@ -148,7 +148,7 @@ fn set_leaves_unrelated_observers_clean() {
 
   written.set(1);
 
-  assert!(!Runtime::is_observer_dirty(observer));
+  assert!(!Runtime::is_dirty(observer));
 }
 
 // Running an observer again clears its dirty flag, so only writes after the run mark it dirty.
@@ -164,40 +164,41 @@ fn run_tracked_marks_observer_clean() {
     count.get();
   });
 
-  assert!(!Runtime::is_observer_dirty(observer));
+  assert!(!Runtime::is_dirty(observer));
 }
 
-// `run_tracked` returns every signal the action read, once each and in read order.
+// `run_tracked` records every signal the action read as a source, once each and in read order.
 #[test]
-fn run_tracked_returns_each_signal_read_once() {
+fn run_tracked_records_each_signal_read_once() {
   let first = Signal::new(0);
   let second = Signal::new(0);
   let observer = Runtime::create_observer();
 
-  let observables = Runtime::run_tracked(observer, || {
+  Runtime::run_tracked(observer, || {
     first.get();
     second.with(|_| ());
     first.get();
   });
 
-  assert_eq!(observables, [Node::Signal(first.id()), Node::Signal(second.id())]);
+  assert_eq!(
+    Runtime::sources(observer),
+    [Node::Signal(first.id()), Node::Signal(second.id())]
+  );
 }
 
-// Unsubscribing an observer from what it read stops writes from marking it dirty.
+// Clearing a node's sources stops writes to them from marking it dirty.
 #[test]
-fn unsubscribed_observer_is_not_marked_dirty() {
+fn cleared_sources_stop_marking_dirty() {
   let count = Signal::new(0);
   let observer = Runtime::create_observer();
-  let observables = Runtime::run_tracked(observer, || {
+  Runtime::run_tracked(observer, || {
     count.get();
   });
 
-  for observable in observables {
-    observable.unsubscribe(observer);
-  }
+  Runtime::clear_sources(observer);
   count.set(1);
 
-  assert!(!Runtime::is_observer_dirty(observer));
+  assert!(!Runtime::is_dirty(observer));
 }
 
 // Panic safety
@@ -218,7 +219,7 @@ fn run_tracked_unsubscribes_reads_when_action_panics() {
   count.set(1);
 
   assert!(result.is_err());
-  assert!(!Runtime::is_observer_dirty(observer));
+  assert!(!Runtime::is_dirty(observer));
 }
 
 // If the action passed to `run_tracked` panics, the observer is popped and the panic still reaches the caller.
@@ -237,7 +238,7 @@ fn run_tracked_pops_observer_when_action_panics() {
   // If the observer were still on the stack, this read would subscribe it.
   count.get();
   count.set(1);
-  assert!(!Runtime::is_observer_dirty(observer));
+  assert!(!Runtime::is_dirty(observer));
 }
 
 // If an `update` closure panics, dependents are still marked dirty before the panic continues.
@@ -251,7 +252,7 @@ fn panicking_update_still_marks_dependents_dirty() {
   let result = catch_unwind(AssertUnwindSafe(|| count.update(|_| panic!("update failed"))));
 
   assert!(result.is_err());
-  assert!(Runtime::is_observer_dirty(observer));
+  assert!(Runtime::is_dirty(observer));
 }
 
 // Nesting
@@ -270,8 +271,8 @@ fn nested_run_tracked_subscribes_only_innermost_observer() {
   });
   count.set(1);
 
-  assert!(Runtime::is_observer_dirty(inner));
-  assert!(!Runtime::is_observer_dirty(outer));
+  assert!(Runtime::is_dirty(inner));
+  assert!(!Runtime::is_dirty(outer));
 }
 
 // Once a nested observer finishes, reads subscribe the outer observer again.
@@ -290,8 +291,8 @@ fn outer_observer_is_current_again_after_inner_finishes() {
   });
   outer_signal.set(1);
 
-  assert!(Runtime::is_observer_dirty(outer));
-  assert!(!Runtime::is_observer_dirty(inner));
+  assert!(Runtime::is_dirty(outer));
+  assert!(!Runtime::is_dirty(inner));
 }
 
 // If a nested observer panics and the outer one catches it, the outer observer is current again.
@@ -308,8 +309,8 @@ fn inner_panic_restores_outer_observer() {
   });
   count.set(1);
 
-  assert!(Runtime::is_observer_dirty(outer));
-  assert!(!Runtime::is_observer_dirty(inner));
+  assert!(Runtime::is_dirty(outer));
+  assert!(!Runtime::is_dirty(inner));
 }
 
 // More tracking rules
@@ -331,7 +332,7 @@ fn observer_of_two_signals_is_dirtied_by_either() {
       second.set(1)
     }
 
-    assert!(Runtime::is_observer_dirty(observer), "write_first = {write_first}");
+    assert!(Runtime::is_dirty(observer), "write_first = {write_first}");
   }
 }
 
@@ -343,7 +344,7 @@ fn creating_signal_inside_observer_records_nothing() {
 
   created.expect("the signal should have been created").set(1);
 
-  assert!(!Runtime::is_observer_dirty(observer));
+  assert!(!Runtime::is_dirty(observer));
 }
 
 // Writing a signal while an observer runs does not subscribe the observer: only reads do.
@@ -354,7 +355,7 @@ fn update_inside_observer_records_nothing() {
 
   count.set(5);
 
-  assert!(!Runtime::is_observer_dirty(observer));
+  assert!(!Runtime::is_dirty(observer));
 }
 
 // Memo
@@ -452,20 +453,21 @@ fn equal_recompute_does_not_dirty_dependents() {
   assert_eq!(calls.get(), 1, "label must not compute when is_even is unchanged");
 }
 
-// A memo read inside a tracked run is returned once, as a memo and not as its inner value signal.
+// A memo read inside a tracked run is recorded once, as the memo.
 #[test]
 fn run_tracked_records_a_memo_read_as_the_memo() {
   let source = Signal::new(1);
   let double = Memo::new(move || source.get() * 2);
   let observer = Runtime::create_observer();
 
-  let observables = Runtime::run_tracked(observer, || {
+  Runtime::run_tracked(observer, || {
     double.get();
     double.with(|_| ());
   });
 
-  assert_eq!(observables.len(), 1);
-  assert!(matches!(observables[0], Node::Memo(_)));
+  let sources = Runtime::sources(observer);
+  assert_eq!(sources.len(), 1);
+  assert!(matches!(sources[0], Node::Memo(_)));
 }
 
 // Effect
@@ -569,8 +571,8 @@ fn nested_batch_flushes_once() {
 
 // Live counts
 
-// Creating a signal, a memo and an effect raises each count. A memo also adds the signal that holds
-// its value, and a memo and an effect each add the scope that owns what their closure creates.
+// Creating a signal, a memo and an effect raises each count by one. A memo and an effect each also
+// add the scope that owns what their closure creates.
 #[test]
 fn live_counts_track_created_nodes() {
   let before = live_counts();
@@ -584,7 +586,7 @@ fn live_counts_track_created_nodes() {
   assert_eq!(
     live_counts(),
     LiveCounts {
-      signals: before.signals + 2,
+      signals: before.signals + 1,
       memos: before.memos + 1,
       effects: before.effects + 1,
       scopes: before.scopes + 2,
@@ -1015,7 +1017,7 @@ fn visible_update_with_marks_dependents_dirty() {
     Change::Visible
   });
 
-  assert!(Runtime::is_observer_dirty(observer));
+  assert!(Runtime::is_dirty(observer));
 }
 
 // An edit reported as hidden is kept but marks nobody dirty and records no write, so a flush after
@@ -1052,5 +1054,5 @@ fn panicking_update_with_still_marks_dependents_dirty() {
   let result = catch_unwind(AssertUnwindSafe(|| count.update_with(|_| panic!("boom"))));
 
   assert!(result.is_err());
-  assert!(Runtime::is_observer_dirty(observer));
+  assert!(Runtime::is_dirty(observer));
 }

@@ -1,8 +1,7 @@
 use crate::arena::{Arena, SlotId};
-use crate::reactive::runtime::observer_store::ObserverId;
 use crate::reactive::runtime::value_cell::ValueCell;
 use std::any::Any;
-use std::cell::{Ref, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
@@ -10,29 +9,13 @@ pub struct SignalId(SlotId);
 
 struct SignalSlot {
   value: ValueCell,
-  subscribers: RefCell<Vec<ObserverId>>,
 }
 
 impl SignalSlot {
   fn new(value: Box<dyn Any>) -> Self {
     Self {
       value: ValueCell::new(value, "signal"),
-      subscribers: RefCell::new(Vec::new()),
     }
-  }
-
-  fn add_subscriber(&self, observer: ObserverId) {
-    if !self.subscribers.borrow().contains(&observer) {
-      self.subscribers.borrow_mut().push(observer);
-    }
-  }
-
-  fn remove_subscriber(&self, observer: ObserverId) {
-    self.subscribers.borrow_mut().retain(|subscriber| *subscriber != observer);
-  }
-
-  fn get_subscribers(&self) -> Ref<'_, Vec<ObserverId>> {
-    self.subscribers.borrow()
   }
 }
 
@@ -84,46 +67,8 @@ impl SignalStore {
     self.slots.borrow().len()
   }
 
-  pub fn add_subscriber(&self, signal_id: SignalId, observer_id: ObserverId) {
-    self.get_slot(signal_id).add_subscriber(observer_id);
-  }
-
-  pub fn remove_subscriber(&self, signal_id: SignalId, observer_id: ObserverId) {
-    let slot = self.slots.borrow().get(signal_id.0).map(Rc::clone);
-    if let Some(slot) = slot {
-      slot.remove_subscriber(observer_id);
-    }
-  }
-
-  pub fn with_subscribers(&self, signal_id: SignalId, action: impl FnOnce(&[ObserverId])) {
-    action(&self.get_slot(signal_id).get_subscribers())
-  }
-
   fn get_slot(&self, signal_id: SignalId) -> Rc<SignalSlot> {
     let arena = self.slots.borrow();
     Rc::clone(arena.get(signal_id.0).expect("signal slot not found for the specified id"))
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  // These tests inspect the private subscriber list of a slot, which is only visible from this module.
-  use super::*;
-  use crate::reactive::runtime::observer_store::ObserverStore;
-  use pretty_assertions::assert_eq;
-
-  // Subscribing the same observer to a signal twice keeps a single entry, so repeated reads in one
-  // observer subscribe it only once.
-  #[test]
-  fn add_subscriber_ignores_duplicates() {
-    let signals = SignalStore::new();
-    let observers = ObserverStore::new();
-    let signal = signals.alloc_value(0);
-    let observer = observers.create_observer();
-
-    signals.add_subscriber(signal, observer);
-    signals.add_subscriber(signal, observer);
-
-    signals.with_subscribers(signal, |subscribers| assert_eq!(subscribers, [observer]));
   }
 }

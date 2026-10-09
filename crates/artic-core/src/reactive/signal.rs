@@ -1,5 +1,5 @@
 use crate::reactive::origin::Origin;
-use crate::reactive::runtime::{Node, Runtime, SignalId};
+use crate::reactive::runtime::{Runtime, SignalId};
 use std::marker::PhantomData;
 
 /// A reactive value.
@@ -108,7 +108,6 @@ impl<TValue> Signal<TValue> {
   /// ```
   pub fn with<TResult>(&self, function: impl FnOnce(&TValue) -> TResult) -> TResult {
     self.ensure_alive();
-    Runtime::record_read(Node::Signal(self.0));
     Runtime::with_signal_value(self.0, function)
   }
 
@@ -241,7 +240,6 @@ where
   /// Panics if called from inside this signal's own [`update`](Signal::update) closure.
   pub fn get(&self) -> TValue {
     self.ensure_alive();
-    Runtime::record_read(Node::Signal(self.0));
     Runtime::get_signal_value(self.0)
   }
 }
