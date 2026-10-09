@@ -199,7 +199,7 @@ pub struct XamlDocument { source: SourceId, root: XamlNode }          // root is
 pub enum XamlNode {
     Object { ty: TypeRef, members: Vec<Member>, namespaces: Vec<NamespaceDecl>, span: Span },
     Value  { text: String, span: Span },            // untyped text, converted later
-    MarkupExtension { ty: TypeRef, positional: Vec<XamlNode>, named: Vec<(String, XamlNode)>, span: Span },
+    MarkupExtension { ty: TypeRef, positional: Vec<XamlNode>, named: Vec<Member>, span: Span },
 }
 pub struct Member { key: MemberKey, value: Vec<XamlNode>, span: Span }
 pub enum MemberKey { Property(String), Attached { owner: TypeRef, name: String }, Directive(Directive), Content, Items }

@@ -47,8 +47,10 @@ pub enum XamlNode {
     ty: TypeRef,
     /// Arguments given by position.
     positional: Vec<XamlNode>,
-    /// Arguments given by name.
-    named: Vec<(String, XamlNode)>,
+    /// Arguments given by name, such as `Mode=TwoWay`. Each sets a property of the extension, so
+    /// it's a [`Member`] like an attribute: a [`MemberKey::Property`] key spanning the name, and
+    /// one value.
+    named: Vec<Member>,
     /// The whole extension, braces included.
     span: Span,
   },
