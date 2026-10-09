@@ -1,11 +1,12 @@
 use crate::arena::{Arena, SlotId};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct EffectId(SlotId);
 
 struct EffectSlot {
+  seq: u64,
   run: Rc<RefCell<dyn FnMut()>>,
   is_dirty: bool,
   is_running: bool,
@@ -13,38 +14,29 @@ struct EffectSlot {
 
 pub struct EffectStore {
   slots: RefCell<Arena<EffectSlot>>,
-  creation_order: RefCell<Vec<EffectId>>,
+  next_seq: Cell<u64>,
 }
 
 impl EffectStore {
   pub const fn new() -> Self {
     Self {
       slots: RefCell::new(Arena::new()),
-      creation_order: RefCell::new(Vec::new()),
+      next_seq: Cell::new(0),
     }
   }
 
   pub fn alloc(&self, run: Rc<RefCell<dyn FnMut()>>) -> EffectId {
-    let effect_id = EffectId(self.slots.borrow_mut().alloc(EffectSlot {
+    let seq = self.next_seq.replace(self.next_seq.get() + 1);
+    EffectId(self.slots.borrow_mut().alloc(EffectSlot {
+      seq,
       run,
       is_dirty: true,
       is_running: false,
-    }));
-    self.creation_order.borrow_mut().push(effect_id);
-    effect_id
+    }))
   }
 
   pub fn free(&self, effect_id: EffectId) {
     self.slots.borrow_mut().free(effect_id.0);
-  }
-
-  pub fn remove_from_creation_order(&self, effect_id: EffectId) {
-    self.creation_order.borrow_mut().retain(|created| *created != effect_id);
-  }
-
-  pub fn compact_creation_order(&self) {
-    let slots = self.slots.borrow();
-    self.creation_order.borrow_mut().retain(|created| slots.contains(created.0));
   }
 
   pub fn contains(&self, effect_id: EffectId) -> bool {
@@ -55,8 +47,8 @@ impl EffectStore {
     self.slots.borrow().len()
   }
 
-  pub fn nth_created(&self, index: usize) -> Option<EffectId> {
-    self.creation_order.borrow().get(index).copied()
+  pub fn seq(&self, effect_id: EffectId) -> u64 {
+    self.with_slot(effect_id, |slot| slot.seq)
   }
 
   pub fn run(&self, effect_id: EffectId) -> Rc<RefCell<dyn FnMut()>> {

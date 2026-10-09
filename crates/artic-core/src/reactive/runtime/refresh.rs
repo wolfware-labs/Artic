@@ -31,9 +31,6 @@ impl Runtime {
   }
 
   pub fn refresh_effect(effect_id: EffectId) {
-    if !RUNTIME.with(|runtime| runtime.effects.contains(effect_id)) {
-      return;
-    }
     let node = Node::Effect(effect_id);
     if RUNTIME.with(|runtime| runtime.effects.is_running(effect_id)) || !Self::refresh_sources(node) {
       return;
@@ -52,6 +49,7 @@ impl Runtime {
       runtime.effects.set_running(effect_id, false);
       if let Err(payload) = run_result {
         runtime.set_dirty(node, true);
+        runtime.scheduler.add_pending(runtime.effects.seq(effect_id), effect_id);
         resume_unwind(payload);
       }
     })

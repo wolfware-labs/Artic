@@ -109,7 +109,7 @@ impl Runtime {
     TValue: Any,
   {
     RUNTIME.with(|runtime| {
-      runtime.tracker.record_write();
+      runtime.tracker.record_write(signal_id);
       let action_result = runtime.signals.with_signal_mut_value(signal_id, action);
       runtime.mark_subscribers_dirty(Node::Signal(signal_id));
       if let Err(payload) = action_result {
@@ -125,11 +125,11 @@ impl Runtime {
     RUNTIME.with(|runtime| match runtime.signals.with_signal_mut_value(signal_id, action) {
       Ok(Change::Hidden) => {}
       Ok(Change::Visible) => {
-        runtime.tracker.record_write();
+        runtime.tracker.record_write(signal_id);
         runtime.mark_subscribers_dirty(Node::Signal(signal_id));
       }
       Err(payload) => {
-        runtime.tracker.record_write();
+        runtime.tracker.record_write(signal_id);
         runtime.mark_subscribers_dirty(Node::Signal(signal_id));
         resume_unwind(payload);
       }

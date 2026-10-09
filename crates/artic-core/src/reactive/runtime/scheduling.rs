@@ -1,5 +1,7 @@
-use crate::reactive::runtime::{RUNTIME, Runtime};
-use std::cell::Cell;
+use crate::reactive::runtime::{EffectId, Node, RUNTIME, Runtime};
+use std::cell::{Cell, RefCell};
+use std::collections::{BTreeMap, HashSet};
+use std::ops::Bound::{Excluded, Unbounded};
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
 const MAX_FLUSH_PASSES: usize = 100;
@@ -7,6 +9,9 @@ const MAX_FLUSH_PASSES: usize = 100;
 pub struct Scheduler {
   is_flushing: Cell<bool>,
   batch_depth: Cell<usize>,
+  pending: RefCell<BTreeMap<u64, EffectId>>,
+  #[cfg(test)]
+  visits: Cell<usize>,
 }
 
 impl Scheduler {
@@ -14,15 +19,34 @@ impl Scheduler {
     Self {
       is_flushing: Cell::new(false),
       batch_depth: Cell::new(0),
+      pending: RefCell::new(BTreeMap::new()),
+      #[cfg(test)]
+      visits: Cell::new(0),
     }
+  }
+
+  pub fn add_pending(&self, seq: u64, effect_id: EffectId) {
+    self.pending.borrow_mut().insert(seq, effect_id);
+  }
+
+  pub fn remove_pending(&self, seq: u64) {
+    self.pending.borrow_mut().remove(&seq);
+  }
+
+  fn has_pending(&self) -> bool {
+    !self.pending.borrow().is_empty()
+  }
+
+  fn take_pending_after(&self, cursor: Option<u64>) -> Option<(u64, EffectId)> {
+    let mut pending = self.pending.borrow_mut();
+    let lower = cursor.map_or(Unbounded, Excluded);
+    let (seq, effect_id) = pending.range((lower, Unbounded)).next().map(|(seq, id)| (*seq, *id))?;
+    pending.remove(&seq);
+    Some((seq, effect_id))
   }
 
   fn start_flush(&self) -> bool {
     self.batch_depth.get() == 0 && !self.is_flushing.replace(true)
-  }
-
-  pub fn is_flushing(&self) -> bool {
-    self.is_flushing.get()
   }
 
   fn end_flush(&self) {
@@ -57,27 +81,54 @@ impl Runtime {
       return;
     }
     let flush_result = catch_unwind(AssertUnwindSafe(Self::run_passes));
-    RUNTIME.with(|runtime| {
-      runtime.scheduler.end_flush();
-      runtime.effects.compact_creation_order();
-    });
+    RUNTIME.with(|runtime| runtime.scheduler.end_flush());
     if let Err(payload) = flush_result {
-      RUNTIME.with(|runtime| runtime.tracker.record_write());
       resume_unwind(payload);
     }
   }
 
+  #[cfg(test)]
+  pub fn take_effect_visits() -> usize {
+    RUNTIME.with(|runtime| runtime.scheduler.visits.replace(0))
+  }
+
   fn run_passes() {
     for _ in 0..MAX_FLUSH_PASSES {
-      if !RUNTIME.with(|runtime| runtime.tracker.take_writes()) {
+      Self::collect_pending();
+      if !RUNTIME.with(|runtime| runtime.scheduler.has_pending()) {
         return;
       }
-      let mut index = 0;
-      while let Some(effect_id) = RUNTIME.with(|runtime| runtime.effects.nth_created(index)) {
+      let mut cursor = None;
+      while let Some((seq, effect_id)) = RUNTIME.with(|runtime| runtime.scheduler.take_pending_after(cursor)) {
+        cursor = Some(seq);
+        #[cfg(test)]
+        RUNTIME.with(|runtime| runtime.scheduler.visits.set(runtime.scheduler.visits.get() + 1));
         Self::refresh_effect(effect_id);
-        index += 1;
+        Self::collect_pending();
       }
     }
     panic!("effects did not settle after {MAX_FLUSH_PASSES} passes; two effects probably write each other's inputs");
+  }
+
+  fn collect_pending() {
+    RUNTIME.with(|runtime| {
+      let mut to_visit: Vec<Node> = runtime.tracker.take_writes().into_iter().map(Node::Signal).collect();
+      let mut visited: HashSet<Node> = to_visit.iter().copied().collect();
+      while let Some(node) = to_visit.pop() {
+        runtime.graph.with_subscribers(node, |subscribers| {
+          for subscriber in subscribers {
+            match subscriber {
+              Node::Effect(effect_id) => runtime.scheduler.add_pending(runtime.effects.seq(*effect_id), *effect_id),
+              Node::Memo(_) => {
+                if visited.insert(*subscriber) {
+                  to_visit.push(*subscriber);
+                }
+              }
+              Node::Signal(_) => unreachable!("a signal reads nothing"),
+            }
+          }
+        });
+      }
+    });
   }
 }
