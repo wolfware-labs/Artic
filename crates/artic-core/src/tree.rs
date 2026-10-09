@@ -13,6 +13,7 @@
 //! layout and rendering dirty, and a change to one of its properties adds the stages the property's key
 //! affects; see [`dirty`](TreeArena::dirty).
 
+mod collection;
 mod dirty;
 mod inheritance;
 mod links;
@@ -20,6 +21,7 @@ mod node;
 
 use crate::Object;
 use crate::arena::{Arena, SlotId};
+pub use collection::XamlCollection;
 use node::TreeNode;
 use std::any::Any;
 use std::fmt::Debug;

@@ -6,6 +6,7 @@
 //! - [`tree`]: [`TreeArena`](tree::TreeArena), which owns every node and links it into a logical and
 //!   a visual tree, with per-node dirty flags.
 //! - [`Object`]: the trait every node type implements.
+//! - [`event`]: [`Event`](event::Event), the field type that declares a node's XAML events.
 //! - [`dispatcher`]: [`Dispatcher`](dispatcher::Dispatcher), the UI thread's task queue, which flushes
 //!   effects after each task.
 //!
@@ -14,6 +15,7 @@
 
 pub(crate) mod arena;
 pub mod dispatcher;
+pub mod event;
 mod object;
 pub mod property;
 pub mod reactive;
