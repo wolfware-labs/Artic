@@ -39,12 +39,12 @@ impl Registry {
     for info in types {
       match registry.by_name.entry(info.namespace).or_default().entry(info.name) {
         Entry::Occupied(existing) => {
-          let (first, second) = ordered(existing.get().rust_path, info.rust_path);
+          let (a, b) = (existing.get().rust_path, info.rust_path);
           duplicates.push(Duplicate::Name {
             namespace: info.namespace,
             name: info.name,
-            first,
-            second,
+            first: a.min(b),
+            second: a.max(b),
           });
         }
         Entry::Vacant(slot) => {
@@ -89,12 +89,6 @@ impl Registry {
   pub fn attached_property(&self, owner: &TypeInfo, name: &str) -> Option<&'static AttachedPropertyInfo> {
     self.attached.get(owner.rust_path)?.get(name).copied()
   }
-}
-
-/// Returns `a` and `b` in sorted order, so a duplicate reads the same whatever order the types came
-/// in.
-fn ordered(a: &'static str, b: &'static str) -> (&'static str, &'static str) {
-  if a <= b { (a, b) } else { (b, a) }
 }
 
 #[cfg(test)]
