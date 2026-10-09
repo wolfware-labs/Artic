@@ -1,4 +1,4 @@
-error: unknown `xaml` key `color`; expected `namespace`, `content`, `whitespace` or `crate`
+error: unknown `xaml` key `color`; expected `namespace`, `content`, `whitespace`, `crate` or `attached`
  --> tests/ui/unknown_key.rs:4:43
   |
 4 | #[xaml(namespace = "https://artic.rs/ui", color = "red")]

@@ -1,6 +1,6 @@
 use crate::crate_root::crate_root;
-use crate::xaml_type::attributes::{Affects, Whitespace};
-use crate::xaml_type::fields::{Analysis, Role, XamlField, xaml_name};
+use crate::xaml_type::attributes::{Affects, Attached, Target, Whitespace};
+use crate::xaml_type::fields::{Analysis, Role, XamlField, generic_argument, snake_case, xaml_name};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, quote_spanned};
 use syn::Ident;
@@ -61,6 +61,18 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
     None => quote!(::core::option::Option::None),
   };
   let is_collection = !collections.is_empty();
+  let attached = &analysis.attributes.attached;
+  let attached_keys = attached.iter().map(attached_key);
+  let attached_helpers = attached.iter().map(|attached| attached_helpers(ident, attached));
+  let attached_infos = attached.iter().map(attached_info);
+  let attached_count = attached.len();
+  let attached_checks = attached.iter().map(|attached| {
+    let ty = &attached.ty;
+    let value = generic_argument(ty, "Option").unwrap_or(ty);
+    quote_spanned!(ty.span()=>
+      (&&__artic::ValueCheck::<#value>(__artic::PhantomData)).value_must_implement_fromstr_or_derive_xamltype();
+    )
+  });
   let whitespace = match analysis.attributes.whitespace {
     Whitespace::Collapse => quote!(__artic::Whitespace::Collapse),
     Whitespace::Significant => quote!(__artic::Whitespace::Significant),
@@ -89,6 +101,13 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
 
       static __PROPERTIES: [__artic::PropertyInfo; #property_count] = [#(#property_infos),*];
       static __EVENTS: [__artic::EventInfo; #event_count] = [#(#event_infos),*];
+      static __ATTACHED: [__artic::AttachedPropertyInfo; #attached_count] = [#(#attached_infos),*];
+
+      #(#attached_keys)*
+
+      impl #ident {
+        #(#attached_helpers)*
+      }
 
       fn __new(arena: &mut __artic::TreeArena) -> __artic::NodeId {
         arena.alloc(::std::boxed::Box::new(<#ident as ::core::default::Default>::default()))
@@ -103,7 +122,7 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
         is_collection: #is_collection,
         properties: &__PROPERTIES,
         events: &__EVENTS,
-        attached_properties: &[],
+        attached_properties: &__ATTACHED,
         markup_extension: ::core::option::Option::None,
         whitespace: #whitespace,
       };
@@ -119,9 +138,82 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
         use __artic::{ViaChild as _, ViaFromStr as _, ViaXamlType as _};
         #(#value_checks)*
         #(#collection_checks)*
+        #(#attached_checks)*
       }
     };
   })
+}
+
+/// The static an attached property's key lives in, such as `__ATTACHED_COLUMN_SPAN`.
+fn attached_static(attached: &Attached) -> Ident {
+  format_ident!("__ATTACHED_{}", snake_case(&attached.name.value()).to_uppercase())
+}
+
+/// The `static AttachedKey` of one attached property.
+fn attached_key(attached: &Attached) -> TokenStream {
+  let key = attached_static(attached);
+  let Attached {
+    name,
+    ty,
+    default,
+    affects,
+    ..
+  } = attached;
+  let default = match default {
+    Some(expression) => quote!(#expression),
+    None => quote_spanned!(ty.span()=> <#ty as ::core::default::Default>::default()),
+  };
+  let affects = affects_tokens(*affects);
+  quote! {
+    static #key: __artic::AttachedKey<#ty> = __artic::AttachedKey::new(#name, #affects, || #default);
+  }
+}
+
+/// The key constant and the `set_<name>` and `<name>` helpers of one attached property.
+fn attached_helpers(owner: &Ident, attached: &Attached) -> TokenStream {
+  let key = attached_static(attached);
+  let ty = &attached.ty;
+  let name = attached.name.value();
+  let snake = snake_case(&name);
+  let constant = format_ident!("{}", snake.to_uppercase());
+  let getter = format_ident!("{snake}");
+  let setter = format_ident!("set_{snake}");
+  let value = format_ident!("{snake}");
+  let property = format!("`{owner}.{name}`");
+  let constant_doc = format!("The {property} attached property.");
+  let setter_doc = format!("Sets {property} on `node`, at local precedence.");
+  let getter_doc = format!("Returns {property} of `node`, or its default when nothing set it.");
+  quote! {
+    #[doc = #constant_doc]
+    pub const #constant: &'static __artic::AttachedKey<#ty> = &#key;
+
+    #[doc = #setter_doc]
+    pub fn #setter(arena: &mut __artic::TreeArena, node: impl ::core::convert::Into<__artic::NodeId>, #value: #ty) {
+      arena.attached_property(node.into(), Self::#constant).set(#value);
+    }
+
+    #[doc = #getter_doc]
+    #[must_use]
+    pub fn #getter(arena: &__artic::TreeArena, node: impl ::core::convert::Into<__artic::NodeId>) -> #ty {
+      arena.attached(node.into(), Self::#constant)
+    }
+  }
+}
+
+/// The `AttachedPropertyInfo` of one attached property.
+fn attached_info(attached: &Attached) -> TokenStream {
+  let Attached { name, ty, target, .. } = attached;
+  let target = match target {
+    Target::Any => quote!(__artic::AttachedTarget::Any),
+    Target::Children => quote!(__artic::AttachedTarget::ChildrenOfOwner),
+  };
+  quote! {
+    __artic::AttachedPropertyInfo {
+      name: #name,
+      value_type: ::core::stringify!(#ty),
+      target: #target,
+    }
+  }
 }
 
 fn is_property(field: &XamlField) -> bool {
