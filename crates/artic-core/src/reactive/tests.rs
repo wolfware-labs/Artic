@@ -1056,3 +1056,87 @@ fn panicking_update_with_still_marks_dependents_dirty() {
   assert!(result.is_err());
   assert!(Runtime::is_dirty(observer));
 }
+
+// Pending effects
+
+// A write pends only the effect it reaches, not every effect.
+#[test]
+fn unrelated_effects_are_not_visited() {
+  let first = Signal::new(0);
+  let second = Signal::new(0);
+  effect(move || {
+    first.get();
+  });
+  effect(move || {
+    second.get();
+  });
+
+  first.set(1);
+
+  assert_eq!(Runtime::collect_pending_effects(), 1);
+}
+
+// A write reaches an effect behind a chain of memos, and the effect then sees the end of the chain.
+#[test]
+fn effect_behind_a_memo_chain_is_pending() {
+  let source = Signal::new(1);
+  let first = Memo::new(move || source.get() + 1);
+  let second = Memo::new(move || first.get() * 2);
+  let third = Memo::new(move || second.get() - 1);
+  let seen = Rc::new(Cell::new(0));
+  let seen_in_effect = Rc::clone(&seen);
+  effect(move || seen_in_effect.set(third.get()));
+
+  source.set(4);
+  assert_eq!(Runtime::collect_pending_effects(), 1);
+  flush_effects();
+
+  assert_eq!(seen.get(), 9);
+}
+
+// An effect reached through a memo whose value doesn't change is pending but doesn't run.
+#[test]
+fn cutoff_still_skips_the_run() {
+  let source = Signal::new(2);
+  let is_even = Memo::new(move || source.get() % 2 == 0);
+  let (runs, read) = counter();
+  effect(move || {
+    read();
+    is_even.get();
+  });
+
+  source.set(4);
+  assert_eq!(Runtime::collect_pending_effects(), 1);
+  flush_effects();
+
+  assert_eq!(runs.get(), 1, "only the run on creation");
+}
+
+// With nothing written since the last flush, no effect is pending.
+#[test]
+fn nothing_written_pends_nothing() {
+  let source = Signal::new(0);
+  effect(move || {
+    source.get();
+  });
+
+  assert_eq!(Runtime::collect_pending_effects(), 0);
+}
+
+// Effects that each write the next one's input, in creation order, settle in one pass: an effect
+// made pending during a pass runs in that pass when it comes later in creation order, so a long
+// chain doesn't hit the pass limit.
+#[test]
+fn effect_chain_in_creation_order_settles_in_one_pass() {
+  let signals: Vec<Signal<i32>> = (0..150).map(|_| Signal::new(0)).collect();
+  for pair in signals.windows(2) {
+    let (input, output) = (pair[0], pair[1]);
+    effect(move || output.set(input.get()));
+  }
+  flush_effects();
+
+  signals[0].set(7);
+  flush_effects();
+
+  assert_eq!(signals[149].get(), 7);
+}

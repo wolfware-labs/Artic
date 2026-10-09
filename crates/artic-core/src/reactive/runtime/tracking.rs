@@ -1,17 +1,19 @@
-use crate::reactive::runtime::{Node, RUNTIME, Runtime};
-use std::cell::{Cell, RefCell};
+use crate::reactive::runtime::{Node, RUNTIME, Runtime, SignalId};
+use std::cell::RefCell;
+use std::collections::HashSet;
+use std::hash::{BuildHasherDefault, DefaultHasher};
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
 pub struct Tracker {
   running: RefCell<Vec<Node>>,
-  has_writes: Cell<bool>,
+  written: RefCell<HashSet<SignalId, BuildHasherDefault<DefaultHasher>>>,
 }
 
 impl Tracker {
   pub const fn new() -> Self {
     Self {
       running: RefCell::new(Vec::new()),
-      has_writes: Cell::new(false),
+      written: RefCell::new(HashSet::with_hasher(BuildHasherDefault::new())),
     }
   }
 
@@ -27,12 +29,12 @@ impl Tracker {
     self.running.borrow().last().copied()
   }
 
-  pub fn record_write(&self) {
-    self.has_writes.set(true);
+  pub fn record_write(&self, signal_id: SignalId) {
+    self.written.borrow_mut().insert(signal_id);
   }
 
-  pub fn take_writes(&self) -> bool {
-    self.has_writes.replace(false)
+  pub fn take_writes(&self) -> Vec<SignalId> {
+    self.written.borrow_mut().drain().collect()
   }
 }
 

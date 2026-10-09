@@ -40,13 +40,16 @@
 //! point. A flush point is a call to [`flush_effects`], the end of the outermost [`batch`], and the
 //! end of each task run by [`Dispatcher::run_pending`](crate::dispatcher::Dispatcher::run_pending).
 //!
-//! A flush visits effects in the order they were created. Each one first brings the memos it read
-//! up to date and runs only if one of its inputs actually changed. Because a memo is brought up to
-//! date when it is read, an effect never sees a fresh signal next to a stale memo, whatever order
-//! the effects run in.
+//! A flush visits only the effects that the writes since the last flush can reach: it follows each
+//! written signal to the memos that read it, and on to the effects behind them. Its cost depends on
+//! what the writes touched, not on how many effects exist. It visits those effects in the order
+//! they were created. Each one first brings the memos it read up to date and runs only if one of
+//! its inputs actually changed. Because a memo is brought up to date when it is read, an effect
+//! never sees a fresh signal next to a stale memo, whatever order the effects run in.
 //!
-//! If an effect writes a signal during a flush, the flush makes another pass over the effects, so
-//! when it returns every effect has seen the final values. Effects that keep writing each other's
+//! If an effect writes a signal during a flush, the effects that write reaches run too: in the same
+//! pass if they were created later, otherwise in another pass, so when the flush returns every
+//! effect has seen the final values. Effects that keep writing each other's
 //! inputs never settle; the flush panics after 100 passes instead of looping forever.
 //!
 //! ```
@@ -146,10 +149,11 @@ pub use signal::{Change, Signal};
 
 /// Runs every effect whose dependencies changed since it last ran.
 ///
-/// Effects run in the order they were created, each at most once per pass. If an effect writes a
-/// signal during the flush, another pass runs, so when `flush_effects` returns every effect has
-/// seen the latest values. Effects that never settle, because they keep writing each other's
-/// inputs, make it panic after 100 passes.
+/// Only effects that a write since the last flush can reach are visited, through any memos in
+/// between. They run in the order they were created, each at most once per pass. If an effect
+/// writes a signal during the flush, the effects that write reaches run too, so when
+/// `flush_effects` returns every effect has seen the latest values. Effects that never settle,
+/// because they keep writing each other's inputs, make it panic after 100 passes.
 ///
 /// Calling it while a flush is already running, for example from inside an effect, does nothing:
 /// the running flush picks up the change. Inside a [`batch`] it does nothing either; the outermost
@@ -158,7 +162,7 @@ pub use signal::{Change, Signal};
 /// # Panics
 ///
 /// Panics if the effects don't settle after 100 passes. A panic inside an effect continues to the
-/// caller; that effect and the effects not yet visited run again on the next flush.
+/// caller; that effect and the reached effects not yet visited run on the next flush.
 pub fn flush_effects() {
   runtime::Runtime::flush_effects();
 }

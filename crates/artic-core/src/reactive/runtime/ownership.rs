@@ -65,10 +65,8 @@ impl Runtime {
     Self::dispose_scope_of(Node::Effect(effect_id));
     RUNTIME.with(|runtime| {
       runtime.graph.remove(Node::Effect(effect_id));
+      runtime.scheduler.remove_pending(runtime.effects.seq(effect_id));
       runtime.effects.free(effect_id);
-      if !runtime.scheduler.is_flushing() {
-        runtime.effects.remove_from_creation_order(effect_id);
-      }
     });
   }
 
