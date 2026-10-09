@@ -1,0 +1,8 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/whitespace/bad_xml_space.xaml
+---
+invalid/whitespace/bad_xml_space.xaml:1:51: error: `xml:space` must be `default` or `preserve`
+1 | <TextBlock xmlns="https://artic.rs/ui" xml:space="keep"/>
+  |                                                   ^^^^

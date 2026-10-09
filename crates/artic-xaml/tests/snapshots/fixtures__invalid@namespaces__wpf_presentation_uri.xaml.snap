@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/namespaces/wpf_presentation_uri.xaml
+---
+invalid/namespaces/wpf_presentation_uri.xaml:1:9: error: `http://schemas.microsoft.com/winfx/2006/xaml/presentation` isn't supported: artic's controls are their own vocabulary
+1 | <Button xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"/>
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: use `xmlns="https://artic.rs/ui"`

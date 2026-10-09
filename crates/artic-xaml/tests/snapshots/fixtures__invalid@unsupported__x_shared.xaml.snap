@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/unsupported/x_shared.xaml
+---
+invalid/unsupported/x_shared.xaml:1:80: error: `x:Shared` isn't supported: each resource is created once and shared
+1 | <SolidColorBrush xmlns="https://artic.rs/ui" xmlns:x="https://artic.rs/markup" x:Shared="False"/>
+  |                                                                                ^^^^^^^^
+help: create one instance per use with a template

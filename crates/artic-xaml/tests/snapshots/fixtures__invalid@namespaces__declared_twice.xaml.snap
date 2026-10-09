@@ -1,0 +1,11 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/namespaces/declared_twice.xaml
+---
+invalid/namespaces/declared_twice.xaml:1:59: error: prefix `v` is declared twice on this element
+1 | <Panel xmlns="https://artic.rs/ui" xmlns:v="using:app::a" xmlns:v="using:app::b"/>
+  |                                                           ^^^^^^^^^^^^^^^^^^^^^^
+  ::: invalid/namespaces/declared_twice.xaml:1:36
+1 | <Panel xmlns="https://artic.rs/ui" xmlns:v="using:app::a" xmlns:v="using:app::b"/>
+  |                                    ---------------------- first declared here

@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/unsupported/x_type_arguments.xaml
+---
+invalid/unsupported/x_type_arguments.xaml:1:69: error: `x:TypeArguments` isn't supported: no generics from XAML in v1
+1 | <List xmlns="https://artic.rs/ui" xmlns:x="https://artic.rs/markup" x:TypeArguments="x:String"/>
+  |                                                                     ^^^^^^^^^^^^^^^
+help: use a concrete type, or wrap the generic type in a non-generic one in Rust

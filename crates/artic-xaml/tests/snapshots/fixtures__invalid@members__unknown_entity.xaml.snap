@@ -1,0 +1,8 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/members/unknown_entity.xaml
+---
+invalid/members/unknown_entity.xaml:1:41: error: unknown entity `&nbsp;`; XML only defines `&lt;`, `&gt;`, `&amp;`, `&quot;` and `&apos;`, so write other characters as references like `&#160;`
+1 | <TextBlock xmlns="https://artic.rs/ui">a&nbsp;b</TextBlock>
+  |                                         ^^^^^^

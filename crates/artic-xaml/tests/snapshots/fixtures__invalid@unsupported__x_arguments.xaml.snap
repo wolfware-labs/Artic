@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/unsupported/x_arguments.xaml
+---
+invalid/unsupported/x_arguments.xaml:2:4: error: `x:Arguments` isn't supported: objects are created with `Default`, then their properties are set
+2 |   <x:Arguments/>
+  |    ^^^^^^^^^^^
+help: set properties instead of passing constructor arguments

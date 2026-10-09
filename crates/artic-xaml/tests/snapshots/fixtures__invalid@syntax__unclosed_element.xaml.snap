@@ -1,0 +1,11 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/syntax/unclosed_element.xaml
+---
+invalid/syntax/unclosed_element.xaml:3:1: error: `<Panel>` is never closed
+3 | 
+  | ^
+  ::: invalid/syntax/unclosed_element.xaml:1:2
+1 | <Panel xmlns="https://artic.rs/ui">
+  |  ----- opened here

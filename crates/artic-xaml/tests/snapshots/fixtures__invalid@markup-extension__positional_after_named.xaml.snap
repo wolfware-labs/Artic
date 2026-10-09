@@ -1,0 +1,12 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/markup-extension/positional_after_named.xaml
+---
+invalid/markup-extension/positional_after_named.xaml:1:66: error: positional argument after a named one
+1 | <TextBox xmlns="https://artic.rs/ui" Text="{Binding Mode=TwoWay, Email}"/>
+  |                                                                  ^^^^^
+  ::: invalid/markup-extension/positional_after_named.xaml:1:53
+1 | <TextBox xmlns="https://artic.rs/ui" Text="{Binding Mode=TwoWay, Email}"/>
+  |                                                     ---- named argument here
+help: move positional arguments before named ones

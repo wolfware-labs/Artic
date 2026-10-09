@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/unsupported/multi_trigger.xaml
+---
+invalid/unsupported/multi_trigger.xaml:2:4: error: `MultiTrigger` isn't supported: styles react to state with selectors
+2 |   <MultiTrigger/>
+  |    ^^^^^^^^^^^^
+help: use a selector with a pseudo-class, like `Button:pointerover`

@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/syntax/second_root.xaml
+---
+invalid/syntax/second_root.xaml:2:1: error: expected one root element, found more content after it
+2 | <Panel xmlns="https://artic.rs/ui"/>
+  | ^
+help: only comments and processing instructions may follow the root element

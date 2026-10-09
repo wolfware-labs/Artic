@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/namespaces/using_from_crate.xaml
+---
+invalid/namespaces/using_from_crate.xaml:1:51: error: a `using:` path starts with a crate name
+1 | <Panel xmlns="https://artic.rs/ui" xmlns:v="using:crate::views"/>
+  |                                                   ^^^^^
+help: write the full path from the crate name, like `xmlns:v="using:my_app::views"`

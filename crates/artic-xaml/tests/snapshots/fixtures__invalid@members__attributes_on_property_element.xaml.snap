@@ -1,0 +1,11 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/members/attributes_on_property_element.xaml
+---
+invalid/members/attributes_on_property_element.xaml:2:19: error: a property element can't have attributes
+2 |   <Button.Content Tag="1">x</Button.Content>
+  |                   ^^^
+  ::: invalid/members/attributes_on_property_element.xaml:2:4
+2 |   <Button.Content Tag="1">x</Button.Content>
+  |    -------------- on this property element

@@ -1,0 +1,8 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/markup-extension/missing_value.xaml
+---
+invalid/markup-extension/missing_value.xaml:1:58: error: expected a value after `=`
+1 | <TextBox xmlns="https://artic.rs/ui" Text="{Binding Mode=}"/>
+  |                                                          ^

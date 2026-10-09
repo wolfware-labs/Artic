@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/namespaces/no_default_namespace.xaml
+---
+invalid/namespaces/no_default_namespace.xaml:1:2: error: no default namespace is declared
+1 | <Panel>
+  |  ^^^^^
+help: add `xmlns="https://artic.rs/ui"` to the root element

@@ -1,0 +1,1 @@
+<TextBox xmlns="https://artic.rs/ui" Text="{Binding Email"/>

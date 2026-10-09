@@ -1,0 +1,8 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/namespaces/empty_uri.xaml
+---
+invalid/namespaces/empty_uri.xaml:1:36: error: a namespace can't be empty
+1 | <Panel xmlns="https://artic.rs/ui" xmlns:v=""/>
+  |                                    ^^^^^^^^^^

@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/unsupported/trigger.xaml
+---
+invalid/unsupported/trigger.xaml:2:4: error: `Trigger` isn't supported: styles react to state with selectors
+2 |   <Trigger/>
+  |    ^^^^^^^
+help: use a selector with a pseudo-class, like `Button:pointerover`

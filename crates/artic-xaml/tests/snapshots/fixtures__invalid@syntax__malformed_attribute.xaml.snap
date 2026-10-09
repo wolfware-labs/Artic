@@ -1,0 +1,8 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/syntax/malformed_attribute.xaml
+---
+invalid/syntax/malformed_attribute.xaml:2:9: error: malformed XML: invalid attribute at 2:9 cause expected quote mark not '1' at 2:16
+2 |   <Image Width=100/>
+  |         ^

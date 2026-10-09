@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/namespaces/undeclared_prefix.xaml
+---
+invalid/namespaces/undeclared_prefix.xaml:2:4: error: prefix `v` is not declared
+2 |   <v:Card/>
+  |    ^
+help: declare it here or on an ancestor, like `xmlns:v="using:my_app::views"`

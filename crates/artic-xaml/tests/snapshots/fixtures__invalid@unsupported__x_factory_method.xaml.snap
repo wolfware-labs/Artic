@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/unsupported/x_factory_method.xaml
+---
+invalid/unsupported/x_factory_method.xaml:1:70: error: `x:FactoryMethod` isn't supported: objects are created with `Default`, then their properties are set
+1 | <Panel xmlns="https://artic.rs/ui" xmlns:x="https://artic.rs/markup" x:FactoryMethod="create"/>
+  |                                                                      ^^^^^^^^^^^^^^^
+help: set properties instead of calling a factory method

@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/markup-extension/bad_argument_name.xaml
+---
+invalid/markup-extension/bad_argument_name.xaml:1:53: error: expected an argument name before `=`
+1 | <TextBox xmlns="https://artic.rs/ui" Text="{Binding Some Path=Email}"/>
+  |                                                     ^^^^^^^^^
+help: a name is a single word, unquoted

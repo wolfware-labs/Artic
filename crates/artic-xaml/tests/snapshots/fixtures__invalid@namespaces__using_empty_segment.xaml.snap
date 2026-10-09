@@ -1,0 +1,8 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/namespaces/using_empty_segment.xaml
+---
+invalid/namespaces/using_empty_segment.xaml:1:56: error: empty segment in a `using:` path
+1 | <Panel xmlns="https://artic.rs/ui" xmlns:v="using:app::::views"/>
+  |                                                        ^

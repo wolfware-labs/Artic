@@ -1,0 +1,8 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/namespaces/reserved_prefix.xaml
+---
+invalid/namespaces/reserved_prefix.xaml:1:36: error: the `xml` prefix is reserved
+1 | <Panel xmlns="https://artic.rs/ui" xmlns:xml="urn:other"/>
+  |                                    ^^^^^^^^^^^^^^^^^^^^^
