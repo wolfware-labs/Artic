@@ -4,9 +4,6 @@ use std::thread;
 
 impl Runtime {
   pub fn refresh_memo(memo_id: MemoId) {
-    if !RUNTIME.with(|runtime| runtime.memos.contains(memo_id)) {
-      return;
-    }
     let node = Node::Memo(memo_id);
     if RUNTIME.with(|runtime| runtime.memos.is_computing(memo_id)) {
       panic!("memo read while it is being computed; a memo can't depend on itself");
