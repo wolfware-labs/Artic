@@ -94,6 +94,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "artic-registry-fixture-a"
+version = "0.1.0"
+dependencies = [
+ "artic-core",
+ "artic-registry",
+]
+
+[[package]]
+name = "artic-registry-fixture-b"
+version = "0.1.0"
+dependencies = [
+ "artic-core",
+ "artic-registry",
+]
+
+[[package]]
+name = "artic-registry-linking"
+version = "0.1.0"
+dependencies = [
+ "artic-registry",
+ "artic-registry-fixture-a",
+ "artic-registry-fixture-b",
+]
+
+[[package]]
 name = "artic-render"
 version = "0.1.0"
 dependencies = [

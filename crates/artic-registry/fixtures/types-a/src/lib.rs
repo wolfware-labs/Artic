@@ -1,0 +1,31 @@
+//! Test fixture: registers the `Alpha` type in `XAML_TYPES` and nothing else.
+
+use artic_core::Object;
+use artic_core::tree::{NodeId, TreeArena};
+use artic_registry::TypeInfo;
+
+#[derive(Debug)]
+struct Alpha;
+
+impl Object for Alpha {}
+
+fn new_node(arena: &mut TreeArena) -> NodeId {
+  arena.alloc(Box::new(Alpha))
+}
+
+static ALPHA: TypeInfo = TypeInfo {
+  name: "Alpha",
+  namespace: "https://fixtures.artic.test/a",
+  rust_path: "artic_registry_fixture_a::Alpha",
+  new: new_node,
+  content: None,
+  is_collection: false,
+  properties: &[],
+  events: &[],
+  attached_properties: &[],
+  markup_extension: None,
+};
+
+#[artic_registry::linkme::distributed_slice(artic_registry::XAML_TYPES)]
+#[linkme(crate = artic_registry::linkme)]
+static ENTRY: &TypeInfo = &ALPHA;
