@@ -1,8 +1,9 @@
+mod error;
+
 use crate::{AttachedPropertyInfo, TypeInfo, XAML_TYPES};
+pub use error::{Duplicate, RegistryError};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::error::Error;
-use std::fmt::{Display, Formatter, Result as FmtResult};
 
 /// Lookup tables over a set of [`TypeInfo`] descriptors.
 ///
@@ -95,75 +96,6 @@ impl Registry {
 fn ordered(a: &'static str, b: &'static str) -> (&'static str, &'static str) {
   if a <= b { (a, b) } else { (b, a) }
 }
-
-/// The duplicates that kept a [`Registry`] from being built.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct RegistryError {
-  /// Every duplicate found, sorted.
-  pub duplicates: Vec<Duplicate>,
-}
-
-/// One clash between registered descriptors.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub enum Duplicate {
-  /// Two types have the same name in the same namespace.
-  Name {
-    /// The namespace both names belong to.
-    namespace: &'static str,
-    /// The name both types use.
-    name: &'static str,
-    /// The Rust path of one type, the first in sorted order.
-    first: &'static str,
-    /// The Rust path of the other type.
-    second: &'static str,
-  },
-  /// Two descriptors have the same Rust path.
-  RustPath {
-    /// The Rust path both descriptors use.
-    path: &'static str,
-  },
-  /// One owner declares the same attached property twice.
-  AttachedProperty {
-    /// The Rust path of the owner.
-    owner: &'static str,
-    /// The attached property's name.
-    name: &'static str,
-  },
-}
-
-impl Display for Duplicate {
-  fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
-    match self {
-      Duplicate::Name {
-        namespace,
-        name,
-        first,
-        second,
-      } => write!(
-        formatter,
-        "two types are named `{name}` in {namespace}: `{first}` and `{second}`"
-      ),
-      Duplicate::RustPath { path } => write!(formatter, "two types are registered for the Rust path `{path}`"),
-      Duplicate::AttachedProperty { owner, name } => {
-        write!(formatter, "`{owner}` declares the attached property `{name}` twice")
-      }
-    }
-  }
-}
-
-impl Display for RegistryError {
-  fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
-    for (index, duplicate) in self.duplicates.iter().enumerate() {
-      if index > 0 {
-        writeln!(formatter)?;
-      }
-      write!(formatter, "{duplicate}")?;
-    }
-    Ok(())
-  }
-}
-
-impl Error for RegistryError {}
 
 #[cfg(test)]
 mod tests {

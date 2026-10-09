@@ -55,6 +55,7 @@ linkme = "0.3.37"
 pretty_assertions = "1.4.1"
 proptest = "1.11.0"
 static_assertions = "1.1.0"
+thiserror = "2.0.21"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

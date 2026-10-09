@@ -1,0 +1,44 @@
+/// The duplicates that kept a [`Registry`](crate::Registry) from being built.
+///
+/// Its message lists every duplicate, one per line.
+#[derive(Debug, Clone, Eq, PartialEq, thiserror::Error)]
+#[error("{}", lines(&self.duplicates))]
+pub struct RegistryError {
+  /// Every duplicate found, sorted.
+  pub duplicates: Vec<Duplicate>,
+}
+
+/// One clash between registered descriptors.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, thiserror::Error)]
+pub enum Duplicate {
+  /// Two types have the same name in the same namespace.
+  #[error("two types are named `{name}` in {namespace}: `{first}` and `{second}`")]
+  Name {
+    /// The namespace both names belong to.
+    namespace: &'static str,
+    /// The name both types use.
+    name: &'static str,
+    /// The Rust path of one type, the first in sorted order.
+    first: &'static str,
+    /// The Rust path of the other type.
+    second: &'static str,
+  },
+  /// Two descriptors have the same Rust path.
+  #[error("two types are registered for the Rust path `{path}`")]
+  RustPath {
+    /// The Rust path both descriptors use.
+    path: &'static str,
+  },
+  /// One owner declares the same attached property twice.
+  #[error("`{owner}` declares the attached property `{name}` twice")]
+  AttachedProperty {
+    /// The Rust path of the owner.
+    owner: &'static str,
+    /// The attached property's name.
+    name: &'static str,
+  },
+}
+
+fn lines(duplicates: &[Duplicate]) -> String {
+  duplicates.iter().map(Duplicate::to_string).collect::<Vec<_>>().join("\n")
+}

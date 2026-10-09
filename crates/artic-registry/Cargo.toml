@@ -11,6 +11,7 @@ repository.workspace = true
 [dependencies]
 artic-core.workspace = true
 linkme.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true
