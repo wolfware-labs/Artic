@@ -95,7 +95,7 @@ impl Registry {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::Whitespace;
+  use crate::{AttachedTarget, Whitespace};
   use artic_core::Object;
   use artic_core::property::AnyProperty;
   use artic_core::tree::{NodeId, TreeArena};
@@ -138,7 +138,7 @@ mod tests {
     attached_properties: &[AttachedPropertyInfo {
       name: "Row",
       value_type: "usize",
-      target: None,
+      target: AttachedTarget::ChildrenOfOwner,
     }],
     ..info(UI, "Grid", "artic_controls::Grid")
   };
@@ -211,12 +211,12 @@ mod tests {
         AttachedPropertyInfo {
           name: "Row",
           value_type: "usize",
-          target: None,
+          target: AttachedTarget::ChildrenOfOwner,
         },
         AttachedPropertyInfo {
           name: "Row",
           value_type: "usize",
-          target: None,
+          target: AttachedTarget::ChildrenOfOwner,
         },
       ],
       ..info("https://other.example", "Grid", "artic_controls::Grid")

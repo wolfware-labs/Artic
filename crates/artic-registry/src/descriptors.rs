@@ -94,8 +94,18 @@ pub struct AttachedPropertyInfo {
   pub name: &'static str,
   /// The Rust path of the property's value type.
   pub value_type: &'static str,
-  /// The Rust path of the type it may be set on, or `None` if it may be set on any element.
-  pub target: Option<&'static str>,
+  /// Which elements it may be set on.
+  pub target: AttachedTarget,
+}
+
+/// Which elements an attached property may be set on.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum AttachedTarget {
+  /// Any element, such as `Accessibility.Name`.
+  Any,
+  /// The logical children of an element of the owner type, such as `Grid.Row` on a grid's
+  /// children.
+  ChildrenOfOwner,
 }
 
 /// The arguments a markup extension accepts.
