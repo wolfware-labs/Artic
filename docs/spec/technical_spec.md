@@ -247,7 +247,7 @@ flowchart LR
 
 1. `build.rs` calls `artic_xaml_compiler::compile_dir("src/views")`; every `.xaml` becomes `$OUT_DIR/views/<name>.rs`, included via `include!` by the `#[xaml_class]` macro.
 2. Type and property names resolve against the registry of all dependency crates. Because the registry is link-time, the compiler runs in a build script that links `artic-controls` and the app's own control crates as build-dependencies.
-3. Output is plain Rust: `let b = arena.alloc(Button::default()); b.content.set("Sign in".into()); …`. No string lookups survive to runtime.
+3. Output is plain Rust in the [builder shape](../design/builder-api.md): `let sign_in = Button::new().content("Sign in").build(arena);`, one statement per element, children before their parents. No string lookups survive to runtime.
 4. Bindings compile to typed closures (`|vm: &LoginVm| vm.email.get()`) over the `x:DataType` in scope, whether declared, inherited or inferred (§6, D2). A binding with no resolvable `x:DataType` is a compile error that names the attribute to add and where. Unknown property on a known `x:DataType` is a compile error. There is no reflective fallback (D1).
 5. Generated code is deterministic and gitignored; diagnostics point at the `.xaml` line/column via `#[track_caller]`-style span tables so `cargo build` errors read like `views/login.xaml:12:9: unknown property 'Foo' on Button`.
 
@@ -540,7 +540,7 @@ Input becomes routed events (tunnel then bubble through the visual tree, as in W
 ```rust
 #[xaml_class("views/login.xaml")]   // includes the generated file
 pub struct LoginView {
-    // generated: pub email: Named<TextBox>, plus every x:Name
+    // generated: pub email: Handle<TextBox>, plus every x:Name
     attempts: u32,                     // user fields
 }
 impl LoginView {
@@ -551,7 +551,7 @@ impl LoginView {
 }
 ```
 
-- The macro generates: the struct's element wrapper (a `UserControl` node owning `Self`), a `build(&mut Arena) -> NodeId` from the compiled XAML, typed `Named<T>` handles for every `x:Name`, and a handler table `name → fn` used by both paths.
+- The macro generates: the struct's element wrapper (a `UserControl` node owning `Self`), a `build(&mut Arena) -> NodeId` from the compiled XAML, typed `Handle<T>` handles for every `x:Name`, and a handler table `name → fn` used by both paths.
 - Handler signature is `fn(&mut self, &mut ViewCx, &Args)`; `ViewCx` gives arena access and the dispatcher. Handlers are `&mut self`, so no interior mutability in code-behind.
 - A handler name that does not exist is a compile error in the compiled path, a load error in the runtime path.
 - Code-behind and view-model are both available: `self.view_model::<LoginVm>()` returns the `DataContext` downcast.
