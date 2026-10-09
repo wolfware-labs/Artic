@@ -4,10 +4,14 @@
 //! [`Registry::from_link_time`] indexes all of them for lookup. There is no registration call: the
 //! linker gathers the entries.
 
+#[doc(hidden)]
+pub mod __private;
 mod descriptors;
 mod registry;
 
-pub use descriptors::{ArgInfo, AttachedPropertyInfo, EventInfo, MarkupExtensionInfo, PropertyInfo, TypeInfo};
+pub use descriptors::{
+  ArgInfo, AttachedPropertyInfo, EventInfo, MarkupExtensionInfo, PropertyInfo, TypeInfo, Whitespace, XamlType,
+};
 pub use registry::{Duplicate, Registry, RegistryError};
 
 #[doc(hidden)]
@@ -22,7 +26,7 @@ use linkme::distributed_slice;
 /// use artic_core::Object;
 /// use artic_core::property::AnyProperty;
 /// use artic_core::tree::{NodeId, TreeArena};
-/// use artic_registry::{Registry, TypeInfo};
+/// use artic_registry::{Registry, TypeInfo, Whitespace};
 ///
 /// #[derive(Debug)]
 /// struct Gauge;
@@ -41,6 +45,7 @@ use linkme::distributed_slice;
 ///   events: &[],
 ///   attached_properties: &[],
 ///   markup_extension: None,
+///   whitespace: Whitespace::Collapse,
 /// };
 ///
 /// artic_registry::register_type!(GAUGE);
@@ -78,7 +83,7 @@ pub static XAML_TYPES: [&'static TypeInfo];
 /// use artic_core::Object;
 /// use artic_core::property::AnyProperty;
 /// use artic_core::tree::{NodeId, TreeArena};
-/// use artic_registry::{Registry, TypeInfo};
+/// use artic_registry::{Registry, TypeInfo, Whitespace};
 ///
 /// #[derive(Debug)]
 /// struct Dial;
@@ -97,6 +102,7 @@ pub static XAML_TYPES: [&'static TypeInfo];
 ///   events: &[],
 ///   attached_properties: &[],
 ///   markup_extension: None,
+///   whitespace: Whitespace::Collapse,
 /// };
 ///
 /// artic_registry::register_type!(DIAL);

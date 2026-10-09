@@ -3,7 +3,7 @@
 use artic_core::Object;
 use artic_core::property::AnyProperty;
 use artic_core::tree::{NodeId, TreeArena};
-use artic_registry::TypeInfo;
+use artic_registry::{TypeInfo, Whitespace};
 
 #[derive(Debug)]
 struct Alpha;
@@ -27,6 +27,7 @@ static ALPHA: TypeInfo = TypeInfo {
   events: &[],
   attached_properties: &[],
   markup_extension: None,
+  whitespace: Whitespace::Collapse,
 };
 
 artic_registry::register_type!(ALPHA);

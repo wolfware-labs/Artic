@@ -28,6 +28,27 @@ pub struct TypeInfo {
   pub attached_properties: &'static [AttachedPropertyInfo],
   /// The arguments the type takes when used as a markup extension, or `None` if it isn't one.
   pub markup_extension: Option<&'static MarkupExtensionInfo>,
+  /// How the parser treats whitespace in text written inside the element.
+  pub whitespace: Whitespace,
+}
+
+/// How the parser treats whitespace in text content.
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
+pub enum Whitespace {
+  /// Runs of whitespace collapse to one space, and leading and trailing whitespace is dropped.
+  #[default]
+  Collapse,
+  /// Text keeps its whitespace as written.
+  Significant,
+}
+
+/// A Rust type that XAML can name, described by a [`TypeInfo`].
+///
+/// `#[derive(XamlType)]` implements it. A type that implements it can also be the value of a
+/// property, as an object element.
+pub trait XamlType {
+  /// The type's registry descriptor.
+  const TYPE_INFO: &'static TypeInfo;
 }
 
 impl TypeInfo {
@@ -143,6 +164,7 @@ mod tests {
     }],
     attached_properties: &[],
     markup_extension: None,
+    whitespace: Whitespace::Collapse,
   };
 
   // A descriptor written as a `static` copies its property metadata from the property's key at
