@@ -6,7 +6,7 @@ use std::str::FromStr;
 pub use crate::{EventInfo, PropertyInfo, TypeInfo, Whitespace, XamlType, register_type};
 pub use artic_core::Object;
 pub use artic_core::event::Event;
-pub use artic_core::property::{Affects, AnyProperty, Property, PropertyKey};
+pub use artic_core::property::{Affects, AnyProperty, ParseEnumError, Property, PropertyKey};
 pub use artic_core::tree::{NodeId, TreeArena, XamlCollection};
 pub use std::marker::PhantomData;
 

@@ -1,0 +1,5 @@
+error: `AUTO` matches the same text as `Auto` when case is ignored
+ --> tests/ui/enum_names_differ_only_in_case.rs:6:3
+  |
+6 |   AUTO,
+  |   ^^^^
