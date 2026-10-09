@@ -104,6 +104,22 @@ impl SourceFile {
     }
   }
 
+  /// Returns the byte offset of `position`, the inverse of [`line_col`](SourceFile::line_col).
+  ///
+  /// A line past the last one maps to the end of the text, and a column past the end of its line
+  /// to the end of that line, line ending included.
+  #[must_use]
+  pub fn byte_offset(&self, position: LineCol) -> usize {
+    let Some(start) = position.line.checked_sub(1).and_then(|index| self.line_starts.get(index)) else {
+      return self.text.len();
+    };
+    let end = self.line_starts.get(position.line).copied().unwrap_or(self.text.len());
+    self.text[*start..end]
+      .char_indices()
+      .nth(position.column.saturating_sub(1))
+      .map_or(end, |(offset, _)| start + offset)
+  }
+
   /// Returns the text of line `line` (from 1), without its line ending, or `""` past the last line.
   #[must_use]
   pub fn line_text(&self, line: usize) -> &str {
@@ -239,5 +255,18 @@ mod tests {
 
     assert_eq!(sources.get(first).text(), "a");
     assert_eq!(sources.get(second).path(), Path::new("b.xaml"));
+  }
+
+  // `byte_offset` undoes `line_col`, across multi-byte characters and CRLF line endings, and clamps
+  // positions past the text.
+  #[test]
+  fn byte_offset_inverts_line_col() {
+    let file = SourceFile::new("test.xaml", "<A é=\"1\">\r\n  <B/>\r\n</A>");
+
+    for byte in [0, 3, 5, 6, 12, 14, 18] {
+      assert_eq!(file.byte_offset(file.line_col(byte)), byte, "byte {byte}");
+    }
+    assert_eq!(file.byte_offset(LineCol { line: 9, column: 1 }), file.text().len());
+    assert_eq!(file.byte_offset(LineCol { line: 1, column: 99 }), 12);
   }
 }
