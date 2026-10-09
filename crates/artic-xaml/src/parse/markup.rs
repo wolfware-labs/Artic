@@ -9,27 +9,7 @@ use crate::infoset::{Member, MemberKey, TypeRef, XamlNode};
 /// Parses an attribute value that starts with `{`: a markup extension, or literal text after a
 /// `{}` escape. Returns `None` if the value has an error, which is recorded in `diagnostics`.
 pub(super) fn parse(value: &Decoded, file: SourceId, diagnostics: &mut Diagnostics) -> Option<XamlNode> {
-  let mut parser = Parser {
-    text: &value.text,
-    position: 0,
-    offsets: &value.offsets,
-    file,
-    diagnostics,
-  };
-  if let Some(literal) = value.text.strip_prefix("{}") {
-    return Some(XamlNode::Value {
-      text: literal.to_owned(),
-      span: parser.span(2, value.text.len()),
-    });
-  }
-  let node = parser.extension().ok()?;
-  parser.skip_whitespace();
-  if parser.position < value.text.len() {
-    let span = parser.span(parser.position, value.text.trim_end().len());
-    parser.fatal(Diagnostic::error(span, "unexpected text after the markup extension"));
-    return None;
-  }
-  Some(node)
+  Parser::new(value, file, diagnostics).run()
 }
 
 struct Parser<'a> {
@@ -42,7 +22,37 @@ struct Parser<'a> {
   diagnostics: &'a mut Diagnostics,
 }
 
-impl Parser<'_> {
+impl<'a> Parser<'a> {
+  fn new(value: &'a Decoded, file: SourceId, diagnostics: &'a mut Diagnostics) -> Parser<'a> {
+    Parser {
+      text: &value.text,
+      position: 0,
+      offsets: &value.offsets,
+      file,
+      diagnostics,
+    }
+  }
+
+  /// Parses the whole value: literal text after the `{}` escape, or one extension followed by
+  /// nothing but whitespace.
+  fn run(mut self) -> Option<XamlNode> {
+    let text = self.text;
+    if let Some(literal) = text.strip_prefix("{}") {
+      return Some(XamlNode::Value {
+        text: literal.to_owned(),
+        span: self.span(2, text.len()),
+      });
+    }
+    let node = self.extension().ok()?;
+    self.skip_whitespace();
+    if self.position < text.len() {
+      let span = self.span(self.position, text.trim_end().len());
+      self.fatal(Diagnostic::error(span, "unexpected text after the markup extension"));
+      return None;
+    }
+    Some(node)
+  }
+
   /// Parses `{Name arguments}`, starting at its `{`.
   fn extension(&mut self) -> Result<XamlNode, Fatal> {
     let text = self.text;
