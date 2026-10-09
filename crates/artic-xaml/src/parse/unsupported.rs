@@ -1,5 +1,6 @@
 //! The MS-XAML and WPF constructs artic rejects, each with why and what to write instead.
 
+use super::namespace::UI_URI;
 use crate::diagnostics::{Diagnostic, Span};
 use crate::infoset::{TypeRef, XamlNamespace};
 
@@ -100,8 +101,6 @@ const MARKUP_TYPES: &[&str] = &["Type", "Static", "Null", "String", "Int32", "Do
 /// Everything the markup namespace supports, for the help of an unknown name.
 const MARKUP_NAMES: &str = "directives `x:Name`, `x:Key`, `x:Class`, `x:DataType`, `x:Uid` and `x:FieldModifier`; \
   types `x:Type`, `x:Static`, `x:Null`, `x:String`, `x:Int32`, `x:Double` and `x:Boolean`";
-
-const UI_URI: &str = "https://artic.rs/ui";
 
 /// The error for `construct`, written at `span`, if the table rejects it.
 pub(super) fn rejection(construct: &str, span: Span) -> Option<Diagnostic> {

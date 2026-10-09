@@ -498,7 +498,8 @@ fn microsoft_x_uri_rejected_with_hint() {
   assert_eq!(
     found,
     [(
-      "the Microsoft XAML namespace isn't supported".to_owned(),
+      "`http://schemas.microsoft.com/winfx/2006/xaml` isn't supported: artic's XAML language namespace has its own URI"
+        .to_owned(),
       r#"xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml""#,
       Some(r#"use `xmlns:x="https://artic.rs/markup"`"#.to_owned()),
     )]
@@ -510,7 +511,10 @@ fn microsoft_x_uri_rejected_with_hint() {
 fn wpf_presentation_uri_rejected_with_hint() {
   let found = errors_with_help(r#"<Button xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"/>"#);
 
-  assert_eq!(found[0].0, "the WPF presentation namespace isn't supported");
+  assert_eq!(
+    found[0].0,
+    "`http://schemas.microsoft.com/winfx/2006/xaml/presentation` isn't supported: artic's controls are their own vocabulary"
+  );
   assert_eq!(found[0].2.as_deref(), Some(r#"use `xmlns="https://artic.rs/ui"`"#));
   assert_eq!(found.len(), 1);
 }
@@ -523,7 +527,7 @@ fn clr_namespace_rejected_with_hint() {
   assert_eq!(
     found,
     [(
-      "`clr-namespace:` isn't supported".to_owned(),
+      "`clr-namespace:` isn't supported: prefixes map to Rust modules, not .NET namespaces".to_owned(),
       r#"xmlns:v="clr-namespace:MyApp.ViewModels;assembly=MyApp""#,
       Some(r#"artic maps prefixes to Rust modules; for example `xmlns:v="using:my_app::view_models"`"#.to_owned()),
     )]
