@@ -4,7 +4,6 @@ use syn::{DeriveInput, Error, Expr, Field, Ident, LitStr, Meta, Path, Token};
 
 /// What `#[xaml(...)]` on the struct says.
 #[cfg_attr(test, derive(Debug))]
-#[cfg_attr(not(test), expect(dead_code, reason = "code generation reads these (#18)"))]
 pub struct TypeAttributes {
   pub namespace: LitStr,
   pub content: Option<Ident>,
