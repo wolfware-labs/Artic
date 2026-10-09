@@ -5,7 +5,7 @@ use artic_core::event::Event;
 use artic_core::property::{Affects, Precedence, Property, PropertyKey};
 use artic_core::tree::{NodeId, Tree, TreeArena};
 use artic_macros::XamlType;
-use artic_registry::{Registry, TypeInfo, Whitespace, XamlType};
+use artic_registry::{AttachedTarget, Registry, TypeInfo, Whitespace, XamlType};
 use pretty_assertions::assert_eq;
 use std::str::FromStr;
 
@@ -194,4 +194,97 @@ fn shared_key_inherits_across_types() {
   assert_eq!(arena.get_as::<TextBlock>(text).expect("a TextBlock").font_size.get(), 20.0);
   assert_eq!(TextBlock::TYPE_INFO.properties[0].name, "FontSize");
   assert!(TextBlock::TYPE_INFO.properties[0].inherits);
+}
+
+/// A panel owning two attached properties: `Row`, set on its children, and `Label`, set anywhere.
+#[derive(Debug, XamlType)]
+#[xaml(namespace = "https://artic.rs/ui")]
+#[xaml(attached(name = "Row", ty = usize, affects = layout, target = children))]
+#[xaml(attached(name = "Label", ty = String, default = "unnamed".to_owned(), target = any))]
+struct Grid {
+  #[xaml]
+  columns: Property<usize>,
+}
+
+// Attached properties reach the registry, found by their owner and name, with their targets.
+#[test]
+fn attached_property_is_found_by_owner_and_name() {
+  let registry = Registry::from_link_time().expect("no duplicates");
+  let grid = lookup("Grid");
+
+  let row = registry.attached_property(grid, "Row").expect("Grid.Row");
+  let label = registry.attached_property(grid, "Label").expect("Grid.Label");
+
+  assert_eq!((row.value_type, row.target), ("usize", AttachedTarget::ChildrenOfOwner));
+  assert_eq!((label.value_type, label.target), ("String", AttachedTarget::Any));
+  assert!(registry.attached_property(grid, "Columns").is_none());
+}
+
+// The generated helpers set and read an attached value on another type's node, and a local value
+// overrides a style value until it's cleared.
+#[test]
+fn attached_helpers_set_and_read_with_precedence() {
+  let mut arena = TreeArena::new();
+  let border = (Border::TYPE_INFO.new)(&mut arena);
+  assert_eq!(Grid::row(&arena, border), 0);
+  assert_eq!(Grid::label(&arena, border), "unnamed");
+
+  Grid::set_row(&mut arena, border, 3);
+  assert_eq!(Grid::row(&arena, border), 3);
+
+  let row = arena.attached_property(border, Grid::ROW);
+  row.set_at(Precedence::StyleSetter, 2);
+  assert_eq!(Grid::row(&arena, border), 3, "a local value overrides a style value");
+  row.clear(Precedence::Local);
+  assert_eq!(Grid::row(&arena, border), 2);
+}
+
+// An attached key carries the metadata its declaration gives.
+#[test]
+fn attached_key_carries_its_metadata() {
+  assert_eq!(Grid::ROW.key().name(), "Row");
+  assert_eq!(Grid::ROW.key().affects(), Affects::LAYOUT);
+  assert_eq!(Grid::LABEL.key().affects(), Affects::NONE);
+  assert_eq!(Grid::LABEL.default_value(), "unnamed");
+}
+
+/// A markup extension with one positional argument and an optional named one.
+#[derive(Debug, XamlType)]
+#[xaml(namespace = "https://artic.rs/ui", markup_extension(positional(key)))]
+struct Localize {
+  #[xaml]
+  key: Property<String>,
+  #[xaml]
+  fallback: Property<Option<String>>,
+}
+
+/// A markup extension without arguments.
+#[derive(Debug, XamlType)]
+#[xaml(namespace = "https://artic.rs/ui", markup_extension)]
+struct Nothing;
+
+// A markup extension's schema lists its positional arguments in order, and every property as a
+// named argument, with the names and value types of its properties.
+#[test]
+fn markup_extension_schema_is_registered() {
+  let schema = |info: &TypeInfo| {
+    let extension = info.markup_extension.expect("a markup extension");
+    let arguments = |arguments: &[artic_registry::ArgInfo]| {
+      arguments
+        .iter()
+        .map(|argument| (argument.name, argument.value_type))
+        .collect::<Vec<_>>()
+    };
+    (arguments(extension.positional), arguments(extension.named))
+  };
+
+  assert_eq!(
+    schema(lookup("Localize")),
+    (
+      vec![("Key", "String")],
+      vec![("Key", "String"), ("Fallback", "Option < String >")]
+    )
+  );
+  assert_eq!(schema(lookup("Nothing")), (vec![], vec![]));
+  assert!(lookup("Border").markup_extension.is_none());
 }

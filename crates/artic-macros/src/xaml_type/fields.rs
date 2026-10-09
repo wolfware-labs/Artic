@@ -65,6 +65,8 @@ pub fn analyze(input: &DeriveInput) -> syn::Result<Analysis<'_>> {
       }
     }
   }
+  check_attached(&attributes, &xaml_fields)?;
+  check_positional(&input.ident, &attributes, &xaml_fields)?;
   if let Some(content) = &attributes.content
     && !xaml_fields.iter().any(|field| field.ident == content)
   {
@@ -79,6 +81,64 @@ pub fn analyze(input: &DeriveInput) -> syn::Result<Analysis<'_>> {
     xaml_fields,
     other_fields,
   })
+}
+
+/// Rejects two attached properties with one name, and an attached property whose helpers would
+/// clash with a property's methods, which are named after its field.
+fn check_attached(attributes: &TypeAttributes, xaml_fields: &[XamlField]) -> syn::Result<()> {
+  for (index, attached) in attributes.attached.iter().enumerate() {
+    let name = attached.name.value();
+    if attributes.attached[..index]
+      .iter()
+      .any(|earlier| earlier.name.value() == name)
+    {
+      return Err(Error::new_spanned(
+        &attached.name,
+        format_args!("this type already declares the attached property `{name}`"),
+      ));
+    }
+    let getter = snake_case(&name);
+    let setter = format!("set_{getter}");
+    let clash = xaml_fields
+      .iter()
+      .filter(|field| matches!(field.role, Role::Property { .. }))
+      .find(|field| field.ident == getter.as_str() || field.ident == setter.as_str());
+    if let Some(field) = clash {
+      return Err(Error::new_spanned(
+        &attached.name,
+        format_args!(
+          "the attached property `{name}`'s helpers `{getter}` and `{setter}` clash with the property `{}`; rename one with `name = ...`",
+          field.ident
+        ),
+      ));
+    }
+  }
+  Ok(())
+}
+
+/// Rejects a positional argument that isn't a property, or that is listed twice.
+fn check_positional(owner: &Ident, attributes: &TypeAttributes, xaml_fields: &[XamlField]) -> syn::Result<()> {
+  let Some(positional) = &attributes.markup_extension else {
+    return Ok(());
+  };
+  for (index, argument) in positional.iter().enumerate() {
+    let is_property = xaml_fields
+      .iter()
+      .any(|field| field.ident == argument && matches!(field.role, Role::Property { .. }));
+    if !is_property {
+      return Err(Error::new_spanned(
+        argument,
+        format_args!("`positional({argument})` names no property of `{owner}`"),
+      ));
+    }
+    if positional[..index].contains(argument) {
+      return Err(Error::new_spanned(
+        argument,
+        format_args!("`{argument}` is listed twice in `positional(...)`"),
+      ));
+    }
+  }
+  Ok(())
 }
 
 /// The field's name in markup: its `name` override, or the field name in PascalCase.
@@ -133,7 +193,7 @@ fn reject_unmarked_member(field: &Field) -> syn::Result<()> {
 }
 
 /// If `ty` is written `Wrapper<T>`, possibly with a path in front, returns `T`.
-fn generic_argument<'a>(ty: &'a Type, wrapper: &str) -> Option<&'a Type> {
+pub fn generic_argument<'a>(ty: &'a Type, wrapper: &str) -> Option<&'a Type> {
   let Type::Path(path) = ty else {
     return None;
   };
@@ -148,6 +208,18 @@ fn generic_argument<'a>(ty: &'a Type, wrapper: &str) -> Option<&'a Type> {
     GenericArgument::Type(argument) if arguments.args.len() == 1 => Some(argument),
     _ => None,
   }
+}
+
+/// `ColumnSpan` as `column_span`: the name of a generated helper.
+pub fn snake_case(name: &str) -> String {
+  let mut snake = String::with_capacity(name.len() + 4);
+  for (index, character) in name.chars().enumerate() {
+    if character.is_uppercase() && index > 0 {
+      snake.push('_');
+    }
+    snake.extend(character.to_lowercase());
+  }
+  snake
 }
 
 fn pascal_case(name: &str) -> String {
@@ -225,6 +297,13 @@ mod tests {
 
     let names: Vec<String> = analysis.xaml_fields.iter().map(xaml_name).collect();
     assert_eq!(names, ["CornerRadius", "BorderBrush"]);
+  }
+
+  // Attached property names become snake_case helper names.
+  #[test]
+  fn snake_case_names() {
+    let names: Vec<String> = ["Row", "ColumnSpan", "Name"].into_iter().map(snake_case).collect();
+    assert_eq!(names, ["row", "column_span", "name"]);
   }
 
   // `content` must name a `#[xaml]` field.

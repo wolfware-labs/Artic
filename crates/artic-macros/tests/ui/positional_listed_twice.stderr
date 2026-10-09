@@ -1,0 +1,5 @@
+error: `key` is listed twice in `positional(...)`
+ --> tests/ui/positional_listed_twice.rs:5:76
+  |
+5 | #[xaml(namespace = "https://artic.rs/ui", markup_extension(positional(key, key)))]
+  |                                                                            ^^^

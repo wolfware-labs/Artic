@@ -10,7 +10,7 @@ mod descriptors;
 mod registry;
 
 pub use descriptors::{
-  ArgInfo, AttachedPropertyInfo, EventInfo, MarkupExtensionInfo, PropertyInfo, TypeInfo, Whitespace, XamlType,
+  ArgInfo, AttachedPropertyInfo, AttachedTarget, EventInfo, MarkupExtensionInfo, PropertyInfo, TypeInfo, Whitespace, XamlType,
 };
 pub use registry::{Duplicate, Registry, RegistryError};
 

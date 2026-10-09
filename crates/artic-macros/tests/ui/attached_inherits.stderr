@@ -1,0 +1,5 @@
+error: attached properties can't inherit yet
+ --> tests/ui/attached_inherits.rs:4:97
+  |
+4 | #[xaml(namespace = "https://artic.rs/ui", attached(name = "Row", ty = usize, target = children, inherits))]
+  |                                                                                                 ^^^^^^^^

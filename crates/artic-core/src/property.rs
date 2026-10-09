@@ -52,6 +52,7 @@
 
 mod affects;
 mod any;
+mod attached;
 mod key;
 mod levels;
 mod parse_enum_error;
@@ -60,6 +61,7 @@ mod state;
 use crate::reactive::{Change, Signal};
 pub use affects::Affects;
 pub use any::{AnyProperty, KeyId};
+pub use attached::AttachedKey;
 pub use key::PropertyKey;
 use levels::Levels;
 pub use parse_enum_error::ParseEnumError;

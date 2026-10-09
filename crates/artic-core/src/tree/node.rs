@@ -1,5 +1,5 @@
 use crate::Object;
-use crate::property::Affects;
+use crate::property::{Affects, AnyProperty};
 use crate::tree::{NodeId, Tree};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -8,6 +8,7 @@ use std::rc::Rc;
 pub struct TreeNode {
   pub object: Box<dyn Object>,
   pub dirty: Rc<Cell<Affects>>,
+  pub attached: Vec<Box<dyn AnyProperty>>,
   logical: Links,
   visual: Links,
 }
@@ -25,6 +26,7 @@ impl TreeNode {
     Self {
       object,
       dirty,
+      attached: Vec::new(),
       logical: Links::default(),
       visual: Links::default(),
     }
