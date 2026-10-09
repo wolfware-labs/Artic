@@ -26,6 +26,4 @@ static ALPHA: TypeInfo = TypeInfo {
   markup_extension: None,
 };
 
-#[artic_registry::linkme::distributed_slice(artic_registry::XAML_TYPES)]
-#[linkme(crate = artic_registry::linkme)]
-static ENTRY: &TypeInfo = &ALPHA;
+artic_registry::register_type!(ALPHA);

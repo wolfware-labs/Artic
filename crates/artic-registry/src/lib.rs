@@ -16,9 +16,7 @@ use linkme::distributed_slice;
 
 /// Every [`TypeInfo`] registered by the crates linked into the binary.
 ///
-/// The `XamlType` derive adds one entry per type. An entry can also be added by hand; outside this
-/// crate, point the attribute at the `linkme` this crate re-exports so the defining crate doesn't
-/// need its own `linkme` dependency:
+/// The `XamlType` derive adds one entry per type. To add one by hand, use [`register_type!`]:
 ///
 /// ```
 /// use artic_core::Object;
@@ -42,9 +40,7 @@ use linkme::distributed_slice;
 ///   markup_extension: None,
 /// };
 ///
-/// #[artic_registry::linkme::distributed_slice(artic_registry::XAML_TYPES)]
-/// #[linkme(crate = artic_registry::linkme)]
-/// static GAUGE_ENTRY: &TypeInfo = &GAUGE;
+/// artic_registry::register_type!(GAUGE);
 ///
 /// let registry = Registry::from_link_time().expect("no duplicates");
 /// assert!(registry.type_by_rust_path("my_app::views::Gauge").is_some());
@@ -66,3 +62,49 @@ use linkme::distributed_slice;
 /// Android `cdylib` needs nothing extra.
 #[distributed_slice]
 pub static XAML_TYPES: [&'static TypeInfo];
+
+/// Adds a [`TypeInfo`] `static` to [`XAML_TYPES`].
+///
+/// The crate calling it needs no `linkme` dependency of its own, and one module can register
+/// several types. The entry only reaches the registry if the calling crate is linked; see the
+/// linking rules on [`XAML_TYPES`].
+///
+/// # Examples
+///
+/// ```
+/// use artic_core::Object;
+/// use artic_core::tree::{NodeId, TreeArena};
+/// use artic_registry::{Registry, TypeInfo};
+///
+/// #[derive(Debug)]
+/// struct Dial;
+/// impl Object for Dial {}
+///
+/// static DIAL: TypeInfo = TypeInfo {
+///   name: "Dial",
+///   namespace: "using:my_app::views",
+///   rust_path: "my_app::views::Dial",
+///   new: |arena: &mut TreeArena| -> NodeId { arena.alloc(Box::new(Dial)) },
+///   content: None,
+///   is_collection: false,
+///   properties: &[],
+///   events: &[],
+///   attached_properties: &[],
+///   markup_extension: None,
+/// };
+///
+/// artic_registry::register_type!(DIAL);
+///
+/// let registry = Registry::from_link_time().expect("no duplicates");
+/// assert!(registry.type_by_name("using:my_app::views", "Dial").is_some());
+/// ```
+#[macro_export]
+macro_rules! register_type {
+  ($info:path) => {
+    const _: () = {
+      #[$crate::linkme::distributed_slice($crate::XAML_TYPES)]
+      #[linkme(crate = $crate::linkme)]
+      static ENTRY: &$crate::TypeInfo = &$info;
+    };
+  };
+}

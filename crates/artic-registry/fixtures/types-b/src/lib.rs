@@ -26,6 +26,4 @@ static BETA: TypeInfo = TypeInfo {
   markup_extension: None,
 };
 
-#[artic_registry::linkme::distributed_slice(artic_registry::XAML_TYPES)]
-#[linkme(crate = artic_registry::linkme)]
-static ENTRY: &TypeInfo = &BETA;
+artic_registry::register_type!(BETA);
