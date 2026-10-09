@@ -6,6 +6,7 @@ mod namespace;
 #[cfg(test)]
 mod tests;
 mod text;
+mod unsupported;
 
 use crate::diagnostics::{Diagnostic, Diagnostics, SourceId, SourceMap};
 use crate::infoset::{Member, MemberKey, XamlDocument, XamlNamespace};
