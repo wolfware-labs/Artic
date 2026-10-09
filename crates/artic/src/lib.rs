@@ -5,3 +5,6 @@
 //! - `hot-reload`: reload views from disk during development.
 //! - `runtime-xaml`: load XAML files at runtime in release builds.
 //! - `skia`: use the `skia-safe` rendering backend.
+
+#[doc(hidden)]
+pub use artic_registry::__private;

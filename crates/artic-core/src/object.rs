@@ -18,7 +18,7 @@ use std::fmt::Debug;
 /// Its one method, [`visit_properties`](Object::visit_properties), lists the node's
 /// [`Property`](crate::property::Property) fields, so the tree can mark the node dirty when one of them
 /// changes and make inheritable ones follow the same property on a logical ancestor. A node type without
-/// properties doesn't implement it.
+/// properties implements it with an empty body.
 ///
 /// # Examples
 ///
@@ -26,6 +26,7 @@ use std::fmt::Debug;
 ///
 /// ```
 /// use artic_core::Object;
+/// use artic_core::property::AnyProperty;
 /// use artic_core::tree::TreeArena;
 ///
 /// #[derive(Debug)]
@@ -33,7 +34,9 @@ use std::fmt::Debug;
 ///   text: String,
 /// }
 ///
-/// impl Object for Label {}
+/// impl Object for Label {
+///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+/// }
 ///
 /// let mut arena = TreeArena::new();
 /// let id = arena.alloc(Box::new(Label { text: "hello".into() }));
@@ -74,6 +77,7 @@ pub trait Object: Debug + Any {
   ///
   /// The tree uses it to connect the properties to their node when the node is allocated, so that
   /// changes mark the node dirty, and to find a property by its key. A node type without properties
-  /// keeps the default, which visits nothing.
-  fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  /// implements it with an empty body. It has no default on purpose: a type that has properties
+  /// but forgot to visit them would compile and silently never update.
+  fn visit_properties(&self, visit: &mut dyn FnMut(&dyn AnyProperty));
 }

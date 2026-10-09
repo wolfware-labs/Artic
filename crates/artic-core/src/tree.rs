@@ -13,6 +13,7 @@
 //! layout and rendering dirty, and a change to one of its properties adds the stages the property's key
 //! affects; see [`dirty`](TreeArena::dirty).
 
+mod collection;
 mod dirty;
 mod inheritance;
 mod links;
@@ -20,6 +21,7 @@ mod node;
 
 use crate::Object;
 use crate::arena::{Arena, SlotId};
+pub use collection::XamlCollection;
 use node::TreeNode;
 use std::any::Any;
 use std::fmt::Debug;
@@ -37,11 +39,14 @@ use std::fmt::Debug;
 ///
 /// ```
 /// use artic_core::Object;
+/// use artic_core::property::AnyProperty;
 /// use artic_core::tree::TreeArena;
 ///
 /// #[derive(Debug)]
 /// struct Label(&'static str);
-/// impl Object for Label {}
+/// impl Object for Label {
+///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+/// }
 ///
 /// let mut arena = TreeArena::new();
 /// let id = arena.alloc(Box::new(Label("hello")));
@@ -104,11 +109,14 @@ impl TreeArena {
   ///
   /// ```
   /// use artic_core::{Object};
+  /// use artic_core::property::AnyProperty;
   /// use artic_core::tree::TreeArena;
   ///
   /// #[derive(Debug)]
   /// struct Label;
-  /// impl Object for Label {}
+  /// impl Object for Label {
+  ///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  /// }
   ///
   /// let mut arena = TreeArena::new();
   /// let id = arena.alloc(Box::new(Label));
@@ -140,11 +148,14 @@ impl TreeArena {
   ///
   /// ```
   /// use artic_core::{Object};
+  /// use artic_core::property::AnyProperty;
   /// use artic_core::tree::TreeArena;
   ///
   /// #[derive(Debug)]
   /// struct Label;
-  /// impl Object for Label {}
+  /// impl Object for Label {
+  ///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  /// }
   ///
   /// let mut arena = TreeArena::new();
   /// let id = arena.alloc(Box::new(Label));
@@ -175,15 +186,20 @@ impl TreeArena {
   ///
   /// ```
   /// use artic_core::{Object};
+  /// use artic_core::property::AnyProperty;
   /// use artic_core::tree::TreeArena;
   ///
   /// #[derive(Debug)]
   /// struct Label(&'static str);
-  /// impl Object for Label {}
+  /// impl Object for Label {
+  ///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  /// }
   ///
   /// #[derive(Debug)]
   /// struct Button;
-  /// impl Object for Button {}
+  /// impl Object for Button {
+  ///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  /// }
   ///
   /// let mut arena = TreeArena::new();
   /// let id = arena.alloc(Box::new(Label("hello")));
@@ -216,11 +232,14 @@ impl TreeArena {
   ///
   /// ```
   /// use artic_core::{Object};
+  /// use artic_core::property::AnyProperty;
   /// use artic_core::tree::TreeArena;
   ///
   /// #[derive(Debug)]
   /// struct Counter(u32);
-  /// impl Object for Counter {}
+  /// impl Object for Counter {
+  ///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  /// }
   ///
   /// let mut arena = TreeArena::new();
   /// let id = arena.alloc(Box::new(Counter(0)));
@@ -263,11 +282,14 @@ impl TreeArena {
   ///
   /// ```
   /// use artic_core::{Object};
+  /// use artic_core::property::AnyProperty;
   /// use artic_core::tree::TreeArena;
   ///
   /// #[derive(Debug)]
   /// struct Label;
-  /// impl Object for Label {}
+  /// impl Object for Label {
+  ///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  /// }
   ///
   /// let mut arena = TreeArena::new();
   /// let id = arena.alloc(Box::new(Label));
@@ -293,6 +315,7 @@ impl TreeArena {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::property::AnyProperty;
   use pretty_assertions::{assert_eq, assert_ne};
   use static_assertions::{assert_eq_size, assert_impl_all, assert_not_impl_any};
 
@@ -307,9 +330,13 @@ mod tests {
   #[derive(Debug, PartialEq, Eq)]
   struct OtherControl;
 
-  impl Object for Control {}
+  impl Object for Control {
+    fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  }
 
-  impl Object for OtherControl {}
+  impl Object for OtherControl {
+    fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  }
 
   #[test]
   fn get_as_wrong_type_returns_none() {
@@ -329,7 +356,9 @@ mod tests {
   #[derive(Debug, PartialEq, Eq)]
   struct Counter(u32);
 
-  impl Object for Counter {}
+  impl Object for Counter {
+    fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  }
 
   #[test]
   fn nodes_of_different_types_share_one_arena() {

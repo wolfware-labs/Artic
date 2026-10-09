@@ -1,29 +1,7 @@
-//! Test fixture: registers the `Alpha` type in `XAML_TYPES` and nothing else.
+//! Test fixture: derives one XAML type, `Alpha`, and nothing else.
 
-use artic_core::Object;
-use artic_core::tree::{NodeId, TreeArena};
-use artic_registry::TypeInfo;
+use artic_macros::XamlType;
 
-#[derive(Debug)]
+#[derive(Debug, XamlType)]
+#[xaml(namespace = "https://fixtures.artic.test/a")]
 struct Alpha;
-
-impl Object for Alpha {}
-
-fn new_node(arena: &mut TreeArena) -> NodeId {
-  arena.alloc(Box::new(Alpha))
-}
-
-static ALPHA: TypeInfo = TypeInfo {
-  name: "Alpha",
-  namespace: "https://fixtures.artic.test/a",
-  rust_path: "artic_registry_fixture_a::Alpha",
-  new: new_node,
-  content: None,
-  is_collection: false,
-  properties: &[],
-  events: &[],
-  attached_properties: &[],
-  markup_extension: None,
-};
-
-artic_registry::register_type!(ALPHA);

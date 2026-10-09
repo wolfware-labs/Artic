@@ -20,11 +20,14 @@ impl TreeArena {
   ///
   /// ```
   /// use artic_core::Object;
+  /// use artic_core::property::AnyProperty;
   /// use artic_core::tree::{Tree, TreeArena};
   ///
   /// #[derive(Debug)]
   /// struct Panel;
-  /// impl Object for Panel {}
+  /// impl Object for Panel {
+  ///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  /// }
   ///
   /// let mut arena = TreeArena::new();
   /// let panel = arena.alloc(Box::new(Panel));
@@ -108,11 +111,14 @@ impl TreeArena {
   ///
   /// ```
   /// use artic_core::Object;
+  /// use artic_core::property::AnyProperty;
   /// use artic_core::tree::{Tree, TreeArena};
   ///
   /// #[derive(Debug)]
   /// struct Panel;
-  /// impl Object for Panel {}
+  /// impl Object for Panel {
+  ///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  /// }
   ///
   /// let mut arena = TreeArena::new();
   /// let [root, a, a1, b] = [(); 4].map(|_| arena.alloc(Box::new(Panel)));
@@ -221,6 +227,7 @@ impl TreeArena {
 #[cfg(test)]
 mod tests {
   use crate::Object;
+  use crate::property::AnyProperty;
   use crate::tree::{NodeId, Tree, TreeArena};
   use pretty_assertions::assert_eq;
   use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -228,7 +235,9 @@ mod tests {
   #[derive(Debug)]
   struct Control;
 
-  impl Object for Control {}
+  impl Object for Control {
+    fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  }
 
   /// Allocates `count` nodes and returns their ids, in order.
   fn nodes(arena: &mut TreeArena, count: usize) -> Vec<NodeId> {

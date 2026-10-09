@@ -108,19 +108,21 @@ XAML needs to name types and properties by string; Rust does not. The registry e
 ### Declaring a XAML type
 
 ```rust
-#[derive(XamlType, Default)]
+#[derive(Debug, XamlType)]
 #[xaml(namespace = "https://artic.rs/ui", content = child)]
 pub struct Border {
     pub base: ElementBase,                       // composition, not inheritance
     #[xaml] pub child: Property<Option<NodeId>>,
-    #[xaml(default = Thickness::ZERO)] pub padding: Property<Thickness>,
-    #[xaml] pub background: Property<Option<Brush>>,
-    #[xaml] pub corner_radius: Property<CornerRadius>,
+    #[xaml(default = Thickness::ZERO, affects = layout)] pub padding: Property<Thickness>,
+    #[xaml(affects = render)] pub background: Property<Option<Brush>>,
+    #[xaml(affects = render)] pub corner_radius: Property<CornerRadius>,
     #[xaml] pub pointer_pressed: Event<PointerEvent>,
 }
 ```
 
-The derive emits a `TypeInfo` const and registers it with `linkme` (distributed slice) so the registry is assembled at link time. Field types decide everything: a `Property<T>` is a settable XAML property if `T: FromStr` or `T: XamlType`; an `Event<A>` is a XAML event; a field of a type implementing `XamlCollection` accepts child elements.
+The derive emits a `TypeInfo` static and registers it with `linkme` (distributed slice) so the registry is assembled at link time. It also writes the type's `Default` (each property created with its key and default) and `Object` impls, so the struct derives `Debug` but not `Default`. Field types decide everything: a `Property<T>` is a settable XAML property if `T: FromStr` or `T: XamlType` (looking through `Option`, and `NodeId` marks a child slot); an `Event<A>` is a XAML event; any other `#[xaml]` field must implement `XamlCollection` and accepts child elements.
+
+Each property gets its own `PropertyKey` unless `#[xaml(key = FONT_SIZE)]` names a shared one; properties that inherit across types share their key. `affects = layout | render` and `inherits` set the metadata of a generated key.
 
 ### What the registry records
 

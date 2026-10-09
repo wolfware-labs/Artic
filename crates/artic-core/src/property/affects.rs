@@ -33,6 +33,12 @@ impl Affects {
     self.0 & other.0 == other.0
   }
 
+  /// Returns the stages in `self` or in `other`, like `|` but usable in a `const` or `static`.
+  #[must_use]
+  pub const fn union(self, other: Affects) -> Affects {
+    Affects(self.0 | other.0)
+  }
+
   /// Returns `self` with the stages in `other` removed.
   #[must_use]
   pub const fn without(self, other: Affects) -> Affects {
