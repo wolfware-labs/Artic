@@ -4,6 +4,7 @@ mod parse;
 
 pub use parse::{GeometryProblem, ParseGeometryError};
 use std::fmt::{Display, Formatter, Result};
+use std::ops::{Add, Sub};
 
 /// A width and a height, without a position.
 ///
@@ -83,6 +84,19 @@ impl Rect {
   pub const fn size(self) -> Size {
     Size::new(self.width, self.height)
   }
+
+  /// Shrinks the rectangle by `thickness` on each side, as padding does to the space for content.
+  ///
+  /// The width and height stop at zero when the thickness is larger than the rectangle.
+  #[must_use]
+  pub fn deflate(self, thickness: Thickness) -> Rect {
+    Rect::new(
+      self.x + thickness.left,
+      self.y + thickness.top,
+      (self.width - thickness.horizontal()).max(0.0),
+      (self.height - thickness.vertical()).max(0.0),
+    )
+  }
 }
 
 /// The width of space on each side of a box, such as a margin, a padding or a border.
@@ -124,6 +138,40 @@ impl Thickness {
   #[must_use]
   pub const fn symmetric(horizontal: f32, vertical: f32) -> Thickness {
     Thickness::new(horizontal, vertical, horizontal, vertical)
+  }
+
+  /// The total width it adds across: left plus right.
+  #[must_use]
+  pub const fn horizontal(self) -> f32 {
+    self.left + self.right
+  }
+
+  /// The total height it adds: top plus bottom.
+  #[must_use]
+  pub const fn vertical(self) -> f32 {
+    self.top + self.bottom
+  }
+}
+
+impl Add<Thickness> for Size {
+  type Output = Size;
+
+  /// Grows the size by the thickness on each side, as a margin does to a desired size.
+  fn add(self, thickness: Thickness) -> Size {
+    Size::new(self.width + thickness.horizontal(), self.height + thickness.vertical())
+  }
+}
+
+impl Sub<Thickness> for Size {
+  type Output = Size;
+
+  /// Shrinks the size by the thickness on each side, stopping at zero, as padding does to the space
+  /// left for content.
+  fn sub(self, thickness: Thickness) -> Size {
+    Size::new(
+      (self.width - thickness.horizontal()).max(0.0),
+      (self.height - thickness.vertical()).max(0.0),
+    )
   }
 }
 
@@ -241,5 +289,28 @@ mod tests {
 
     assert_eq!(rect.origin(), Point::new(1.0, 2.0));
     assert_eq!(rect.size(), Size::new(30.0, 40.0));
+  }
+
+  // Adding a thickness grows a size by both sides; subtracting shrinks it and stops at zero.
+  #[test]
+  fn size_arithmetic_with_thickness() {
+    let padding = Thickness::new(1.0, 2.0, 3.0, 4.0);
+
+    assert_eq!(Size::new(10.0, 10.0) + padding, Size::new(14.0, 16.0));
+    assert_eq!(Size::new(10.0, 10.0) - padding, Size::new(6.0, 4.0));
+    assert_eq!(Size::new(3.0, 3.0) - padding, Size::ZERO);
+    assert_eq!(Size::INFINITY - padding, Size::INFINITY);
+  }
+
+  // Deflating moves the origin in by the left and top widths and shrinks, stopping at zero.
+  #[test]
+  fn rect_deflate() {
+    let padding = Thickness::new(1.0, 2.0, 3.0, 4.0);
+
+    assert_eq!(
+      Rect::new(10.0, 10.0, 20.0, 20.0).deflate(padding),
+      Rect::new(11.0, 12.0, 16.0, 14.0)
+    );
+    assert_eq!(Rect::new(0.0, 0.0, 2.0, 2.0).deflate(padding), Rect::new(1.0, 2.0, 0.0, 0.0));
   }
 }
