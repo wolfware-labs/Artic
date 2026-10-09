@@ -53,9 +53,14 @@ artic-xaml-runtime = { path = "crates/artic-xaml-runtime", version = "0.1.0" }
 
 linkme = "0.3.37"
 pretty_assertions = "1.4.1"
+proc-macro-crate = "3.5.0"
+proc-macro2 = "1.0.107"
 proptest = "1.11.0"
+quote = "1.0.47"
 static_assertions = "1.1.0"
+syn = { version = "3.0.6", features = ["full"] }
 thiserror = "2.0.21"
+trybuild = "1.0.122"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

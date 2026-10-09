@@ -1,0 +1,238 @@
+use proc_macro2::Span;
+use syn::meta::ParseNestedMeta;
+use syn::{DeriveInput, Error, Expr, Field, Ident, LitStr, Meta, Path, Token};
+
+/// What `#[xaml(...)]` on the struct says.
+#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(not(test), expect(dead_code, reason = "code generation reads these (#18)"))]
+pub struct TypeAttributes {
+  pub namespace: LitStr,
+  pub content: Option<Ident>,
+  pub whitespace: Whitespace,
+  pub crate_path: Option<Path>,
+}
+
+/// How the parser treats whitespace in the element's text content.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum Whitespace {
+  Collapse,
+  Significant,
+}
+
+/// What `#[xaml(...)]` on a field says.
+#[derive(Default)]
+#[cfg_attr(test, derive(Debug))]
+pub struct FieldAttributes {
+  pub default: Option<Expr>,
+  pub key: Option<Path>,
+  pub affects: Option<Affects>,
+  pub inherits: Option<Span>,
+  pub name: Option<LitStr>,
+}
+
+/// The stages listed in `affects = layout | render`.
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
+pub struct Affects {
+  pub layout: bool,
+  pub render: bool,
+}
+
+/// Reads the struct's `#[xaml(...)]` attributes.
+pub fn parse_type_attributes(input: &DeriveInput) -> syn::Result<TypeAttributes> {
+  let mut namespace = None;
+  let mut content = None;
+  let mut whitespace = Whitespace::Collapse;
+  let mut crate_path = None;
+  for attribute in input.attrs.iter().filter(|attribute| attribute.path().is_ident("xaml")) {
+    attribute.parse_nested_meta(|meta| {
+      if meta.path.is_ident("namespace") {
+        namespace = Some(meta.value()?.parse::<LitStr>()?);
+      } else if meta.path.is_ident("content") {
+        content = Some(meta.value()?.parse::<Ident>()?);
+      } else if meta.path.is_ident("whitespace") {
+        let value: LitStr = meta.value()?.parse()?;
+        whitespace = match value.value().as_str() {
+          "collapse" => Whitespace::Collapse,
+          "significant" => Whitespace::Significant,
+          _ => return Err(Error::new_spanned(value, "expected \"collapse\" or \"significant\"")),
+        };
+      } else if meta.path.is_ident("crate") {
+        let value: LitStr = meta.value()?.parse()?;
+        crate_path = Some(value.parse::<Path>()?);
+      } else {
+        return Err(unknown_key(&meta, "`namespace`, `content`, `whitespace` or `crate`"));
+      }
+      Ok(())
+    })?;
+  }
+  let namespace = namespace.ok_or_else(|| {
+    Error::new_spanned(
+      &input.ident,
+      "missing the XML namespace: add `#[xaml(namespace = \"...\")]` to the struct",
+    )
+  })?;
+  Ok(TypeAttributes {
+    namespace,
+    content,
+    whitespace,
+    crate_path,
+  })
+}
+
+/// Reads a field's `#[xaml]` or `#[xaml(...)]` attribute, or returns `None` if it has none.
+pub fn parse_field_attributes(field: &Field) -> syn::Result<Option<FieldAttributes>> {
+  let mut found = None;
+  for attribute in field.attrs.iter().filter(|attribute| attribute.path().is_ident("xaml")) {
+    let attributes = found.get_or_insert_with(FieldAttributes::default);
+    if matches!(attribute.meta, Meta::Path(_)) {
+      continue;
+    }
+    attribute.parse_nested_meta(|meta| {
+      if meta.path.is_ident("default") {
+        attributes.default = Some(meta.value()?.parse::<Expr>()?);
+      } else if meta.path.is_ident("key") {
+        attributes.key = Some(meta.value()?.parse::<Path>()?);
+      } else if meta.path.is_ident("affects") {
+        attributes.affects = Some(parse_affects(meta.value()?)?);
+      } else if meta.path.is_ident("inherits") {
+        attributes.inherits = Some(meta.path.get_ident().map_or_else(Span::call_site, Ident::span));
+      } else if meta.path.is_ident("name") {
+        attributes.name = Some(meta.value()?.parse::<LitStr>()?);
+      } else {
+        return Err(unknown_key(&meta, "`default`, `key`, `affects`, `inherits` or `name`"));
+      }
+      Ok(())
+    })?;
+  }
+  if let Some(attributes) = &found
+    && let Some(key) = &attributes.key
+    && (attributes.affects.is_some() || attributes.inherits.is_some())
+  {
+    return Err(Error::new_spanned(
+      key,
+      "a shared `key` already holds `affects` and `inherits`; set them on the key instead",
+    ));
+  }
+  Ok(found)
+}
+
+fn parse_affects(input: syn::parse::ParseStream) -> syn::Result<Affects> {
+  let mut affects = Affects::default();
+  loop {
+    let stage: Ident = input.parse()?;
+    match stage.to_string().as_str() {
+      "layout" => affects.layout = true,
+      "render" => affects.render = true,
+      _ => return Err(Error::new_spanned(stage, "expected `layout` or `render`")),
+    }
+    if !input.peek(Token![|]) {
+      return Ok(affects);
+    }
+    input.parse::<Token![|]>()?;
+  }
+}
+
+fn unknown_key(meta: &ParseNestedMeta, expected: &str) -> Error {
+  let key = meta.path.get_ident().map_or_else(|| "?".to_owned(), ToString::to_string);
+  meta.error(format_args!("unknown `xaml` key `{key}`; expected {expected}"))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use pretty_assertions::assert_eq;
+  use syn::parse_quote;
+
+  /// Returns the first field of `input`.
+  fn first_field(input: &DeriveInput) -> &Field {
+    let syn::Data::Struct(data) = &input.data else {
+      unreachable!("tests pass structs")
+    };
+    data.fields.iter().next().expect("the struct has a field")
+  }
+
+  // The struct attributes are read into plain values.
+  #[test]
+  fn type_attributes_are_parsed() {
+    let input: DeriveInput = parse_quote! {
+      #[xaml(namespace = "https://artic.rs/ui", content = child, whitespace = "significant")]
+      struct Border { child: u8 }
+    };
+
+    let attributes = parse_type_attributes(&input).expect("valid attributes");
+
+    assert_eq!(attributes.namespace.value(), "https://artic.rs/ui");
+    assert_eq!(
+      attributes.content.map(|content| content.to_string()),
+      Some("child".to_owned())
+    );
+    assert_eq!(attributes.whitespace, Whitespace::Significant);
+  }
+
+  // `crate` names the path generated code uses to reach artic.
+  #[test]
+  fn crate_path_is_parsed() {
+    let input: DeriveInput = parse_quote! {
+      #[xaml(namespace = "https://artic.rs/ui", crate = "::my_artic")]
+      struct Border;
+    };
+
+    let attributes = parse_type_attributes(&input).expect("valid attributes");
+
+    let path = attributes.crate_path.expect("crate is set");
+    assert_eq!(quote::quote!(#path).to_string(), ":: my_artic");
+  }
+
+  // A struct without a namespace is rejected.
+  #[test]
+  fn missing_namespace_is_an_error() {
+    let input: DeriveInput = parse_quote! { struct Border; };
+
+    let error = parse_type_attributes(&input).expect_err("no namespace");
+
+    assert!(error.to_string().starts_with("missing the XML namespace"));
+  }
+
+  // A field's `affects` takes `layout`, `render` or both joined with `|`.
+  #[test]
+  fn affects_lists_stages() {
+    let input: DeriveInput = parse_quote! {
+      struct Text { #[xaml(affects = layout | render, inherits, default = 12.0)] size: u8 }
+    };
+
+    let attributes = parse_field_attributes(first_field(&input))
+      .expect("valid attributes")
+      .expect("has #[xaml]");
+
+    assert_eq!(
+      attributes.affects,
+      Some(Affects {
+        layout: true,
+        render: true
+      })
+    );
+    assert!(attributes.inherits.is_some() && attributes.default.is_some());
+  }
+
+  // A bare `#[xaml]` marks the field with no settings, and no attribute means not a XAML field.
+  #[test]
+  fn bare_and_missing_field_attributes() {
+    let bare: DeriveInput = parse_quote! { struct A { #[xaml] value: u8 } };
+    let missing: DeriveInput = parse_quote! { struct A { value: u8 } };
+
+    assert!(parse_field_attributes(first_field(&bare)).expect("valid").is_some());
+    assert!(parse_field_attributes(first_field(&missing)).expect("valid").is_none());
+  }
+
+  // A shared key can't be combined with `affects` or `inherits`, which the key already holds.
+  #[test]
+  fn key_with_affects_is_an_error() {
+    let input: DeriveInput = parse_quote! {
+      struct Text { #[xaml(key = FONT_SIZE, affects = layout)] size: u8 }
+    };
+
+    let error = parse_field_attributes(first_field(&input)).expect_err("conflict");
+
+    assert!(error.to_string().starts_with("a shared `key` already holds"));
+  }
+}
