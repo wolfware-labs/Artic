@@ -40,6 +40,7 @@ impl Registry {
       match registry.by_name.entry(info.namespace).or_default().entry(info.name) {
         Entry::Occupied(existing) => {
           let (a, b) = (existing.get().rust_path, info.rust_path);
+          // TODO: use `let [first, second] = std::cmp::minmax(a, b);` once `cmp_minmax` is stable.
           duplicates.push(Duplicate::Name {
             namespace: info.namespace,
             name: info.name,
