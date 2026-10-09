@@ -16,6 +16,14 @@ use syn::{DeriveInput, parse_macro_input};
 /// - `whitespace = "significant"`: keep whitespace in text content (the default collapses it).
 /// - `crate = "path"`: where generated code finds artic, if neither `artic` nor `artic-registry`
 ///   is a direct dependency under its usual name.
+/// - `attached(name = "Row", ty = usize, default = 0, affects = layout, target = children)`, once
+///   per attached property the type owns: a property set on other elements as `Grid.Row`. `name`,
+///   `ty` and `target` are required; `target = children` allows it only on the logical children
+///   of an element of this type, `target = any` anywhere. The value type is checked like a
+///   property's. Attached properties can't `inherit` yet.
+/// - `markup_extension`, or `markup_extension(positional(key, ...))`: the type is a markup
+///   extension like `{Localize greeting}`. Every property is a named argument; `positional` lists,
+///   in order, the properties also set by position.
 ///
 /// # Fields
 ///
@@ -35,9 +43,20 @@ use syn::{DeriveInput, parse_macro_input};
 /// # Generated code
 ///
 /// The derive implements `Default`, `Object` (with `visit_properties`) and `XamlType`, writes the
-/// type's `TypeInfo` with its property and event descriptors, and adds it to `XAML_TYPES`. So the
-/// struct derives `Debug` but not `Default`, and a crate's types only reach the registry if the
-/// crate is linked (see `XAML_TYPES`).
+/// type's `TypeInfo` with its property, event, attached property and markup extension descriptors,
+/// and adds it to `XAML_TYPES`. So the struct derives `Debug` but not `Default`, and a crate's types
+/// only reach the registry if the crate is linked (see `XAML_TYPES`).
+///
+/// For each attached property it also writes, on the owner, the key constant and the helper pair
+/// from the builder design, which read and write the value on any node:
+///
+/// ```ignore
+/// pub const ROW: &'static AttachedKey<usize>;
+/// pub fn set_row(arena: &mut TreeArena, node: impl Into<NodeId>, row: usize);
+/// pub fn row(arena: &TreeArena, node: impl Into<NodeId>) -> usize;
+/// ```
+///
+/// A helper named like one of the type's properties is an error: rename one with `name = ...`.
 #[proc_macro_derive(XamlType, attributes(xaml))]
 pub fn derive_xaml_type(input: TokenStream) -> TokenStream {
   let input = parse_macro_input!(input as DeriveInput);

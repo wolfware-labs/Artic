@@ -97,6 +97,7 @@ An attached property is stored on its target node, so it can only be set once th
 
 ```rust
 impl Grid {
+  pub const ROW: &'static AttachedKey<usize>;
   pub fn set_row(arena: &mut TreeArena, node: impl Into<NodeId>, row: usize);
   pub fn row(arena: &TreeArena, node: impl Into<NodeId>) -> usize;
 }
@@ -105,7 +106,7 @@ let ok = Button::new().content("OK").build(arena);
 Grid::set_row(arena, ok, 1);
 ```
 
-There is no second setter in builder form; the builder doesn't wrap these helpers.
+There is no second setter in builder form; the builder doesn't wrap these helpers. `ROW` is the key styles use, and with it `TreeArena::attached_property` gives the node's `Property<usize>` to set at another precedence (#31).
 
 ### Naming collisions
 

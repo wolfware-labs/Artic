@@ -130,9 +130,9 @@ Each property gets its own `PropertyKey` unless `#[xaml(key = FONT_SIZE)]` names
 | --- | --- | --- |
 | `TypeInfo` | XAML name, namespace, Rust path, `new: fn(&mut Arena) -> NodeId`, content field, `is_collection`, `is_markup_extension` | compiler, loader |
 | `PropertyInfo` | name, Rust field path, value type path, `parse: fn(&str) -> Result<Value, ParseError>` (from `FromStr`), `set: fn(&mut Arena, NodeId, Value)`, `affects: Layout \| Render`, `inherits` | compiler emits `node.field.set(v)` directly; loader calls `set` |
-| `AttachedPropertyInfo` | owner, name, target constraint (`Grid.Row` only under `Grid`) | both |
+| `AttachedPropertyInfo` | owner, name, value type, target (`AttachedTarget::ChildrenOfOwner` for `Grid.Row`, `Any` for `Accessibility.Name`) | both |
 | `EventInfo` | name, args type path, `subscribe: fn(&mut Arena, NodeId, HandlerId)` | both |
-| `MarkupExtensionInfo` | name, positional/named arg schema, `expand` | both |
+| `MarkupExtensionInfo` | positional/named argument schema (the extension's properties); `expand` comes with the loader (M2) | both |
 
 The loader path needs a way to turn markup into typed property values. The original `Value` enum with a `Parsed(TypeId, Box<dyn Any>)` variant is rejected (D9). Instead, the derive emits typed thunks per property (`PropertyInfo.access`), whose signatures are type-free and whose bodies call `FromStr` and `Property::set_at`; see [the loader values design](../design/loader-values.md) (M0-19), implemented in M2-01. Values written as object elements (brushes, `RowDefinition`, `KeyBinding`) are value types (`TypeInfo.kind` is `Value`): staged through `TypeInfo::new`, converted into the property's type with `FromXamlObject` in the loader and `Into` in compiled code; see [the value objects design](../design/value-objects.md) (M0-31). The compiled path never calls these thunks.
 
@@ -144,7 +144,7 @@ The loader path needs a way to turn markup into typed property values. The origi
 4. `inherits` marks properties (`FontSize`, `Foreground`, `IsEnabled`) that flow down the logical tree when unset.
 5. Adding a type from any crate needs only the derive; no registration call.
 6. Nothing in the registry is required for a Rust-only view API (v2): the same structs and `Property<T>` fields are the API; XAML is one front end to them.
-7. Attached properties and markup extensions are declared with the same derive on their owner type (M0-30). `const` and `static` items become visible to `x:Static` with `#[xaml_static]` (D23).
+7. Attached properties and markup extensions are declared with the same derive on their owner type (M0-30): `#[xaml(attached(name = "Row", ty = usize, target = children))]` on `Grid`, and `#[xaml(markup_extension(positional(key)))]` on an extension whose properties are its arguments. An attached value is a `Property<T>` the target node creates on first use, keyed by an `AttachedKey<T>` (`Grid::ROW`), so styles and local values compete as for any property. `const` and `static` items become visible to `x:Static` with `#[xaml_static]` (D23).
 8. The registry is assembled with `linkme` distributed slices; M0-05 verifies them on iOS, Android and with LTO (D11).
 
 ### Namespaces
