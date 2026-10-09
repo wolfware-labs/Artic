@@ -195,14 +195,19 @@ The parser implements MS-XAML 2012 §5 (XML → XAML Infoset) for the constructs
 ### Infoset shape
 
 ```rust
+pub struct XamlDocument { source: SourceId, root: XamlNode }          // root is always an Object
 pub enum XamlNode {
-    Object { ty: TypeRef, members: Vec<Member>, span: Span },
+    Object { ty: TypeRef, members: Vec<Member>, namespaces: Vec<NamespaceDecl>, span: Span },
     Value  { text: String, span: Span },            // untyped text, converted later
     MarkupExtension { ty: TypeRef, positional: Vec<XamlNode>, named: Vec<(String, XamlNode)>, span: Span },
 }
-pub struct Member { key: MemberKey, value: Vec<XamlNode> }
+pub struct Member { key: MemberKey, value: Vec<XamlNode>, span: Span }
 pub enum MemberKey { Property(String), Attached { owner: TypeRef, name: String }, Directive(Directive), Content, Items }
+pub struct TypeRef { prefix: Option<String>, name: String, span: Span }
+pub struct NamespaceDecl { prefix: Option<String>, uri: String, span: Span }
 ```
+
+An object's members are its attributes in order, then its property elements in order, then everything written directly inside it (text, CDATA and child objects, in document order) as one `Content` member. The parser never emits `Items`: whether content fills a collection depends on the registry, so the back ends decide. Text keeps its whitespace as written, with entities decoded; the [whitespace rules](#whitespace) are applied by the back ends, which know each type's whitespace mode. The parser reads XML with `xmlparser`, a tokenizer that reports byte spans; it rejects DTDs.
 
 Type references stay unresolved (`TypeRef { prefix, name }`) in the infoset; resolution against the registry is the first step of each back end, so parser tests need no registry.
 

@@ -1,0 +1,13 @@
+<UserControl xmlns="https://artic.rs/ui"
+             xmlns:x="https://artic.rs/markup"
+             x:Class="app::views::LoginView"
+             x:DataType="app::vm::LoginVm">
+  <UserControl.Resources>
+    <SolidColorBrush x:Key="Accent" Color="#3B82F6"/>
+  </UserControl.Resources>
+  <StackPanel Spacing="8" Margin="16">
+    <TextBox x:Name="email" Text="{Binding Email, Mode=TwoWay}" Watermark="Email"/>
+    <Button Classes="primary" Content="Sign in"
+            Command="{Binding SignIn}" Click="on_click"/>
+  </StackPanel>
+</UserControl>
