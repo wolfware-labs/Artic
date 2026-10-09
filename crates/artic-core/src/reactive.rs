@@ -37,8 +37,8 @@
 //!
 //! An [`effect`] runs a closure once when created and again after something it read changes. It
 //! doesn't run at the moment of the write: writes only mark it dirty, and it runs at the next flush
-//! point. A flush point is a call to [`flush_effects`], the end of the outermost [`batch`], and,
-//! once the dispatcher exists, the end of each dispatcher task.
+//! point. A flush point is a call to [`flush_effects`], the end of the outermost [`batch`], and the
+//! end of each task run by [`Dispatcher::run_pending`](crate::dispatcher::Dispatcher::run_pending).
 //!
 //! A flush visits effects in the order they were created. Each one first brings the memos it read
 //! up to date and runs only if one of its inputs actually changed. Because a memo is brought up to

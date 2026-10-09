@@ -1,4 +1,35 @@
 //! The UI thread's task queue.
+//!
+//! Everything that touches the UI runs as a task on the UI thread: an input handler, a binding
+//! update, the continuation of background work. [`Dispatcher::post_local`] queues a task and
+//! [`Dispatcher::run_pending`] runs the queue in order, flushing effects after each task, so every
+//! task is one flush point and its writes reach effects once.
+//!
+//! ```
+//! use artic_core::dispatcher::Dispatcher;
+//! use artic_core::reactive::{Signal, effect};
+//! use std::cell::Cell;
+//! use std::rc::Rc;
+//!
+//! let count = Signal::new(0);
+//! let runs = Rc::new(Cell::new(0));
+//! let runs_in_effect = Rc::clone(&runs);
+//! effect(move || {
+//!   count.get();
+//!   runs_in_effect.set(runs_in_effect.get() + 1);
+//! });
+//!
+//! Dispatcher::post_local(move || {
+//!   count.set(1);
+//!   count.set(2);
+//! });
+//! Dispatcher::run_pending();
+//! assert_eq!(runs.get(), 2, "one run on creation, one for the whole task");
+//! ```
+//!
+//! The queue belongs to the thread that posts to it. Posting from another thread with `post_local`
+//! fills that thread's own queue, which the UI never runs; work from other threads will reach the
+//! UI through a separate, thread-safe `post`.
 
 use crate::reactive::flush_effects;
 use std::cell::{Cell, RefCell};
