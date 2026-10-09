@@ -30,14 +30,17 @@ fn invalid() {
 }
 
 /// Loads a fixture under the path it has inside `fixtures/`, with `/` separators, so rendered errors
-/// read the same on every machine.
+/// read the same on every machine. The path is cut at its last `fixtures` component rather than
+/// compared with the manifest directory, whose absolute form can differ (Windows `\\?\` paths).
 fn load(path: &Path) -> (SourceMap, SourceId) {
-  let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-  let relative = path.strip_prefix(&fixtures).expect("a fixture is under tests/fixtures");
-  let name: Vec<_> = relative.iter().map(|part| part.to_string_lossy()).collect();
+  let parts: Vec<_> = path.iter().map(|part| part.to_string_lossy()).collect();
+  let fixtures = parts
+    .iter()
+    .rposition(|part| part == "fixtures")
+    .expect("a fixture is under tests/fixtures");
   let text = std::fs::read_to_string(path).expect("a readable fixture");
   let mut sources = SourceMap::new();
-  let file = sources.add(name.join("/"), text);
+  let file = sources.add(parts[fixtures + 1..].join("/"), text);
   (sources, file)
 }
 
