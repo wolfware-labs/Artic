@@ -1,12 +1,13 @@
 //! Turning XAML text into the infoset.
 
 mod builder;
+mod markup;
 #[cfg(test)]
 mod tests;
 mod text;
 
-use crate::diagnostics::{Diagnostics, SourceId, SourceMap};
-use crate::infoset::XamlDocument;
+use crate::diagnostics::{Diagnostic, Diagnostics, SourceId, SourceMap};
+use crate::infoset::{Member, MemberKey, XamlDocument};
 use builder::Builder;
 
 /// Parses the XAML file `file` of `sources` into its infoset.
@@ -33,4 +34,36 @@ use builder::Builder;
 /// ```
 pub fn parse(sources: &SourceMap, file: SourceId) -> Result<XamlDocument, Diagnostics> {
   Builder::new(file, sources.get(file)).run()
+}
+
+/// Marks an error that was already recorded and stops the work in progress: the whole parse in the
+/// builder, one attribute value in the markup extension parser.
+#[must_use]
+struct Fatal;
+
+/// An error if `members` already sets `member`'s key, pointing at both.
+fn duplicate_of(members: &[Member], member: &Member) -> Option<Diagnostic> {
+  let first = members.iter().find(|existing| same_member(&existing.key, &member.key))?;
+  Some(
+    Diagnostic::error(member.span, "this member is set twice on the same element")
+      .with_label("set again here")
+      .with_secondary(first.span, "first set here"),
+  )
+}
+
+/// Whether two keys name the same member, wherever their owner types are written.
+fn same_member(a: &MemberKey, b: &MemberKey) -> bool {
+  match (a, b) {
+    (
+      MemberKey::Attached {
+        owner: a_owner,
+        name: a_name,
+      },
+      MemberKey::Attached {
+        owner: b_owner,
+        name: b_name,
+      },
+    ) => a_owner.prefix == b_owner.prefix && a_owner.name == b_owner.name && a_name == b_name,
+    _ => a == b,
+  }
 }
