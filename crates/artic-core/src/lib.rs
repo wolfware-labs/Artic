@@ -6,11 +6,14 @@
 //! - [`tree`]: [`TreeArena`](tree::TreeArena), which owns every node and links it into a logical and
 //!   a visual tree, with per-node dirty flags.
 //! - [`Object`]: the trait every node type implements.
+//! - [`dispatcher`]: [`Dispatcher`](dispatcher::Dispatcher), the UI thread's task queue, which flushes
+//!   effects after each task.
 //!
 //! The `testing` feature adds `reactive::assert_no_reactive_leaks` for leak checks in other crates'
 //! tests.
 
 pub(crate) mod arena;
+pub mod dispatcher;
 mod object;
 pub mod property;
 pub mod reactive;
