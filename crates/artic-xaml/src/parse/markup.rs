@@ -38,10 +38,7 @@ impl<'a> Parser<'a> {
   fn run(mut self) -> Option<XamlNode> {
     let text = self.text;
     if let Some(literal) = text.strip_prefix("{}") {
-      return Some(XamlNode::Value {
-        text: literal.to_owned(),
-        span: self.span("{}".len(), text.len()),
-      });
+      return Some(XamlNode::value(literal.to_owned(), self.span("{}".len(), text.len())));
     }
     let node = self.extension().ok()?;
     self.skip_whitespace();
@@ -145,7 +142,7 @@ impl<'a> Parser<'a> {
       return Ok(());
     }
     let (name, name_span) = match value {
-      XamlNode::Value { text, span } if plain && !text.contains(char::is_whitespace) => (text, span),
+      XamlNode::Value { text, span, .. } if plain && !text.contains(char::is_whitespace) => (text, span),
       other => return Err(self.bad_name(other.span())),
     };
     self.bump();
@@ -192,10 +189,7 @@ impl<'a> Parser<'a> {
       self.bump();
     }
     let end = start + text[start..self.position].trim_end().len();
-    XamlNode::Value {
-      text: text[start..end].to_owned(),
-      span: self.span(start, end),
-    }
+    XamlNode::value(text[start..end].to_owned(), self.span(start, end))
   }
 
   /// Reads text between `quote`s, where `\` escapes the next character. The span excludes the
@@ -229,7 +223,7 @@ impl<'a> Parser<'a> {
     }
     let span = self.span(start, self.position);
     self.bump();
-    Ok(XamlNode::Value { text, span })
+    Ok(XamlNode::value(text, span))
   }
 
   /// Reads unquoted text up to `,`, `=` or `}`, where `\` escapes the next character. Trailing
@@ -263,10 +257,7 @@ impl<'a> Parser<'a> {
       }
     }
     text.truncate(kept);
-    XamlNode::Value {
-      text,
-      span: self.span(start, end),
-    }
+    XamlNode::value(text, self.span(start, end))
   }
 
   fn bad_name(&mut self, span: Span) -> Fatal {

@@ -114,19 +114,14 @@ fn xmlns_attributes_are_namespace_declarations() {
   assert!(members.is_empty());
 }
 
-// Attributes in the markup namespace and `xml:space` are directives. The `xml` prefix needs no
-// declaration.
+// Attributes in the markup namespace are directives.
 #[test]
 fn markup_attributes_are_directives() {
-  let root = root(r#"<Button xmlns="urn:ui" xmlns:x="https://artic.rs/markup" x:Name="ok" x:Key="k" xml:space="preserve"/>"#);
+  let root = root(r#"<Button xmlns="urn:ui" xmlns:x="https://artic.rs/markup" x:Name="ok" x:Key="k"/>"#);
 
   assert_eq!(
     keys(&root),
-    [
-      MemberKey::Directive(Directive::Name),
-      MemberKey::Directive(Directive::Key),
-      MemberKey::Directive(Directive::XmlSpace),
-    ]
+    [MemberKey::Directive(Directive::Name), MemberKey::Directive(Directive::Key)]
   );
 }
 
@@ -192,14 +187,65 @@ fn text_and_cdata_merge_into_one_value() {
   assert_eq!(text(&content[0]), "a & <b> &amp; c");
 }
 
-// Whitespace between elements is kept as text: deciding what it means is the loader's job.
+/// The text of a value node as written, before whitespace normalization.
+fn raw(node: &XamlNode) -> &str {
+  match node {
+    XamlNode::Value { raw, .. } => raw,
+    other => panic!("expected a value, found {other:?}"),
+  }
+}
+
+// Whitespace-only text between elements adds nothing, but keeps its raw text for types whose
+// whitespace is significant.
 #[test]
-fn whitespace_is_kept() {
+fn raw_text_is_kept() {
   let root = root("<Panel xmlns=\"urn:ui\">\n  <Image/>\n</Panel>");
 
   let content = &members(&root)[0].value;
-  assert_eq!(text(&content[0]), "\n  ");
-  assert_eq!(text(&content[2]), "\n");
+  assert_eq!((text(&content[0]), raw(&content[0])), ("", "\n  "));
+  assert_eq!((text(&content[2]), raw(&content[2])), ("", "\n"));
+}
+
+// Text is trimmed at the edges of its element and collapsed; text beside a child keeps that space.
+#[test]
+fn element_text_is_normalized() {
+  let root = root("<Text xmlns=\"urn:ui\">\n  Hello\t <Bold> world </Bold> !\n</Text>");
+
+  let content = &members(&root)[0].value;
+  assert_eq!(text(&content[0]), "Hello ");
+  assert_eq!(text(&members(&content[1])[0].value[0]), "world");
+  assert_eq!(text(&content[2]), " !");
+}
+
+// A property element's content is normalized at its own tags.
+#[test]
+fn property_element_text_is_normalized() {
+  let root = root("<Button xmlns=\"urn:ui\"><Button.Content>\n  Click  me\n</Button.Content></Button>");
+
+  assert_eq!(text(&members(&root)[0].value[0]), "Click me");
+}
+
+// `xml:space="preserve"` keeps text as written in its subtree, and a nested `default` restores the
+// rules; the attribute itself is consumed, not a member.
+#[test]
+fn xml_space_preserve_and_nested_default() {
+  let root = root(
+    r#"<Panel xmlns="urn:ui" xml:space="preserve">  a  <Panel xml:space="default">  b  </Panel><Text>  c  </Text></Panel>"#,
+  );
+
+  let content = &members(&root)[0].value;
+  assert_eq!(text(&content[0]), "  a  ");
+  assert_eq!(text(&members(&content[1])[0].value[0]), "b");
+  assert_eq!(text(&members(&content[2])[0].value[0]), "  c  ");
+  assert_eq!(keys(&root), [MemberKey::Content]);
+}
+
+// `xml:space` accepts only `default` and `preserve`.
+#[test]
+fn bad_xml_space_is_an_error() {
+  let found = errors(r#"<Panel xmlns="urn:ui" xml:space="keep"/>"#);
+
+  assert_eq!(found, [("`xml:space` must be `default` or `preserve`".to_owned(), "keep")]);
 }
 
 // Attribute values are normalized as XML requires: whitespace characters become spaces.

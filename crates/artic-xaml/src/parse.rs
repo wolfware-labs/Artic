@@ -7,6 +7,7 @@ mod namespace;
 mod tests;
 mod text;
 mod unsupported;
+mod whitespace;
 
 use crate::diagnostics::{Diagnostic, Diagnostics, SourceId, SourceMap};
 use crate::infoset::{Member, MemberKey, XamlDocument, XamlNamespace};
