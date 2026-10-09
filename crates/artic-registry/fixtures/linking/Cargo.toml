@@ -1,0 +1,18 @@
+[package]
+name = "artic-registry-linking"
+description = "Tests that the registry gathers entries from linked crates and misses unreferenced ones."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dev-dependencies]
+artic-registry.workspace = true
+artic-registry-fixture-a = { path = "../types-a" }
+artic-registry-fixture-b = { path = "../types-b" }
+
+[lints]
+workspace = true

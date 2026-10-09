@@ -91,6 +91,7 @@ The graph omits edges that a lower edge already implies (for example `artic-cont
 - OS services that controls use (clipboard, IME requests, cursor) are traits in `artic-core`. `artic-platform` implements them, the facade registers them, and controls reach them through their context or app services, never through `PlatformHost`.
 - Code that needs concrete controls but serves the runtime or tooling (hot-reload overlay and state restore, debug overlay) lives in the facade.
 - Dev-dependencies may point from any crate to `artic-test`, as long as `artic-test` does not depend back on that crate. Control, theme and language-server tests use `TestHost` this way.
+- The crates under `crates/artic-registry/fixtures/` are test-only (`publish = false`) and sit outside the layers. Two register one XAML type each; `artic-registry-linking` holds the tests that check which of them reach the registry.
 - `artic-xaml` does not depend on the registry. Type references stay unresolved in the infoset, so parser tests need no registry.
 - Release builds link `artic-xaml-runtime` only when the app enables `runtime-xaml`. Compiled views never touch the loader.
 - App-facing crates stay free of native-only dependencies, so a web target can be added later without app changes (D24 in the spec).

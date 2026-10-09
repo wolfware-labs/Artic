@@ -12,6 +12,9 @@ members = [
     "crates/artic-macros",
     "crates/artic-platform",
     "crates/artic-registry",
+    "crates/artic-registry/fixtures/linking",
+    "crates/artic-registry/fixtures/types-a",
+    "crates/artic-registry/fixtures/types-b",
     "crates/artic-render",
     "crates/artic-style",
     "crates/artic-test",
@@ -48,9 +51,11 @@ artic-xaml = { path = "crates/artic-xaml", version = "0.1.0" }
 artic-xaml-compiler = { path = "crates/artic-xaml-compiler", version = "0.1.0" }
 artic-xaml-runtime = { path = "crates/artic-xaml-runtime", version = "0.1.0" }
 
+linkme = "0.3.37"
 pretty_assertions = "1.4.1"
 proptest = "1.11.0"
 static_assertions = "1.1.0"
+thiserror = "2.0.21"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"
