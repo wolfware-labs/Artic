@@ -1,15 +1,15 @@
+use crate::crate_root::crate_root;
 use crate::xaml_type::attributes::{Affects, Whitespace};
 use crate::xaml_type::fields::{Analysis, Role, XamlField, xaml_name};
-use proc_macro_crate::{FoundCrate, crate_name};
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use quote::{format_ident, quote, quote_spanned};
+use syn::Ident;
 use syn::spanned::Spanned;
-use syn::{Error, Ident};
 
 /// Writes the code for one derived struct: its property keys, `Default`, `Object` and `XamlType`
 /// impls, its registry descriptors and entry, and the checks on its field types.
 pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
-  let root = crate_root(analysis)?;
+  let root = crate_root(analysis.attributes.crate_path.as_ref(), analysis.ident)?;
   let ident = analysis.ident;
   let properties: Vec<&XamlField> = analysis.xaml_fields.iter().filter(|f| is_property(f)).collect();
   let events: Vec<&XamlField> = analysis
@@ -201,29 +201,4 @@ fn property_info(field: &XamlField) -> TokenStream {
       inherits: #key.inherits(),
     }
   }
-}
-
-/// The path generated code uses to reach artic: the `crate` override, or whichever of `artic` and
-/// `artic-registry` the calling crate depends on.
-fn crate_root(analysis: &Analysis) -> syn::Result<TokenStream> {
-  if let Some(path) = &analysis.attributes.crate_path {
-    return Ok(quote!(#path));
-  }
-  for (package, library) in [("artic", "artic"), ("artic-registry", "artic_registry")] {
-    match crate_name(package) {
-      Ok(FoundCrate::Name(name)) => {
-        let name = Ident::new(&name, Span::call_site());
-        return Ok(quote!(::#name));
-      }
-      Ok(FoundCrate::Itself) => {
-        let name = Ident::new(library, Span::call_site());
-        return Ok(quote!(::#name));
-      }
-      Err(_) => {}
-    }
-  }
-  Err(Error::new_spanned(
-    analysis.ident,
-    "`XamlType` needs `artic` (or `artic-registry`) in this crate's dependencies",
-  ))
 }

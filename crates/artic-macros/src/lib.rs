@@ -1,5 +1,7 @@
 //! Derive and attribute macros for artic types, view-models and views.
 
+mod crate_root;
+mod xaml_enum;
 mod xaml_type;
 
 use proc_macro::TokenStream;
@@ -40,6 +42,19 @@ use syn::{DeriveInput, parse_macro_input};
 pub fn derive_xaml_type(input: TokenStream) -> TokenStream {
   let input = parse_macro_input!(input as DeriveInput);
   xaml_type::expand(&input)
+    .unwrap_or_else(syn::Error::into_compile_error)
+    .into()
+}
+
+/// Parses a fieldless enum from its variant names, ignoring ASCII case, so markup can set it from
+/// text: `Orientation="horizontal"` becomes `Orientation::Horizontal`.
+///
+/// It implements `FromStr` with `Err = ParseEnumError`, whose message lists every valid name. Every
+/// variant must be a unit variant, and no two names may differ only in case.
+#[proc_macro_derive(XamlEnum)]
+pub fn derive_xaml_enum(input: TokenStream) -> TokenStream {
+  let input = parse_macro_input!(input as DeriveInput);
+  xaml_enum::expand(&input)
     .unwrap_or_else(syn::Error::into_compile_error)
     .into()
 }
