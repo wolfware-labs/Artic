@@ -1,0 +1,2 @@
+# Spans in XAML snapshots are byte offsets, so XAML files keep LF endings on every platform.
+*.xaml text eol=lf

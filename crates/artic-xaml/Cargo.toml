@@ -9,6 +9,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+xmlparser.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
