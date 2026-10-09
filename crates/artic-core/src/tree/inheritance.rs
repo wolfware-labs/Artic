@@ -57,7 +57,9 @@ mod tests {
   #[derive(Debug)]
   struct StackPanel;
 
-  impl Object for StackPanel {}
+  impl Object for StackPanel {
+    fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  }
 
   /// A leaf with an inheritable font size and a width that doesn't inherit.
   #[derive(Debug)]

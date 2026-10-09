@@ -1,13 +1,16 @@
 //! Test fixture: registers the `Alpha` type in `XAML_TYPES` and nothing else.
 
 use artic_core::Object;
+use artic_core::property::AnyProperty;
 use artic_core::tree::{NodeId, TreeArena};
 use artic_registry::TypeInfo;
 
 #[derive(Debug)]
 struct Alpha;
 
-impl Object for Alpha {}
+impl Object for Alpha {
+  fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+}
 
 fn new_node(arena: &mut TreeArena) -> NodeId {
   arena.alloc(Box::new(Alpha))

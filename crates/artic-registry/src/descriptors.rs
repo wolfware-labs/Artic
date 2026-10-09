@@ -99,6 +99,7 @@ pub struct ArgInfo {
 mod tests {
   use super::*;
   use artic_core::Object;
+  use artic_core::property::AnyProperty;
   use artic_core::property::{Property, PropertyKey};
   use pretty_assertions::assert_eq;
   use static_assertions::assert_impl_all;
@@ -112,7 +113,9 @@ mod tests {
     _padding: Property<f32>,
   }
 
-  impl Object for Border {}
+  impl Object for Border {
+    fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  }
 
   fn new_border(arena: &mut TreeArena) -> NodeId {
     arena.alloc(Box::new(Border {

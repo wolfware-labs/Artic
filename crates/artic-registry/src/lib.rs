@@ -20,12 +20,15 @@ use linkme::distributed_slice;
 ///
 /// ```
 /// use artic_core::Object;
+/// use artic_core::property::AnyProperty;
 /// use artic_core::tree::{NodeId, TreeArena};
 /// use artic_registry::{Registry, TypeInfo};
 ///
 /// #[derive(Debug)]
 /// struct Gauge;
-/// impl Object for Gauge {}
+/// impl Object for Gauge {
+///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+/// }
 ///
 /// static GAUGE: TypeInfo = TypeInfo {
 ///   name: "Gauge",
@@ -73,12 +76,15 @@ pub static XAML_TYPES: [&'static TypeInfo];
 ///
 /// ```
 /// use artic_core::Object;
+/// use artic_core::property::AnyProperty;
 /// use artic_core::tree::{NodeId, TreeArena};
 /// use artic_registry::{Registry, TypeInfo};
 ///
 /// #[derive(Debug)]
 /// struct Dial;
-/// impl Object for Dial {}
+/// impl Object for Dial {
+///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+/// }
 ///
 /// static DIAL: TypeInfo = TypeInfo {
 ///   name: "Dial",
