@@ -66,6 +66,7 @@ pub fn analyze(input: &DeriveInput) -> syn::Result<Analysis<'_>> {
     }
   }
   check_attached(&attributes, &xaml_fields)?;
+  check_positional(&input.ident, &attributes, &xaml_fields)?;
   if let Some(content) = &attributes.content
     && !xaml_fields.iter().any(|field| field.ident == content)
   {
@@ -109,6 +110,31 @@ fn check_attached(attributes: &TypeAttributes, xaml_fields: &[XamlField]) -> syn
           "the attached property `{name}`'s helpers `{getter}` and `{setter}` clash with the property `{}`; rename one with `name = ...`",
           field.ident
         ),
+      ));
+    }
+  }
+  Ok(())
+}
+
+/// Rejects a positional argument that isn't a property, or that is listed twice.
+fn check_positional(owner: &Ident, attributes: &TypeAttributes, xaml_fields: &[XamlField]) -> syn::Result<()> {
+  let Some(positional) = &attributes.markup_extension else {
+    return Ok(());
+  };
+  for (index, argument) in positional.iter().enumerate() {
+    let is_property = xaml_fields
+      .iter()
+      .any(|field| field.ident == argument && matches!(field.role, Role::Property { .. }));
+    if !is_property {
+      return Err(Error::new_spanned(
+        argument,
+        format_args!("`positional({argument})` names no property of `{owner}`"),
+      ));
+    }
+    if positional[..index].contains(argument) {
+      return Err(Error::new_spanned(
+        argument,
+        format_args!("`{argument}` is listed twice in `positional(...)`"),
       ));
     }
   }

@@ -247,3 +247,44 @@ fn attached_key_carries_its_metadata() {
   assert_eq!(Grid::LABEL.key().affects(), Affects::NONE);
   assert_eq!(Grid::LABEL.default_value(), "unnamed");
 }
+
+/// A markup extension with one positional argument and an optional named one.
+#[derive(Debug, XamlType)]
+#[xaml(namespace = "https://artic.rs/ui", markup_extension(positional(key)))]
+struct Localize {
+  #[xaml]
+  key: Property<String>,
+  #[xaml]
+  fallback: Property<Option<String>>,
+}
+
+/// A markup extension without arguments.
+#[derive(Debug, XamlType)]
+#[xaml(namespace = "https://artic.rs/ui", markup_extension)]
+struct Nothing;
+
+// A markup extension's schema lists its positional arguments in order, and every property as a
+// named argument, with the names and value types of its properties.
+#[test]
+fn markup_extension_schema_is_registered() {
+  let schema = |info: &TypeInfo| {
+    let extension = info.markup_extension.expect("a markup extension");
+    let arguments = |arguments: &[artic_registry::ArgInfo]| {
+      arguments
+        .iter()
+        .map(|argument| (argument.name, argument.value_type))
+        .collect::<Vec<_>>()
+    };
+    (arguments(extension.positional), arguments(extension.named))
+  };
+
+  assert_eq!(
+    schema(lookup("Localize")),
+    (
+      vec![("Key", "String")],
+      vec![("Key", "String"), ("Fallback", "Option < String >")]
+    )
+  );
+  assert_eq!(schema(lookup("Nothing")), (vec![], vec![]));
+  assert!(lookup("Border").markup_extension.is_none());
+}

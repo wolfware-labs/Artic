@@ -10,6 +10,8 @@ pub struct TypeAttributes {
   pub whitespace: Whitespace,
   pub crate_path: Option<Path>,
   pub attached: Vec<Attached>,
+  /// The properties set by position, in order, if the type is a markup extension.
+  pub markup_extension: Option<Vec<Ident>>,
 }
 
 /// One `attached(...)` entry on the struct: an attached property the type owns.
@@ -61,6 +63,7 @@ pub fn parse_type_attributes(input: &DeriveInput) -> syn::Result<TypeAttributes>
   let mut whitespace = Whitespace::Collapse;
   let mut crate_path = None;
   let mut attached = Vec::new();
+  let mut markup_extension = None;
   for attribute in input.attrs.iter().filter(|attribute| attribute.path().is_ident("xaml")) {
     attribute.parse_nested_meta(|meta| {
       if meta.path.is_ident("namespace") {
@@ -79,10 +82,12 @@ pub fn parse_type_attributes(input: &DeriveInput) -> syn::Result<TypeAttributes>
         crate_path = Some(value.parse::<Path>()?);
       } else if meta.path.is_ident("attached") {
         attached.push(parse_attached(&meta)?);
+      } else if meta.path.is_ident("markup_extension") {
+        markup_extension = Some(parse_markup_extension(&meta)?);
       } else {
         return Err(unknown_key(
           &meta,
-          "`namespace`, `content`, `whitespace`, `crate` or `attached`",
+          "`namespace`, `content`, `whitespace`, `crate`, `attached` or `markup_extension`",
         ));
       }
       Ok(())
@@ -100,7 +105,26 @@ pub fn parse_type_attributes(input: &DeriveInput) -> syn::Result<TypeAttributes>
     whitespace,
     crate_path,
     attached,
+    markup_extension,
   })
+}
+
+/// Reads `markup_extension` or `markup_extension(positional(key, fallback))`, returning the
+/// properties set by position.
+fn parse_markup_extension(markup_extension: &ParseNestedMeta) -> syn::Result<Vec<Ident>> {
+  let mut positional = Vec::new();
+  if markup_extension.input.peek(syn::token::Paren) {
+    markup_extension.parse_nested_meta(|meta| {
+      if !meta.path.is_ident("positional") {
+        return Err(unknown_key(&meta, "`positional`"));
+      }
+      meta.parse_nested_meta(|argument| {
+        positional.push(argument.path.require_ident()?.clone());
+        Ok(())
+      })
+    })?;
+  }
+  Ok(positional)
 }
 
 /// Reads `attached(name = "Row", ty = usize, default = 0, affects = layout, target = children)`.
@@ -308,6 +332,28 @@ mod tests {
       message(quote::quote!(name = "Row", ty = u8, target = parent)),
       "expected `children` or `any`"
     );
+  }
+
+  // `markup_extension` marks a markup extension, with the properties set by position in order.
+  #[test]
+  fn markup_extension_is_parsed() {
+    let positional = |input: DeriveInput| {
+      let attributes = parse_type_attributes(&input).expect("valid attributes");
+      attributes
+        .markup_extension
+        .map(|names| names.iter().map(ToString::to_string).collect::<Vec<_>>())
+    };
+
+    let plain: DeriveInput = parse_quote! { #[xaml(namespace = "u")] struct Border; };
+    let bare: DeriveInput = parse_quote! { #[xaml(namespace = "u", markup_extension)] struct Null; };
+    let listed: DeriveInput = parse_quote! {
+      #[xaml(namespace = "u", markup_extension(positional(key, fallback)))]
+      struct Localize;
+    };
+
+    assert_eq!(positional(plain), None);
+    assert_eq!(positional(bare), Some(Vec::new()));
+    assert_eq!(positional(listed), Some(vec!["key".to_owned(), "fallback".to_owned()]));
   }
 
   // A struct without a namespace is rejected.

@@ -66,6 +66,12 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
   let attached_helpers = attached.iter().map(|attached| attached_helpers(ident, attached));
   let attached_infos = attached.iter().map(attached_info);
   let attached_count = attached.len();
+  let markup_extension = markup_extension(analysis, &properties);
+  let markup_extension_info = if analysis.attributes.markup_extension.is_some() {
+    quote!(::core::option::Option::Some(&__MARKUP_EXTENSION))
+  } else {
+    quote!(::core::option::Option::None)
+  };
   let attached_checks = attached.iter().map(|attached| {
     let ty = &attached.ty;
     let value = generic_argument(ty, "Option").unwrap_or(ty);
@@ -105,6 +111,8 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
 
       #(#attached_keys)*
 
+      #markup_extension
+
       impl #ident {
         #(#attached_helpers)*
       }
@@ -123,7 +131,7 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
         properties: &__PROPERTIES,
         events: &__EVENTS,
         attached_properties: &__ATTACHED,
-        markup_extension: ::core::option::Option::None,
+        markup_extension: #markup_extension_info,
         whitespace: #whitespace,
       };
 
@@ -142,6 +150,44 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
       }
     };
   })
+}
+
+/// The `MarkupExtensionInfo` static of a markup extension, or nothing for another type. Every
+/// property is a named argument, and `positional(...)` lists those also set by position.
+fn markup_extension(analysis: &Analysis, properties: &[&XamlField]) -> TokenStream {
+  let Some(positional) = &analysis.attributes.markup_extension else {
+    return TokenStream::new();
+  };
+  let by_position: Vec<&XamlField> = positional
+    .iter()
+    .map(|argument| {
+      *properties
+        .iter()
+        .find(|field| field.ident == argument)
+        .expect("checked to name a property")
+    })
+    .collect();
+  let positional = by_position.iter().map(|field| arg_info(field));
+  let named = properties.iter().map(|field| arg_info(field));
+  let (positional_count, named_count) = (by_position.len(), properties.len());
+  quote! {
+    static __POSITIONAL: [__artic::ArgInfo; #positional_count] = [#(#positional),*];
+    static __NAMED: [__artic::ArgInfo; #named_count] = [#(#named),*];
+    static __MARKUP_EXTENSION: __artic::MarkupExtensionInfo = __artic::MarkupExtensionInfo {
+      positional: &__POSITIONAL,
+      named: &__NAMED,
+    };
+  }
+}
+
+/// The `ArgInfo` of a property used as a markup extension argument: its name and value type, as in
+/// its `PropertyInfo`.
+fn arg_info(field: &XamlField) -> TokenStream {
+  let Role::Property { inner, .. } = field.role else {
+    unreachable!("properties only")
+  };
+  let key = key_path(field);
+  quote!(__artic::ArgInfo { name: #key.name(), value_type: ::core::stringify!(#inner) })
 }
 
 /// The static an attached property's key lives in, such as `__ATTACHED_COLUMN_SPAN`.
