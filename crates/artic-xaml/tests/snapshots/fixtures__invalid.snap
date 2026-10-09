@@ -1,0 +1,11 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: errors.render(&sources)
+input_file: crates/artic-xaml/tests/fixtures/invalid/syntax/mismatched_end_tag.xaml
+---
+invalid/syntax/mismatched_end_tag.xaml:3:1: error: expected `</Image>`, found `</Panel>`
+3 | </Panel>
+  | ^^^^^^^^
+  ::: invalid/syntax/mismatched_end_tag.xaml:2:4
+2 |   <Image>
+  |    ----- opened here
