@@ -61,6 +61,8 @@ name = "artic-layout"
 version = "0.1.0"
 dependencies = [
  "artic-core",
+ "pretty_assertions",
+ "proptest",
 ]
 
 [[package]]
