@@ -1,0 +1,2 @@
+<!-- A declaration applies to its whole element, names before it included. -->
+<a:Card a:Dock.Side="Left" xmlns:a="using:app::widgets"/>

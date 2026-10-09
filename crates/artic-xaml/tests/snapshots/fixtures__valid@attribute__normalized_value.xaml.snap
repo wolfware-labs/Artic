@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/attribute/normalized_value.xaml
+---
+Object TextBlock [https://artic.rs/ui] 2:2..2:11
+  xmlns "https://artic.rs/ui" 2:12..2:39
+  Text 2:40..2:44
+    Value "two lines tab & \nbreak" 2:46..3:27

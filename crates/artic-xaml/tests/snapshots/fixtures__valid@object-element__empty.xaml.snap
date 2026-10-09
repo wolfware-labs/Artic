@@ -1,0 +1,7 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/object-element/empty.xaml
+---
+Object Button [https://artic.rs/ui] 1:2..1:8
+  xmlns "https://artic.rs/ui" 1:9..1:36

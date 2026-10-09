@@ -1,0 +1,19 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/markup-extension/quoted.xaml
+---
+Object TextBlock [https://artic.rs/ui] 2:2..2:11
+  xmlns "https://artic.rs/ui" 2:12..2:39
+  Text 3:12..3:16
+    MarkupExtension Binding [https://artic.rs/ui] 3:19..3:26
+      positional
+        Value "Text" 3:27..3:31
+      FallbackValue 3:33..3:46
+        Value "a, b {c}" 3:48..3:56
+  Tag 4:12..4:15
+    MarkupExtension A [https://artic.rs/ui] 4:18..4:19
+      positional
+        Value "it's" 4:26..4:30
+        Value "say 'hi'" 4:39..4:49
+        Value "a,b" 4:52..4:56

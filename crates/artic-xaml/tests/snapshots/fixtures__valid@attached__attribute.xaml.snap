@@ -1,0 +1,18 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/attached/attribute.xaml
+---
+Object Grid [https://artic.rs/ui] 1:2..1:6
+  xmlns "https://artic.rs/ui" 1:7..1:34
+  xmlns:d "using:app::docking" 1:35..1:63
+  content 1:64..3:1
+    Value "" raw "\n  " 1:64..2:3
+    Object Button [https://artic.rs/ui] 2:4..2:10
+      attached Grid.Row [https://artic.rs/ui] 2:11..2:19
+        Value "1" 2:21..2:22
+      attached Grid.Column [https://artic.rs/ui] 2:24..2:35
+        Value "2" 2:37..2:38
+      attached d:Dock.Side [using:app::docking] 2:40..2:51
+        Value "Left" 2:53..2:57
+    Value "" raw "\n" 2:60..3:1

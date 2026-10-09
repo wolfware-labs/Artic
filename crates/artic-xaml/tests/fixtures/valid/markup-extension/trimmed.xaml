@@ -1,0 +1,2 @@
+<!-- Plain arguments are trimmed and keep inner spaces. -->
+<Button xmlns="https://artic.rs/ui" Tag="{Binding  Some Name , Path = A.B }"/>

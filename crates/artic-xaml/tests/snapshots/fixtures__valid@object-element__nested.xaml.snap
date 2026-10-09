@@ -1,0 +1,15 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/object-element/nested.xaml
+---
+Object Border [https://artic.rs/ui] 1:2..1:8
+  xmlns "https://artic.rs/ui" 1:9..1:36
+  content 1:37..5:1
+    Value "" raw "\n  " 1:37..2:3
+    Object StackPanel [https://artic.rs/ui] 2:4..2:14
+      content 2:15..4:3
+        Value "" raw "\n    " 2:15..3:5
+        Object Image [https://artic.rs/ui] 3:6..3:11
+        Value "" raw "\n  " 3:13..4:3
+    Value "" raw "\n" 4:16..5:1

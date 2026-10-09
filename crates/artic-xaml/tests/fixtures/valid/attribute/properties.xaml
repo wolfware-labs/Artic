@@ -1,0 +1,2 @@
+<!-- Attribute values stay text; each type's FromStr converts them later. -->
+<Button xmlns="https://artic.rs/ui" Width="100" Content="Sign in" Margin="4,8" Padding=" 2 , 4 "/>

@@ -1,0 +1,6 @@
+<v:Page xmlns:v="using:app::views">
+  <v:Panel xmlns:v="using:app::widgets">
+    <v:Card/>
+  </v:Panel>
+  <v:Header/>
+</v:Page>

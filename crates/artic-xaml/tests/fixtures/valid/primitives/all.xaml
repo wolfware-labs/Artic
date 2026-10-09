@@ -1,0 +1,6 @@
+<ResourceDictionary xmlns="https://artic.rs/ui" xmlns:x="https://artic.rs/markup">
+  <x:String x:Key="Title">artic</x:String>
+  <x:Int32 x:Key="Count">3</x:Int32>
+  <x:Double x:Key="Ratio">1.5</x:Double>
+  <x:Boolean x:Key="Enabled">true</x:Boolean>
+</ResourceDictionary>

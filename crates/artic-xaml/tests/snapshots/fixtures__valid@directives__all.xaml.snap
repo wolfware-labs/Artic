@@ -1,0 +1,31 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/directives/all.xaml
+---
+Object UserControl [https://artic.rs/ui] 1:2..1:13
+  xmlns "https://artic.rs/ui" 1:14..1:41
+  xmlns:x "https://artic.rs/markup" 1:42..1:75
+  directive Class 1:76..1:83
+    Value "app::views::Main" 1:85..1:101
+  directive DataType 1:103..1:113
+    Value "app::vm::MainVm" 1:115..1:130
+  Resources 3:4..3:25
+    Value "" raw "\n    " 3:26..4:5
+    Object SolidColorBrush [https://artic.rs/ui] 4:6..4:21
+      directive Key 4:22..4:27
+        Value "Accent" 4:29..4:35
+      Color 4:37..4:42
+        Value "#3B82F6" 4:44..4:51
+    Value "" raw "\n  " 4:54..5:3
+  content 1:132..6:1
+    Value "" raw "\n  " 1:132..2:3
+    Object Button [https://artic.rs/ui] 2:4..2:10
+      directive Name 2:11..2:17
+        Value "submit" 2:19..2:25
+      directive Uid 2:27..2:32
+        Value "submit-button" 2:34..2:47
+      directive FieldModifier 2:49..2:64
+        Value "pub(crate)" 2:66..2:76
+    Value "" raw "\n  " 2:79..3:3
+    Value "" raw "\n" 5:27..6:1

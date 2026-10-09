@@ -1,0 +1,18 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/markup-extension/nested.xaml
+---
+Object Button [https://artic.rs/ui] 1:2..1:8
+  xmlns "https://artic.rs/ui" 1:9..1:36
+  xmlns:x "https://artic.rs/markup" 1:37..1:70
+  Tag 1:71..1:74
+    MarkupExtension Binding [https://artic.rs/ui] 1:77..1:84
+      Source 1:85..1:91
+        MarkupExtension StaticResource [https://artic.rs/ui] 1:93..1:107
+          Key 1:108..1:111
+            MarkupExtension x:Static [markup] 1:113..1:121
+              positional
+                Value "a::B" 1:122..1:126
+      Mode 1:130..1:134
+        Value "OneWay" 1:135..1:141

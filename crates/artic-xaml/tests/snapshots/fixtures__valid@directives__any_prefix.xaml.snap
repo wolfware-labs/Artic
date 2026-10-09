@@ -1,0 +1,10 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/directives/any_prefix.xaml
+---
+Object Button [https://artic.rs/ui] 2:2..2:8
+  xmlns "https://artic.rs/ui" 2:9..2:36
+  xmlns:m "https://artic.rs/markup" 2:37..2:70
+  directive Name 2:71..2:77
+    Value "ok" 2:79..2:81

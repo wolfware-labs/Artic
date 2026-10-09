@@ -1,0 +1,9 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/namespaces/declared_after_use.xaml
+---
+Object a:Card [using:app::widgets] 2:2..2:8
+  xmlns:a "using:app::widgets" 2:28..2:56
+  attached a:Dock.Side [using:app::widgets] 2:9..2:20
+    Value "Left" 2:22..2:26

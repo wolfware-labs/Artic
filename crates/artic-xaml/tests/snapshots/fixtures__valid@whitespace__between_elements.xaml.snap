@@ -1,0 +1,15 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/whitespace/between_elements.xaml
+---
+Object TextBlock [https://artic.rs/ui] 1:2..1:11
+  xmlns "https://artic.rs/ui" 1:12..1:39
+  content 1:40..1:73
+    Object Run [https://artic.rs/ui] 1:41..1:44
+      content 1:45..1:50
+        Value "Hello" 1:45..1:50
+    Value "" raw " " 1:56..1:57
+    Object Run [https://artic.rs/ui] 1:58..1:61
+      content 1:62..1:67
+        Value "world" 1:62..1:67

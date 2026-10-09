@@ -1,0 +1,13 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/content/collection.xaml
+---
+Object StackPanel [https://artic.rs/ui] 1:2..1:12
+  xmlns "https://artic.rs/ui" 1:13..1:40
+  content 1:41..4:1
+    Value "" raw "\n  " 1:41..2:3
+    Object Button [https://artic.rs/ui] 2:4..2:10
+    Value "" raw "\n  " 2:12..3:3
+    Object Image [https://artic.rs/ui] 3:4..3:9
+    Value "" raw "\n" 3:11..4:1

@@ -1,0 +1,34 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/primitives/all.xaml
+---
+Object ResourceDictionary [https://artic.rs/ui] 1:2..1:20
+  xmlns "https://artic.rs/ui" 1:21..1:48
+  xmlns:x "https://artic.rs/markup" 1:49..1:82
+  content 1:83..6:1
+    Value "" raw "\n  " 1:83..2:3
+    Object x:String [markup] 2:4..2:12
+      directive Key 2:13..2:18
+        Value "Title" 2:20..2:25
+      content 2:27..2:32
+        Value "artic" 2:27..2:32
+    Value "" raw "\n  " 2:43..3:3
+    Object x:Int32 [markup] 3:4..3:11
+      directive Key 3:12..3:17
+        Value "Count" 3:19..3:24
+      content 3:26..3:27
+        Value "3" 3:26..3:27
+    Value "" raw "\n  " 3:37..4:3
+    Object x:Double [markup] 4:4..4:12
+      directive Key 4:13..4:18
+        Value "Ratio" 4:20..4:25
+      content 4:27..4:30
+        Value "1.5" 4:27..4:30
+    Value "" raw "\n  " 4:41..5:3
+    Object x:Boolean [markup] 5:4..5:13
+      directive Key 5:14..5:19
+        Value "Enabled" 5:21..5:28
+      content 5:30..5:34
+        Value "true" 5:30..5:34
+    Value "" raw "\n" 5:46..6:1

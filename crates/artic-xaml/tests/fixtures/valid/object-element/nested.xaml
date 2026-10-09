@@ -1,0 +1,5 @@
+<Border xmlns="https://artic.rs/ui">
+  <StackPanel>
+    <Image/>
+  </StackPanel>
+</Border>

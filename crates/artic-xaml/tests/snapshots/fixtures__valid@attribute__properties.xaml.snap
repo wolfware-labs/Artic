@@ -1,0 +1,15 @@
+---
+source: crates/artic-xaml/tests/fixtures.rs
+expression: "print(sources.get(file), &document)"
+input_file: crates/artic-xaml/tests/fixtures/valid/attribute/properties.xaml
+---
+Object Button [https://artic.rs/ui] 2:2..2:8
+  xmlns "https://artic.rs/ui" 2:9..2:36
+  Width 2:37..2:42
+    Value "100" 2:44..2:47
+  Content 2:49..2:56
+    Value "Sign in" 2:58..2:65
+  Margin 2:67..2:73
+    Value "4,8" 2:75..2:78
+  Padding 2:80..2:87
+    Value " 2 , 4 " 2:89..2:96

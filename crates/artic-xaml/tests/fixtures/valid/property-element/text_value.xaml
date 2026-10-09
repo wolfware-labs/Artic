@@ -1,0 +1,5 @@
+<Button xmlns="https://artic.rs/ui">
+  <Button.Content>
+    Click   me
+  </Button.Content>
+</Button>

@@ -1,0 +1,2 @@
+<!-- Entities are decoded; CDATA is verbatim and merges with the text around it. -->
+<TextBlock xmlns="https://artic.rs/ui">a &lt; b &amp;&amp; &#65;&#x42; <![CDATA[<raw> &amp;]]> end</TextBlock>
