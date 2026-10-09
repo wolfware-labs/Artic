@@ -1,3 +1,4 @@
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 /// Which source file a [`Span`] belongs to: an index into a [`SourceMap`].
@@ -8,7 +9,10 @@ pub struct SourceId(u32);
 ///
 /// Positions are byte offsets into the file's UTF-8 text, cheap to store on every parsed node.
 /// They become lines and columns only when a diagnostic is rendered.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+///
+/// Its `Debug` output is compact, `Span(0, 4..9)` for bytes `4..9` of file 0, since spans appear on
+/// every node of a printed infoset.
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
 pub struct Span {
   /// The file the range is in.
   pub source: SourceId,
@@ -29,6 +33,12 @@ impl Span {
   #[must_use]
   pub const fn is_empty(&self) -> bool {
     self.start == self.end
+  }
+}
+
+impl fmt::Debug for Span {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "Span({}, {}..{})", self.source.0, self.start, self.end)
   }
 }
 
@@ -185,6 +195,12 @@ mod tests {
   fn line_col(text: &str, byte: usize) -> (usize, usize) {
     let position = SourceFile::new("test.xaml", text).line_col(byte);
     (position.line, position.column)
+  }
+
+  // A span prints as its file and byte range, on one line.
+  #[test]
+  fn debug_is_compact() {
+    assert_eq!(format!("{:#?}", Span::new(SourceId(2), 4, 9)), "Span(2, 4..9)");
   }
 
   // ASCII offsets map to lines and columns from 1.
