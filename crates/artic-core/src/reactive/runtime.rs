@@ -8,6 +8,7 @@ mod scheduling;
 mod scope_store;
 mod signal_store;
 mod tracking;
+mod value_cell;
 
 use crate::reactive::{Change, LiveCounts};
 pub use effect_store::EffectId;

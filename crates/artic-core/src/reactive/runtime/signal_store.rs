@@ -1,39 +1,24 @@
 use crate::arena::{Arena, SlotId};
 use crate::reactive::runtime::observer_store::ObserverId;
+use crate::reactive::runtime::value_cell::ValueCell;
 use std::any::Any;
 use std::cell::{Ref, RefCell};
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct SignalId(SlotId);
 
 struct SignalSlot {
-  value: RefCell<Option<Box<dyn Any>>>,
+  value: ValueCell,
   subscribers: RefCell<Vec<ObserverId>>,
 }
 
 impl SignalSlot {
   fn new(value: Box<dyn Any>) -> Self {
     Self {
-      value: RefCell::new(Some(value)),
+      value: ValueCell::new(value, "signal"),
       subscribers: RefCell::new(Vec::new()),
     }
-  }
-
-  fn take_value(&self) -> Option<Box<dyn Any>> {
-    let Ok(mut value) = self.value.try_borrow_mut() else {
-      return None;
-    };
-    value.take()
-  }
-
-  fn get_value(&self) -> Ref<'_, Option<Box<dyn Any>>> {
-    self.value.borrow()
-  }
-
-  fn set_value(&self, value: Box<dyn Any>) {
-    self.value.replace(Some(value));
   }
 
   fn add_subscriber(&self, observer: ObserverId) {
@@ -73,16 +58,7 @@ impl SignalStore {
   where
     TValue: Any,
   {
-    let slot = self.get_slot(signal_id);
-    let value = slot.get_value();
-    let Some(value) = &*value else {
-      panic!("signal read while it is being updated");
-    };
-    action(
-      value
-        .downcast_ref::<TValue>()
-        .expect("signal type does not match with the specified type"),
-    )
+    self.get_slot(signal_id).value.with(action)
   }
 
   pub fn with_signal_mut_value<TValue, TResult>(
@@ -93,19 +69,7 @@ impl SignalStore {
   where
     TValue: Any,
   {
-    let slot = self.get_slot(signal_id);
-    let Some(mut value) = slot.take_value() else {
-      panic!("signal written while it is being read or updated");
-    };
-    let action_result = catch_unwind(AssertUnwindSafe(|| {
-      action(
-        value
-          .downcast_mut::<TValue>()
-          .expect("signal type does not match with the specified type"),
-      )
-    }));
-    slot.set_value(value);
-    action_result
+    self.get_slot(signal_id).value.with_mut(action)
   }
 
   pub fn free(&self, signal_id: SignalId) {
