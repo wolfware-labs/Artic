@@ -1059,7 +1059,7 @@ fn panicking_update_with_still_marks_dependents_dirty() {
 
 // Pending effects
 
-// A write that reaches one effect makes the flush visit only that effect, not every effect.
+// A write pends only the effect it reaches, not every effect.
 #[test]
 fn unrelated_effects_are_not_visited() {
   let first = Signal::new(0);
@@ -1070,15 +1070,13 @@ fn unrelated_effects_are_not_visited() {
   effect(move || {
     second.get();
   });
-  Runtime::take_effect_visits();
 
   first.set(1);
-  flush_effects();
 
-  assert_eq!(Runtime::take_effect_visits(), 1);
+  assert_eq!(Runtime::collect_pending_effects(), 1);
 }
 
-// A write reaches an effect behind a chain of memos, and the effect sees the end of the chain.
+// A write reaches an effect behind a chain of memos, and the effect then sees the end of the chain.
 #[test]
 fn effect_behind_a_memo_chain_is_pending() {
   let source = Signal::new(1);
@@ -1088,16 +1086,15 @@ fn effect_behind_a_memo_chain_is_pending() {
   let seen = Rc::new(Cell::new(0));
   let seen_in_effect = Rc::clone(&seen);
   effect(move || seen_in_effect.set(third.get()));
-  Runtime::take_effect_visits();
 
   source.set(4);
+  assert_eq!(Runtime::collect_pending_effects(), 1);
   flush_effects();
 
   assert_eq!(seen.get(), 9);
-  assert_eq!(Runtime::take_effect_visits(), 1);
 }
 
-// An effect reached through a memo whose value doesn't change is visited but doesn't run.
+// An effect reached through a memo whose value doesn't change is pending but doesn't run.
 #[test]
 fn cutoff_still_skips_the_run() {
   let source = Signal::new(2);
@@ -1107,27 +1104,23 @@ fn cutoff_still_skips_the_run() {
     read();
     is_even.get();
   });
-  Runtime::take_effect_visits();
 
   source.set(4);
+  assert_eq!(Runtime::collect_pending_effects(), 1);
   flush_effects();
 
-  assert_eq!(Runtime::take_effect_visits(), 1);
   assert_eq!(runs.get(), 1, "only the run on creation");
 }
 
-// A flush with nothing written visits no effect.
+// With nothing written since the last flush, no effect is pending.
 #[test]
-fn flush_without_writes_visits_nothing() {
+fn nothing_written_pends_nothing() {
   let source = Signal::new(0);
   effect(move || {
     source.get();
   });
-  Runtime::take_effect_visits();
 
-  flush_effects();
-
-  assert_eq!(Runtime::take_effect_visits(), 0);
+  assert_eq!(Runtime::collect_pending_effects(), 0);
 }
 
 // Effects that each write the next one's input, in creation order, settle in one pass: an effect

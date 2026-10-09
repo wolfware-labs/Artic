@@ -10,8 +10,6 @@ pub struct Scheduler {
   is_flushing: Cell<bool>,
   batch_depth: Cell<usize>,
   pending: RefCell<BTreeMap<u64, EffectId>>,
-  #[cfg(test)]
-  visits: Cell<usize>,
 }
 
 impl Scheduler {
@@ -20,8 +18,6 @@ impl Scheduler {
       is_flushing: Cell::new(false),
       batch_depth: Cell::new(0),
       pending: RefCell::new(BTreeMap::new()),
-      #[cfg(test)]
-      visits: Cell::new(0),
     }
   }
 
@@ -88,8 +84,9 @@ impl Runtime {
   }
 
   #[cfg(test)]
-  pub fn take_effect_visits() -> usize {
-    RUNTIME.with(|runtime| runtime.scheduler.visits.replace(0))
+  pub fn collect_pending_effects() -> usize {
+    Self::collect_pending();
+    RUNTIME.with(|runtime| runtime.scheduler.pending.borrow().len())
   }
 
   fn run_passes() {
@@ -101,8 +98,6 @@ impl Runtime {
       let mut cursor = None;
       while let Some((seq, effect_id)) = RUNTIME.with(|runtime| runtime.scheduler.take_pending_after(cursor)) {
         cursor = Some(seq);
-        #[cfg(test)]
-        RUNTIME.with(|runtime| runtime.scheduler.visits.set(runtime.scheduler.visits.get() + 1));
         Self::refresh_effect(effect_id);
         Self::collect_pending();
       }
