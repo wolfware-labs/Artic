@@ -203,7 +203,7 @@ The parser's rejection table (`UNSUPPORTED` in `artic-xaml`) holds each construc
 pub struct XamlDocument { source: SourceId, root: XamlNode }          // root is always an Object
 pub enum XamlNode {
     Object { ty: TypeRef, members: Vec<Member>, namespaces: Vec<NamespaceDecl>, span: Span },
-    Value  { text: String, span: Span },            // untyped text, converted later
+    Value  { text: String, raw: String, span: Span },  // untyped text, converted later; raw keeps whitespace as written
     MarkupExtension { ty: TypeRef, positional: Vec<XamlNode>, named: Vec<Member>, span: Span },
 }
 pub struct Member { key: MemberKey, value: Vec<XamlNode>, span: Span }
@@ -219,7 +219,9 @@ The parser resolves each type reference's prefix to its `XamlNamespace` (element
 
 ### Whitespace
 
-MS-XAML default: leading/trailing whitespace in text content is trimmed, internal runs collapse to one space, and whitespace-only text between object elements is dropped. `xml:space="preserve"` and `#[xaml(whitespace = "significant")]` on a type (e.g. `TextBlock` inline collection) turn this off.
+MS-XAML default, applied by the parser to text inside elements: whitespace is XML's (space, tab, CR, LF; a non-breaking space is content), runs collapse to one space, an element's content is trimmed at its start and end tags only (so text beside a child element keeps that space), and whitespace-only text between elements adds nothing. `xml:space="preserve"` keeps text as written in its subtree and `xml:space="default"` restores the rules; the parser consumes the attribute.
+
+Each text `Value` keeps both forms: `text` after these rules (empty for whitespace-only text, which is kept rather than dropped) and `raw` as written. Types marked `#[xaml(whitespace = "significant")]` (e.g. `TextBlock` inline collection) read `raw`; the back ends decide, since the parser has no registry. Attribute values only get XML's attribute normalization; trimming is up to each type's `FromStr`. Line breaks between East Asian characters are not removed (unlike MS-XAML); they become a space like any other.
 
 ### Example view
 
