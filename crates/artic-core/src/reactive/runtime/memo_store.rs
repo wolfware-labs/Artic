@@ -1,5 +1,6 @@
 use crate::arena::{Arena, SlotId};
-use crate::reactive::runtime::{ObservableId, ObserverId, SignalId};
+use crate::reactive::runtime::value_cell::ValueCell;
+use std::any::Any;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -7,10 +8,9 @@ use std::rc::Rc;
 pub struct MemoId(SlotId);
 
 struct MemoSlot {
-  observer: ObserverId,
-  value: SignalId,
-  compute: Rc<dyn Fn()>,
-  observables: Rc<[ObservableId]>,
+  value: Rc<ValueCell>,
+  compute: Rc<dyn Fn(MemoId)>,
+  is_dirty: bool,
   is_computing: bool,
 }
 
@@ -25,12 +25,11 @@ impl MemoStore {
     }
   }
 
-  pub fn alloc(&self, observer: ObserverId, value: SignalId, compute: Rc<dyn Fn()>) -> MemoId {
+  pub fn alloc(&self, value: Box<dyn Any>, compute: Rc<dyn Fn(MemoId)>) -> MemoId {
     MemoId(self.slots.borrow_mut().alloc(MemoSlot {
-      observer,
-      value,
+      value: Rc::new(ValueCell::new(value, "memo")),
       compute,
-      observables: Rc::from([]),
+      is_dirty: true,
       is_computing: false,
     }))
   }
@@ -47,28 +46,20 @@ impl MemoStore {
     self.slots.borrow().len()
   }
 
-  pub fn observer(&self, memo_id: MemoId) -> ObserverId {
-    self.with_slot(memo_id, |slot| slot.observer)
+  pub fn value(&self, memo_id: MemoId) -> Rc<ValueCell> {
+    self.with_slot(memo_id, |slot| Rc::clone(&slot.value))
   }
 
-  pub fn value(&self, memo_id: MemoId) -> SignalId {
-    self.with_slot(memo_id, |slot| slot.value)
-  }
-
-  pub fn find_value(&self, memo_id: MemoId) -> Option<SignalId> {
-    self.slots.borrow().get(memo_id.0).map(|slot| slot.value)
-  }
-
-  pub fn compute(&self, memo_id: MemoId) -> Rc<dyn Fn()> {
+  pub fn compute(&self, memo_id: MemoId) -> Rc<dyn Fn(MemoId)> {
     self.with_slot(memo_id, |slot| Rc::clone(&slot.compute))
   }
 
-  pub fn observables(&self, memo_id: MemoId) -> Rc<[ObservableId]> {
-    self.with_slot(memo_id, |slot| Rc::clone(&slot.observables))
+  pub fn is_dirty(&self, memo_id: MemoId) -> bool {
+    self.with_slot(memo_id, |slot| slot.is_dirty)
   }
 
-  pub fn set_observables(&self, memo_id: MemoId, observables: Vec<ObservableId>) {
-    self.with_slot(memo_id, |slot| slot.observables = Rc::from(observables));
+  pub fn set_dirty(&self, memo_id: MemoId, is_dirty: bool) {
+    self.with_slot(memo_id, |slot| slot.is_dirty = is_dirty);
   }
 
   pub fn is_computing(&self, memo_id: MemoId) -> bool {

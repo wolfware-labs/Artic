@@ -1,5 +1,4 @@
 use crate::arena::{Arena, SlotId};
-use crate::reactive::runtime::{ObservableId, ObserverId};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -7,9 +6,8 @@ use std::rc::Rc;
 pub struct EffectId(SlotId);
 
 struct EffectSlot {
-  observer: ObserverId,
   run: Rc<RefCell<dyn FnMut()>>,
-  observables: Rc<[ObservableId]>,
+  is_dirty: bool,
   is_running: bool,
 }
 
@@ -26,11 +24,10 @@ impl EffectStore {
     }
   }
 
-  pub fn alloc(&self, observer: ObserverId, run: Rc<RefCell<dyn FnMut()>>) -> EffectId {
+  pub fn alloc(&self, run: Rc<RefCell<dyn FnMut()>>) -> EffectId {
     let effect_id = EffectId(self.slots.borrow_mut().alloc(EffectSlot {
-      observer,
       run,
-      observables: Rc::from([]),
+      is_dirty: true,
       is_running: false,
     }));
     self.creation_order.borrow_mut().push(effect_id);
@@ -62,20 +59,16 @@ impl EffectStore {
     self.creation_order.borrow().get(index).copied()
   }
 
-  pub fn observer(&self, effect_id: EffectId) -> ObserverId {
-    self.with_slot(effect_id, |slot| slot.observer)
-  }
-
   pub fn run(&self, effect_id: EffectId) -> Rc<RefCell<dyn FnMut()>> {
     self.with_slot(effect_id, |slot| Rc::clone(&slot.run))
   }
 
-  pub fn observables(&self, effect_id: EffectId) -> Rc<[ObservableId]> {
-    self.with_slot(effect_id, |slot| Rc::clone(&slot.observables))
+  pub fn is_dirty(&self, effect_id: EffectId) -> bool {
+    self.with_slot(effect_id, |slot| slot.is_dirty)
   }
 
-  pub fn set_observables(&self, effect_id: EffectId, observables: Vec<ObservableId>) {
-    self.with_slot(effect_id, |slot| slot.observables = Rc::from(observables));
+  pub fn set_dirty(&self, effect_id: EffectId, is_dirty: bool) {
+    self.with_slot(effect_id, |slot| slot.is_dirty = is_dirty);
   }
 
   pub fn is_running(&self, effect_id: EffectId) -> bool {

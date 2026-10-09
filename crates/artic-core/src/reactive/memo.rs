@@ -1,5 +1,5 @@
 use crate::reactive::origin::Origin;
-use crate::reactive::runtime::{MemoId, ObservableId, Runtime};
+use crate::reactive::runtime::{MemoId, Node, Runtime};
 use std::marker::PhantomData;
 use std::rc::Rc;
 
@@ -72,16 +72,15 @@ where
   /// ```
   #[track_caller]
   pub fn new(compute: impl Fn() -> TValue + 'static) -> Memo<TValue> {
-    let value_id = Runtime::alloc_signal_value(None::<TValue>);
     let memo_id = Runtime::create_memo(
-      value_id,
-      Rc::new(move || {
+      Box::new(None::<TValue>),
+      Rc::new(move |memo_id| {
         let new_value = Some(compute());
-        if !Runtime::contains_signal(value_id) {
+        if !Runtime::contains_memo(memo_id) {
           return;
         }
-        if Runtime::with_untracked_signal_value(value_id, |value: &Option<TValue>| *value != new_value) {
-          Runtime::with_untracked_signal_mut_value(value_id, |value| *value = new_value);
+        if Runtime::with_memo_value(memo_id, |value: &Option<TValue>| *value != new_value) {
+          Runtime::set_memo_value(memo_id, new_value);
         }
       }),
     );
@@ -112,8 +111,8 @@ impl<TValue> Memo<TValue> {
     self.ensure_alive();
     Runtime::refresh_memo(self.0);
     self.ensure_alive();
-    Runtime::record_read(ObservableId::Memo(self.0));
-    Runtime::with_signal_value(Runtime::memo_value(self.0), |value: &Option<TValue>| {
+    Runtime::record_read(Node::Memo(self.0));
+    Runtime::with_memo_value(self.0, |value: &Option<TValue>| {
       function(value.as_ref().expect("a refreshed memo has a value"))
     })
   }
