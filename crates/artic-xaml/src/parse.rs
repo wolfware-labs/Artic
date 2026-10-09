@@ -38,6 +38,7 @@ pub fn parse(sources: &SourceMap, file: SourceId) -> Result<XamlDocument, Diagno
 
 /// Marks an error that was already recorded and stops the work in progress: the whole parse in the
 /// builder, one attribute value in the markup extension parser.
+#[must_use]
 struct Fatal;
 
 /// An error if `members` already sets `member`'s key, pointing at both.

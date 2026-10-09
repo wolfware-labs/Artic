@@ -40,14 +40,16 @@ impl<'a> Parser<'a> {
     if let Some(literal) = text.strip_prefix("{}") {
       return Some(XamlNode::Value {
         text: literal.to_owned(),
-        span: self.span(2, text.len()),
+        span: self.span("{}".len(), text.len()),
       });
     }
     let node = self.extension().ok()?;
     self.skip_whitespace();
     if self.position < text.len() {
       let span = self.span(self.position, text.trim_end().len());
-      self.fatal(Diagnostic::error(span, "unexpected text after the markup extension"));
+      self
+        .diagnostics
+        .push(Diagnostic::error(span, "unexpected text after the markup extension"));
       return None;
     }
     Some(node)
@@ -71,9 +73,13 @@ impl<'a> Parser<'a> {
       return Err(self.fatal(Diagnostic::error(span, "expected a markup extension name")));
     }
     let opened = self.span(open, self.position);
+    let (prefix, local) = match name.split_once(':') {
+      Some((prefix, local)) => (Some(prefix.to_owned()), local),
+      None => (None, name),
+    };
     let ty = TypeRef {
-      prefix: name.split_once(':').map(|(prefix, _)| prefix.to_owned()),
-      name: name.split_once(':').map_or(name, |(_, local)| local).to_owned(),
+      prefix,
+      name: local.to_owned(),
       span: self.span(name_start, self.position),
     };
     let mut positional = Vec::new();
@@ -137,7 +143,7 @@ impl<'a> Parser<'a> {
       positional.push(value);
       return Ok(());
     }
-    let name = match value {
+    let (name, name_span) = match value {
       XamlNode::Value { text, span } if plain && !text.contains(char::is_whitespace) => (text, span),
       other => return Err(self.bad_name(other.span())),
     };
@@ -148,9 +154,9 @@ impl<'a> Parser<'a> {
       return Err(self.fatal(Diagnostic::error(span, "expected a value after `=`")));
     }
     let member = Member {
-      key: MemberKey::Property(name.0),
+      key: MemberKey::Property(name),
       value: vec![self.value()?],
-      span: name.1,
+      span: name_span,
     };
     match duplicate_of(named, &member) {
       Some(duplicate) => self.diagnostics.push(duplicate),
@@ -174,7 +180,7 @@ impl<'a> Parser<'a> {
     let text = self.text;
     self.position += "{}".len();
     let start = self.position;
-    let mut depth = 0_usize;
+    let mut depth: usize = 0;
     while let Some(character) = self.peek() {
       match character {
         ',' | '}' if depth == 0 => break,
@@ -230,8 +236,9 @@ impl<'a> Parser<'a> {
   fn plain(&mut self) -> XamlNode {
     let start = self.position;
     let mut text = String::new();
-    // The text's length and position after its last character that isn't trailing whitespace.
-    let (mut kept, mut end) = (0, start);
+    // The text's length, and the position, after its last character that isn't trailing whitespace.
+    let mut kept = 0;
+    let mut end = start;
     while let Some(character) = self.peek() {
       match character {
         ',' | '=' | '}' => break,
@@ -240,14 +247,16 @@ impl<'a> Parser<'a> {
           if let Some(escaped) = self.peek() {
             text.push(escaped);
             self.bump();
-            (kept, end) = (text.len(), self.position);
+            kept = text.len();
+            end = self.position;
           }
         }
         _ => {
           text.push(character);
           self.bump();
           if !character.is_whitespace() {
-            (kept, end) = (text.len(), self.position);
+            kept = text.len();
+            end = self.position;
           }
         }
       }
