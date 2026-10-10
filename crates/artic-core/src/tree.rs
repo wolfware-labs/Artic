@@ -15,7 +15,8 @@
 //!
 //! # How this module is organized
 //!
-//! `UiTree` is a front over parts with one job each, one file per part:
+//! `UiTree`, defined here with all its methods, is a front over parts with one job each, one file
+//! per part:
 //!
 //! - `objects`: the objects themselves, and the only part that knows whether an id is live.
 //! - `hierarchy`: `Tree`, one tree's parent and child links; `UiTree` keeps one per kind.
@@ -29,7 +30,10 @@
 //! also keeps the rules that span parts: a new node gets a place in every part and
 //! its properties share its dirty flags; a freed node leaves every part; a logical edit reconnects
 //! inheritance; a visual edit marks the parent for layout; a new attached value shares its node's
-//! dirty flags. Each file holds `UiTree`'s public methods for its part next to the part.
+//! dirty flags. Every link edit goes through two private methods, `attach` and `unlink`, so those
+//! rules hold for each public one.
+//!
+//! The tests in `tests` check `UiTree`'s behavior, one file per concern.
 
 mod attached;
 mod dirty;
@@ -39,13 +43,17 @@ mod objects;
 
 use crate::Object;
 use crate::arena::SlotId;
+use crate::property::{Affects, AnyProperty, AttachedKey, KeyId, Property};
 use attached::AttachedValues;
 use dirty::DirtyFlags;
 use hierarchy::Tree;
 use objects::Objects;
 use std::any::Any;
+use std::collections::HashSet;
 use std::fmt::Debug;
 use std::rc::Rc;
+
+const TREES: [TreeKind; 2] = [TreeKind::Logical, TreeKind::Visual];
 
 /// The UI tree: owns every node, links them into the logical and visual trees, and tracks what each
 /// node needs redone.
@@ -348,140 +356,333 @@ impl UiTree {
     self.objects.contains(id)
   }
 
+  /// Returns the parent of `id` in `tree`, or `None` if it has none or `id` is stale.
+  #[must_use]
+  pub fn parent(&self, tree: TreeKind, id: NodeId) -> Option<NodeId> {
+    self.tree(tree).parent(id)
+  }
+
+  /// Makes `child` the last child of `parent` in `tree`.
+  ///
+  /// If `child` already has a parent in `tree`, it leaves that parent first, so a node is never in
+  /// two child lists of the same tree. Its links in the other tree don't change.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `parent` or `child` is stale, or if `child` is `parent` or one of its ancestors in
+  /// `tree`, because the tree would then contain a cycle.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use artic_core::Object;
+  /// use artic_core::property::AnyProperty;
+  /// use artic_core::tree::{TreeKind, UiTree};
+  ///
+  /// #[derive(Debug)]
+  /// struct Panel;
+  /// impl Object for Panel {
+  ///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  /// }
+  ///
+  /// let mut tree = UiTree::new();
+  /// let panel = tree.alloc(Box::new(Panel));
+  /// let first = tree.alloc(Box::new(Panel));
+  /// let second = tree.alloc(Box::new(Panel));
+  ///
+  /// tree.add_child(TreeKind::Logical, panel, first);
+  /// tree.add_child(TreeKind::Logical, panel, second);
+  /// assert_eq!(tree.children(TreeKind::Logical, panel).collect::<Vec<_>>(), [first, second]);
+  /// assert_eq!(tree.parent(TreeKind::Logical, first), Some(panel));
+  /// assert_eq!(tree.parent(TreeKind::Visual, first), None);
+  /// ```
+  #[track_caller]
+  pub fn add_child(&mut self, tree: TreeKind, parent: NodeId, child: NodeId) {
+    self.check_attach(tree, parent, child);
+    self.unlink(tree, child);
+    let index = self.tree(tree).children(parent).len();
+    self.attach(tree, parent, index, child);
+  }
+
+  /// Makes `child` the child of `parent` at `index` in `tree`, shifting later children right.
+  ///
+  /// Like [`add_child`](UiTree::add_child), `child` first leaves its current parent in `tree`.
+  /// `index` counts the children after that, so moving a node within one parent's list works the
+  /// same as inserting a new one.
+  ///
+  /// # Panics
+  ///
+  /// Panics in the same cases as [`add_child`](UiTree::add_child), and if `index` is greater than
+  /// the number of children.
+  #[track_caller]
+  pub fn insert_child(&mut self, tree: TreeKind, parent: NodeId, index: usize, child: NodeId) {
+    self.check_attach(tree, parent, child);
+    let mut len = self.tree(tree).children(parent).len();
+    if self.tree(tree).parent(child) == Some(parent) {
+      len -= 1;
+    }
+    assert!(index <= len, "child index {index} is out of range for {len} children");
+    self.unlink(tree, child);
+    self.attach(tree, parent, index, child);
+  }
+
+  /// Removes `node` from its parent's children in `tree` and returns that parent.
+  ///
+  /// Returns `None`, and changes nothing, if `node` has no parent in `tree`. The node stays in the
+  /// tree with its own children; only the link to its parent is cut. In the logical tree, the
+  /// node and its descendants then inherit only from what is left above them.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `node` is stale.
+  #[track_caller]
+  pub fn detach(&mut self, tree: TreeKind, node: NodeId) -> Option<NodeId> {
+    let parent = self.unlink(tree, node)?;
+    if tree == TreeKind::Logical {
+      inheritance::resolve(&self.objects, &self.logical, node);
+    }
+    Some(parent)
+  }
+
+  /// Returns the children of `id` in `tree`, in order.
+  ///
+  /// A stale `id` has no children.
+  pub fn children(&self, tree: TreeKind, id: NodeId) -> impl Iterator<Item = NodeId> + '_ {
+    self.tree(tree).children(id).iter().copied()
+  }
+
+  /// Returns the ancestors of `id` in `tree`: its parent, then that node's parent, up to the root.
+  ///
+  /// `id` itself isn't included, and a stale `id` has no ancestors.
+  pub fn ancestors(&self, tree: TreeKind, id: NodeId) -> impl Iterator<Item = NodeId> + '_ {
+    self.tree(tree).ancestors(id)
+  }
+
+  /// Returns every descendant of `id` in `tree`, depth-first in pre-order: a node, then its first
+  /// child's whole subtree, then its next child's.
+  ///
+  /// `id` itself isn't included, and a stale `id` has no descendants.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use artic_core::Object;
+  /// use artic_core::property::AnyProperty;
+  /// use artic_core::tree::{TreeKind, UiTree};
+  ///
+  /// #[derive(Debug)]
+  /// struct Panel;
+  /// impl Object for Panel {
+  ///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  /// }
+  ///
+  /// let mut tree = UiTree::new();
+  /// let [root, a, a1, b] = [(); 4].map(|_| tree.alloc(Box::new(Panel)));
+  /// tree.add_child(TreeKind::Visual, root, a);
+  /// tree.add_child(TreeKind::Visual, a, a1);
+  /// tree.add_child(TreeKind::Visual, root, b);
+  ///
+  /// assert_eq!(tree.descendants(TreeKind::Visual, root).collect::<Vec<_>>(), [a, a1, b]);
+  /// ```
+  pub fn descendants(&self, tree: TreeKind, id: NodeId) -> impl Iterator<Item = NodeId> + '_ {
+    self.tree(tree).descendants(id)
+  }
+
+  /// Frees `id` and everything below it in either tree.
+  ///
+  /// The subtree is every node reachable from `id` through child links of either tree, so template
+  /// parts that only exist in the visual tree go too. Any freed node whose parent survives is
+  /// detached from that parent first, so no live node keeps the id of a freed child, and every child
+  /// of a freed node is freed with it.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `id` is stale.
+  #[track_caller]
+  pub fn free_subtree(&mut self, id: NodeId) {
+    self.check(id);
+    let mut subtree = HashSet::from([id]);
+    let mut pending = vec![id];
+    while let Some(node) = pending.pop() {
+      for tree in TREES {
+        for child in self.tree(tree).children(node) {
+          if subtree.insert(*child) {
+            pending.push(*child);
+          }
+        }
+      }
+    }
+    for node in &subtree {
+      for tree in TREES {
+        if self.parent(tree, *node).is_some_and(|parent| !subtree.contains(&parent)) {
+          self.unlink(tree, *node);
+        }
+      }
+    }
+    for node in subtree {
+      self.free(node);
+    }
+  }
+
+  /// Returns the frame stages `id` needs redone, or none if `id` is stale.
+  ///
+  /// A new node starts with layout and rendering dirty. A change to the effective value of one of
+  /// its properties adds the stages its key [`affects`](crate::property::PropertyKey::affects).
+  #[must_use]
+  pub fn dirty(&self, id: NodeId) -> Affects {
+    self.dirty_flags.get(id)
+  }
+
+  /// Adds `stages` to the frame stages `id` needs redone.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `id` is stale.
+  #[track_caller]
+  pub fn mark_dirty(&mut self, id: NodeId, stages: Affects) {
+    self.check(id);
+    self.dirty_flags.mark(id, stages);
+  }
+
+  /// Removes `stages` from the frame stages `id` needs redone, once they have been redone.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `id` is stale.
+  #[track_caller]
+  pub fn clear_dirty(&mut self, id: NodeId, stages: Affects) {
+    self.check(id);
+    self.dirty_flags.clear(id, stages);
+  }
+
+  /// Returns `node`'s value of the attached property `key`, or the key's default when nothing has
+  /// set it. Reading never stores anything on the node.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `node` is stale.
+  #[track_caller]
+  #[must_use]
+  pub fn attached<T>(&self, node: NodeId, key: &'static AttachedKey<T>) -> T
+  where
+    T: PartialEq + Clone + 'static,
+  {
+    self
+      .stored(node, key)
+      .map_or_else(|| key.default_value(), |property| property.get())
+  }
+
+  /// Returns `node`'s property for the attached property `key`, creating it at the key's default the
+  /// first time. A new property is connected to the node's dirty flags like any of its fields, and
+  /// its levels let a style value and a local value compete as usual.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `node` is stale.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use artic_core::Object;
+  /// use artic_core::property::{Affects, AnyProperty, AttachedKey, Precedence};
+  /// use artic_core::tree::UiTree;
+  ///
+  /// static ROW: AttachedKey<usize> = AttachedKey::new("Row", Affects::LAYOUT, || 0);
+  ///
+  /// #[derive(Debug)]
+  /// struct Button;
+  /// impl Object for Button {
+  ///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  /// }
+  ///
+  /// let mut tree = UiTree::new();
+  /// let button = tree.alloc(Box::new(Button));
+  /// assert_eq!(tree.attached(button, &ROW), 0);
+  ///
+  /// tree.attached_property(button, &ROW).set_at(Precedence::StyleSetter, 2);
+  /// tree.attached_property(button, &ROW).set(1);
+  /// assert_eq!(tree.attached(button, &ROW), 1, "a local value overrides a style value");
+  /// ```
+  #[track_caller]
+  pub fn attached_property<T>(&mut self, node: NodeId, key: &'static AttachedKey<T>) -> Property<T>
+  where
+    T: PartialEq + 'static,
+  {
+    if let Some(property) = self.stored(node, key) {
+      return property;
+    }
+    self.check(node);
+    let property = Property::new(key.key(), key.default_value());
+    property.attach(self.dirty_flags.shared(node));
+    self.attached_values.insert(node, Box::new(property));
+    property
+  }
+
   /// Panics if `id` is stale: every edit checks its nodes before it reaches their parts.
   #[track_caller]
   fn check(&self, id: NodeId) {
     self.objects.object(id);
   }
+
+  fn tree(&self, tree: TreeKind) -> &Tree {
+    match tree {
+      TreeKind::Logical => &self.logical,
+      TreeKind::Visual => &self.visual,
+    }
+  }
+
+  fn tree_mut(&mut self, tree: TreeKind) -> &mut Tree {
+    match tree {
+      TreeKind::Logical => &mut self.logical,
+      TreeKind::Visual => &mut self.visual,
+    }
+  }
+
+  #[track_caller]
+  fn check_attach(&self, tree: TreeKind, parent: NodeId, child: NodeId) {
+    self.check(parent);
+    self.check(child);
+    let is_cycle = self.tree(tree).would_cycle(parent, child);
+    assert!(
+      !is_cycle,
+      "adding node {child:?} under {parent:?} would create a cycle in the {tree:?} tree"
+    );
+  }
+
+  fn attach(&mut self, tree: TreeKind, parent: NodeId, index: usize, child: NodeId) {
+    self.tree_mut(tree).link(parent, index, child);
+    self.children_changed(tree, parent);
+    if tree == TreeKind::Logical {
+      inheritance::resolve(&self.objects, &self.logical, child);
+    }
+  }
+
+  #[track_caller]
+  fn unlink(&mut self, tree: TreeKind, node: NodeId) -> Option<NodeId> {
+    let parent = self.tree_mut(tree).unlink(node)?;
+    self.children_changed(tree, parent);
+    Some(parent)
+  }
+
+  /// A node's visual children size and place it, so changing them means laying it out again.
+  fn children_changed(&mut self, tree: TreeKind, parent: NodeId) {
+    if tree == TreeKind::Visual {
+      self.mark_dirty(parent, Affects::LAYOUT);
+    }
+  }
+
+  /// The property `node` stores for `key`, if one was created.
+  #[track_caller]
+  fn stored<T>(&self, node: NodeId, key: &'static AttachedKey<T>) -> Option<Property<T>>
+  where
+    T: PartialEq + 'static,
+  {
+    self.check(node);
+    let property = self.attached_values.find(node, KeyId::of(key.key()))?;
+    let property = property.as_any().downcast_ref::<Property<T>>();
+    Some(*property.expect("a key's property has the key's value type"))
+  }
 }
 
 #[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::property::AnyProperty;
-  use pretty_assertions::{assert_eq, assert_ne};
-  use static_assertions::{assert_eq_size, assert_impl_all, assert_not_impl_any};
-
-  assert_eq_size!(NodeId, Option<NodeId>);
-  assert_eq_size!(NodeId, u64);
-  assert_not_impl_any!(UiTree: Send);
-  assert_impl_all!(NodeId: Copy, Send, Sync);
-
-  #[derive(Debug, PartialEq, Eq)]
-  struct Control;
-
-  #[derive(Debug, PartialEq, Eq)]
-  struct OtherControl;
-
-  impl Object for Control {
-    fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
-  }
-
-  impl Object for OtherControl {
-    fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
-  }
-
-  #[test]
-  fn get_as_wrong_type_returns_none() {
-    let mut tree = UiTree::new();
-    let control = Box::new(Control);
-    let n1 = tree.alloc(control);
-    assert_eq!(tree.get_as::<Control>(n1), Some(&Control));
-    assert!(tree.get_as::<OtherControl>(n1).is_none());
-  }
-  #[test]
-  fn get_as_mut_wrong_type_returns_none() {
-    let mut tree = UiTree::new();
-    let n1 = tree.alloc(Box::new(Control));
-    assert!(tree.get_as_mut::<OtherControl>(n1).is_none());
-  }
-
-  #[derive(Debug, PartialEq, Eq)]
-  struct Counter(u32);
-
-  impl Object for Counter {
-    fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
-  }
-
-  #[test]
-  fn nodes_of_different_types_share_one_arena() {
-    let mut tree = UiTree::new();
-    let control = tree.alloc(Box::new(Control));
-    let counter = tree.alloc(Box::new(Counter(7)));
-    assert_eq!(tree.len(), 2);
-    assert_eq!(tree.get_as::<Control>(control), Some(&Control));
-    assert_eq!(tree.get_as::<Counter>(counter), Some(&Counter(7)));
-    assert!(tree.get_as::<Counter>(control).is_none());
-    assert!(tree.get_as::<Control>(counter).is_none());
-  }
-
-  #[test]
-  fn get_as_mut_changes_are_visible_through_get_as() {
-    let mut tree = UiTree::new();
-    let n1 = tree.alloc(Box::new(Counter(1)));
-    tree.get_as_mut::<Counter>(n1).unwrap().0 += 1;
-    assert_eq!(tree.get_as::<Counter>(n1), Some(&Counter(2)));
-  }
-
-  #[test]
-  fn get_and_get_mut_return_the_node_as_object() {
-    let mut tree = UiTree::new();
-    let n1 = tree.alloc(Box::new(Counter(3)));
-    assert_eq!(format!("{:?}", tree.get(n1).unwrap()), "Counter(3)");
-    assert_eq!(format!("{:?}", tree.get_mut(n1).unwrap()), "Counter(3)");
-  }
-
-  #[test]
-  fn free_returns_the_node_with_its_concrete_type() {
-    let mut tree = UiTree::new();
-    let n1 = tree.alloc(Box::new(Counter(5)));
-    let node: Box<dyn Any> = tree.free(n1).unwrap();
-    assert_eq!(node.downcast_ref::<Counter>(), Some(&Counter(5)));
-    assert!(tree.is_empty());
-  }
-
-  #[test]
-  fn stale_id_returns_none_from_every_accessor() {
-    let mut tree = UiTree::new();
-    let n1 = tree.alloc(Box::new(Control));
-    tree.free(n1);
-    let n2 = tree.alloc(Box::new(Control));
-    assert!(tree.get(n1).is_none());
-    assert!(tree.get_mut(n1).is_none());
-    assert!(tree.get_as::<Control>(n1).is_none());
-    assert!(tree.get_as_mut::<Control>(n1).is_none());
-    assert!(!tree.contains(n1));
-    assert!(tree.free(n1).is_none());
-    assert!(tree.contains(n2));
-    assert_eq!(tree.len(), 1);
-  }
-
-  #[test]
-  fn copied_node_ids_are_equal_and_distinct_nodes_are_not() {
-    let mut tree = UiTree::new();
-    let n1 = tree.alloc(Box::new(Control));
-    let n2 = tree.alloc(Box::new(Control));
-    let copy = n1;
-    assert_eq!(copy, n1);
-    assert_ne!(n1, n2);
-  }
-
-  #[test]
-  fn default_tree_arena_is_empty() {
-    let tree = UiTree::default();
-    assert!(tree.is_empty());
-    assert_eq!(tree.len(), 0);
-  }
-
-  // A new node has no parent in either tree, and a stale id has none either.
-  #[test]
-  fn new_node_has_no_parent() {
-    let mut tree = UiTree::new();
-    let node = tree.alloc(Box::new(Control));
-
-    assert_eq!(tree.parent(TreeKind::Logical, node), None);
-    assert_eq!(tree.parent(TreeKind::Visual, node), None);
-    tree.free(node);
-    assert_eq!(tree.parent(TreeKind::Logical, node), None);
-  }
-}
+mod tests;
