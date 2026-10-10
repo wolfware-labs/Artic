@@ -54,7 +54,7 @@ pub trait ElementImpl {
 | Method | Shared work, from `ElementBase` | Then calls |
 | --- | --- | --- |
 | `measure` | `Collapsed`: returns zero, children not measured. Otherwise #41's `measure_with`: margin off, limits on | `measure_override` |
-| `arrange` | #41's `arrange_with`: margin, limits, alignment | `arrange_override` with the content's size |
+| `arrange` | `Collapsed`: returns, children not arranged, since `arrange_with` would stretch a zero size to the slot. Otherwise #41's `arrange_with`: margin, limits, alignment | `arrange_override` with the content's size |
 | `render` | | `ElementImpl::render`; a hidden subtree is skipped by composition (section 7) |
 | `hit_test` | not `Visible`, or `IsHitTestVisible` false: a miss. Otherwise the trait default, `cx.bounds_test(point)` | |
 | `on_event` | | `ElementImpl::on_event` |
@@ -64,7 +64,7 @@ A struct without `base: ElementBase` fails to compile with an error that names t
 
 ### State structs
 
-A field marked `#[element(state)]` gives the struct `HasState<S>` for the field's type:
+For a field marked `#[element(state)]`, the derive implements `HasState<S>` for the struct, where `S` is the field's type:
 
 ```rust
 pub trait HasState<S> {
@@ -89,7 +89,7 @@ pub trait HasContent: Element + HasState<ContentState> {
 impl<T: Element + HasState<ContentState>> HasContent for T {}
 ```
 
-The rule, as documented on the derive: each `#[element(state)]` field of type `S` gives the struct `HasState<S>`, and the traits built on a state are implemented through `HasState<S>` by a blanket impl. A state trait therefore holds only methods its state fully determines, each with a default that reads the state; it names the state type (`HasState::<ContentState>::state(self)`) because a struct can have several. A blanket impl can't be overridden for one type, so anything a control customizes is an `ElementImpl` hook instead (section 2). There is no table of type names in the macro, so aliases work, and any crate, apps included, can add a state struct and its trait without changing `artic-macros`.
+The rule, as documented on the derive: for each `#[element(state)]` field of type `S`, the derive implements `HasState<S>` for the struct, and the traits built on a state are implemented through `HasState<S>` by a blanket impl. A state trait therefore holds only methods its state fully determines, each with a default that reads the state; it names the state type (`HasState::<ContentState>::state(self)`) because a struct can have several. A blanket impl can't be overridden for one type, so anything a control customizes is an `ElementImpl` hook instead (section 2). There is no table of type names in the macro, so aliases work, and any crate, apps included, can add a state struct and its trait without changing `artic-macros`.
 
 ## 4. Finding a node's `Element`
 
@@ -140,7 +140,9 @@ The size properties and the alignments are what #41's `Sizing` holds; `ElementBa
 
 ### Visibility
 
-There is one visibility property, `Visibility`, as in WPF; spec §7's `IsVisible` is dropped. Two settable properties for one fact would need a rule for when they disagree.
+There is one visibility property, `Visibility`, with three states. Two settable properties for one fact would need a rule for when they disagree, so there is no `IsVisible` beside it.
+
+The three states are what web and mobile developers already know: CSS `visibility: hidden` and `display: none`, Android's `VISIBLE` / `INVISIBLE` / `GONE`, Flutter's `Visibility`. A boolean `IsVisible`, as in Avalonia, was considered and rejected: "hidden but keeps its space" would then be `Opacity = 0`, which still takes clicks and is still read by screen readers unless `IsHitTestVisible` and an accessibility setting are changed too. `Hidden` does all three. This reverses the earlier naming review (#239); see `naming-review.md`.
 
 | `Visibility` | Takes space | Drawn | Hit-testable | accesskit |
 | --- | --- | --- | --- | --- |
@@ -172,7 +174,7 @@ Lookups search the type's own properties, then each group, and the compiler writ
 
 ## 7. Accessibility and composition
 
-`ElementBase` builds the default accesskit node: the arranged bounds, hidden unless `Visible`, disabled when `IsEnabled` is false. Each control adds its role, name, value and actions in `ElementImpl::accessibility`, which the derive calls with that node (#161 adds the attached properties).
+`ElementBase` builds the default accesskit node: the arranged bounds, hidden unless `Visible`, disabled when `IsEnabled` is false. Like composition and hit testing, the accesskit walk skips a node that isn't `Visible` together with its whole subtree, so a `Visible` child of a hidden parent is never exposed. Each control adds its role, name, value and actions in `ElementImpl::accessibility`, which the derive calls with that node (#161 adds the attached properties).
 
 `Opacity`, `RenderTransform` and `Visibility` feed #33's per-node layers through the render `Nodes` answer, not each control's `render`: opacity becomes the node's opacity layer and the transform its transform layer. Visibility needs a layer of its own: today `Compositor::visit` always visits a node's visual children, so hiding only the node's own drawing would still draw its children. `Layers` gains `visible: bool`, default `true`, and `visit` skips a node with `visible: false` together with its whole subtree. `Hidden` and `Collapsed` answer `visible: false`.
 
@@ -185,7 +187,7 @@ Hit testing follows the same rule: the derive's `hit_test` misses when the eleme
 | A | `artic-element`: `Element`, `ElementImpl`, `HasState`, `ElementType` and `element_type!`, the placeholder contexts; `InputEvent` in `artic-core` | a hand-written element is laid out through `LayoutManager` by way of the cast table |
 | B | `ElementBase` with `#[derive(XamlProperties)]`, the enums, `#[xaml(flatten)]` in `derive(XamlType)` and `PropertyGroupInfo`, the measure and arrange outline | `element_base_properties_registered`, `margin_and_alignment_layout`, `min_max_clamp_desired_size`, `collapsed_takes_no_space` |
 | C | `#[derive(Element)]`: the outline from section 3, the missing-`base` error, `#[element(state)]` | the two trybuild cases: missing `base`, and a test-only state giving a test trait through a blanket impl |
-| D | the default accesskit node; opacity, transform and visibility in composition, with `Layers.visible` | `base_accessibility_node`; a pixel test where opacity changes the drawn color; a hidden parent's child isn't drawn |
+| D | the default accesskit node; opacity, transform and visibility in composition, with `Layers.visible` | `base_accessibility_node`; a pixel test where opacity changes the drawn color; a hidden parent's child isn't drawn and isn't in the accesskit tree |
 
 ## 9. Spec changes
 
