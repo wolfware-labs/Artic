@@ -1,8 +1,9 @@
 //! The structure of the two trees: who is whose parent and child.
 //!
 //! Every node is in the logical tree and the visual tree at once, with a parent and ordered children
-//! in each. This file adds, inserts, moves, detaches and frees nodes, and walks children, ancestors
-//! and descendants, always for the [`Tree`] it's given.
+//! in each. A [`Hierarchy`] holds one tree's links, and the arena keeps one per tree. This file adds,
+//! inserts, moves, detaches and frees nodes, and walks children, ancestors and descendants, always
+//! for the [`Tree`] it's given.
 //!
 //! All edits go through two private functions, `attach` and `unlink`, so the rules hold for every
 //! public one: an edit can't make a cycle or reach a freed node, an edit in the logical tree
@@ -10,14 +11,109 @@
 //! parent for layout (see `dirty`), since its children decide its size.
 
 use crate::property::Affects;
-use crate::tree::node::TreeNode;
-use crate::tree::{NodeId, Tree, TreeArena};
+use crate::tree::{NodeId, Tree, TreeArena, put};
 use std::collections::HashSet;
 use std::iter::{from_fn, successors};
 
 const TREES: [Tree; 2] = [Tree::Logical, Tree::Visual];
 
+/// One tree's links: each live node's parent and ordered children.
+///
+/// An entry remembers its node, so a stale id finds nothing, even once its slot is reused.
+#[derive(Debug, Default)]
+pub(super) struct Hierarchy {
+  entries: Vec<Option<Entry>>,
+}
+
+#[derive(Debug)]
+struct Entry {
+  node: NodeId,
+  parent: Option<NodeId>,
+  children: Vec<NodeId>,
+}
+
+impl Hierarchy {
+  pub(super) const fn new() -> Self {
+    Self { entries: Vec::new() }
+  }
+
+  /// Gives `node` an entry with no parent and no children.
+  pub(super) fn insert(&mut self, node: NodeId) {
+    let entry = Entry {
+      node,
+      parent: None,
+      children: Vec::new(),
+    };
+    put(&mut self.entries, node.slot(), Some(entry));
+  }
+
+  /// Drops `node`'s entry. The nodes it's linked to keep their links to it.
+  pub(super) fn remove(&mut self, node: NodeId) {
+    self.entries[node.slot()] = None;
+  }
+
+  pub(super) fn parent(&self, node: NodeId) -> Option<NodeId> {
+    self.entry(node)?.parent
+  }
+
+  pub(super) fn children(&self, node: NodeId) -> &[NodeId] {
+    self.entry(node).map(|entry| entry.children.as_slice()).unwrap_or_default()
+  }
+
+  pub(super) fn ancestors(&self, node: NodeId) -> impl Iterator<Item = NodeId> + '_ {
+    successors(self.parent(node), move |ancestor| self.parent(*ancestor))
+  }
+
+  pub(super) fn descendants(&self, node: NodeId) -> impl Iterator<Item = NodeId> + '_ {
+    let mut stack: Vec<NodeId> = self.children(node).iter().rev().copied().collect();
+    from_fn(move || {
+      let next = stack.pop()?;
+      stack.extend(self.children(next).iter().rev());
+      Some(next)
+    })
+  }
+
+  /// Whether making `child` a child of `parent` would close a loop.
+  pub(super) fn would_cycle(&self, parent: NodeId, child: NodeId) -> bool {
+    child == parent || self.ancestors(parent).any(|ancestor| ancestor == child)
+  }
+
+  /// Makes `child`, which has no parent, the child of `parent` at `index`.
+  #[track_caller]
+  pub(super) fn link(&mut self, parent: NodeId, index: usize, child: NodeId) {
+    self.entry_mut(parent).children.insert(index, child);
+    self.entry_mut(child).parent = Some(parent);
+  }
+
+  /// Cuts `node` from its parent and returns the parent, or `None` if it has none.
+  #[track_caller]
+  pub(super) fn unlink(&mut self, node: NodeId) -> Option<NodeId> {
+    let parent = self.entry_mut(node).parent.take()?;
+    self.entry_mut(parent).children.retain(|child| *child != node);
+    Some(parent)
+  }
+
+  fn entry(&self, node: NodeId) -> Option<&Entry> {
+    self.entries.get(node.slot())?.as_ref().filter(|entry| entry.node == node)
+  }
+
+  #[track_caller]
+  fn entry_mut(&mut self, node: NodeId) -> &mut Entry {
+    let entry = self.entries.get_mut(node.slot()).and_then(Option::as_mut);
+    match entry.filter(|entry| entry.node == node) {
+      Some(entry) => entry,
+      None => panic!("node {node:?} is not in the arena"),
+    }
+  }
+}
+
 impl TreeArena {
+  /// Returns the parent of `id` in `tree`, or `None` if it has none or `id` is stale.
+  #[must_use]
+  pub fn parent(&self, tree: Tree, id: NodeId) -> Option<NodeId> {
+    self.hierarchy(tree).parent(id)
+  }
+
   /// Makes `child` the last child of `parent` in `tree`.
   ///
   /// If `child` already has a parent in `tree`, it leaves that parent first, so a node is never in
@@ -56,7 +152,7 @@ impl TreeArena {
   pub fn add_child(&mut self, tree: Tree, parent: NodeId, child: NodeId) {
     self.check_attach(tree, parent, child);
     self.unlink(tree, child);
-    let index = self.node(parent).links(tree).children.len();
+    let index = self.hierarchy(tree).children(parent).len();
     self.attach(tree, parent, index, child);
   }
 
@@ -73,8 +169,8 @@ impl TreeArena {
   #[track_caller]
   pub fn insert_child(&mut self, tree: Tree, parent: NodeId, index: usize, child: NodeId) {
     self.check_attach(tree, parent, child);
-    let mut len = self.node(parent).links(tree).children.len();
-    if self.node(child).links(tree).parent == Some(parent) {
+    let mut len = self.hierarchy(tree).children(parent).len();
+    if self.hierarchy(tree).parent(child) == Some(parent) {
       len -= 1;
     }
     assert!(index <= len, "child index {index} is out of range for {len} children");
@@ -104,14 +200,14 @@ impl TreeArena {
   ///
   /// A stale `id` has no children.
   pub fn children(&self, tree: Tree, id: NodeId) -> impl Iterator<Item = NodeId> + '_ {
-    self.child_slice(tree, id).iter().copied()
+    self.hierarchy(tree).children(id).iter().copied()
   }
 
   /// Returns the ancestors of `id` in `tree`: its parent, then that node's parent, up to the root.
   ///
   /// `id` itself isn't included, and a stale `id` has no ancestors.
   pub fn ancestors(&self, tree: Tree, id: NodeId) -> impl Iterator<Item = NodeId> + '_ {
-    successors(self.parent(tree, id), move |ancestor| self.parent(tree, *ancestor))
+    self.hierarchy(tree).ancestors(id)
   }
 
   /// Returns every descendant of `id` in `tree`, depth-first in pre-order: a node, then its first
@@ -141,12 +237,7 @@ impl TreeArena {
   /// assert_eq!(arena.descendants(Tree::Visual, root).collect::<Vec<_>>(), [a, a1, b]);
   /// ```
   pub fn descendants(&self, tree: Tree, id: NodeId) -> impl Iterator<Item = NodeId> + '_ {
-    let mut stack: Vec<NodeId> = self.child_slice(tree, id).iter().rev().copied().collect();
-    from_fn(move || {
-      let next = stack.pop()?;
-      stack.extend(self.child_slice(tree, next).iter().rev());
-      Some(next)
-    })
+    self.hierarchy(tree).descendants(id)
   }
 
   /// Frees `id` and everything below it in either tree.
@@ -166,7 +257,7 @@ impl TreeArena {
     let mut pending = vec![id];
     while let Some(node) = pending.pop() {
       for tree in TREES {
-        for child in self.child_slice(tree, node) {
+        for child in self.hierarchy(tree).children(node) {
           if subtree.insert(*child) {
             pending.push(*child);
           }
@@ -185,19 +276,25 @@ impl TreeArena {
     }
   }
 
-  fn child_slice(&self, tree: Tree, id: NodeId) -> &[NodeId] {
-    self
-      .inner
-      .get(id.0)
-      .map(|node| node.links(tree).children.as_slice())
-      .unwrap_or_default()
+  fn hierarchy(&self, tree: Tree) -> &Hierarchy {
+    match tree {
+      Tree::Logical => &self.logical,
+      Tree::Visual => &self.visual,
+    }
+  }
+
+  fn hierarchy_mut(&mut self, tree: Tree) -> &mut Hierarchy {
+    match tree {
+      Tree::Logical => &mut self.logical,
+      Tree::Visual => &mut self.visual,
+    }
   }
 
   #[track_caller]
   fn check_attach(&self, tree: Tree, parent: NodeId, child: NodeId) {
     self.node(parent);
     self.node(child);
-    let is_cycle = child == parent || self.ancestors(tree, parent).any(|ancestor| ancestor == child);
+    let is_cycle = self.hierarchy(tree).would_cycle(parent, child);
     assert!(
       !is_cycle,
       "adding node {child:?} under {parent:?} would create a cycle in the {tree:?} tree"
@@ -205,8 +302,7 @@ impl TreeArena {
   }
 
   fn attach(&mut self, tree: Tree, parent: NodeId, index: usize, child: NodeId) {
-    self.node_mut(parent).links_mut(tree).children.insert(index, child);
-    self.node_mut(child).links_mut(tree).parent = Some(parent);
+    self.hierarchy_mut(tree).link(parent, index, child);
     self.children_changed(tree, parent);
     if tree == Tree::Logical {
       self.resolve_inheritance(child);
@@ -215,8 +311,7 @@ impl TreeArena {
 
   #[track_caller]
   fn unlink(&mut self, tree: Tree, node: NodeId) -> Option<NodeId> {
-    let parent = self.node_mut(node).links_mut(tree).parent.take()?;
-    self.node_mut(parent).links_mut(tree).children.retain(|child| *child != node);
+    let parent = self.hierarchy_mut(tree).unlink(node)?;
     self.children_changed(tree, parent);
     Some(parent)
   }
@@ -225,22 +320,6 @@ impl TreeArena {
   fn children_changed(&mut self, tree: Tree, parent: NodeId) {
     if tree == Tree::Visual {
       self.mark_dirty(parent, Affects::LAYOUT);
-    }
-  }
-
-  #[track_caller]
-  pub(super) fn node(&self, id: NodeId) -> &TreeNode {
-    match self.inner.get(id.0) {
-      Some(node) => node,
-      None => panic!("node {id:?} is not in the arena"),
-    }
-  }
-
-  #[track_caller]
-  pub(super) fn node_mut(&mut self, id: NodeId) -> &mut TreeNode {
-    match self.inner.get_mut(id.0) {
-      Some(node) => node,
-      None => panic!("node {id:?} is not in the arena"),
     }
   }
 }
@@ -358,6 +437,24 @@ mod tests {
     arena.free(parent);
 
     assert_eq!(children(&arena, Tree::Logical, parent), []);
+  }
+
+  // A stale id doesn't reach the links of the node that reuses its slot: it has no children, and a
+  // walk up from a child it left behind stops at it.
+  #[test]
+  fn stale_id_does_not_reach_the_node_in_its_slot() {
+    let mut arena = TreeArena::new();
+    let [root, parent, child, other] = nodes(&mut arena, 4)[..] else {
+      unreachable!()
+    };
+    arena.add_child(Tree::Logical, parent, child);
+    arena.free(parent);
+    let reused = arena.alloc(Box::new(Control));
+    arena.add_child(Tree::Logical, root, reused);
+    arena.add_child(Tree::Logical, reused, other);
+
+    assert_eq!(children(&arena, Tree::Logical, parent), []);
+    assert_eq!(arena.ancestors(Tree::Logical, child).collect::<Vec<_>>(), [parent]);
   }
 
   // Adding a stale node as a child panics.

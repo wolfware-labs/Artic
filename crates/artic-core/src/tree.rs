@@ -18,21 +18,22 @@
 //! `TreeArena`'s methods are split by concern, one file each:
 //!
 //! - `node`: what a slot holds, the storage the others work on.
-//! - `links`: the structure of both trees, and the rules every edit follows.
+//! - `hierarchy`: the structure of both trees, and the rules every edit follows.
 //! - `dirty`: which frame stages each node needs redone.
 //! - `inheritance`: how inheritable properties follow the logical tree.
 //! - `attached`: attached property values, stored on their target nodes.
 
 mod attached;
 mod dirty;
+mod hierarchy;
 mod inheritance;
-mod links;
 mod node;
 
 use crate::Object;
 use crate::arena::{Arena, SlotId};
 use attached::AttachedValues;
 use dirty::DirtyFlags;
+use hierarchy::Hierarchy;
 use node::TreeNode;
 use std::any::Any;
 use std::fmt::Debug;
@@ -71,6 +72,8 @@ use std::rc::Rc;
 #[derive(Debug, Default)]
 pub struct TreeArena {
   inner: Arena<TreeNode>,
+  logical: Hierarchy,
+  visual: Hierarchy,
   dirty_flags: DirtyFlags,
   attached_values: AttachedValues,
 }
@@ -123,6 +126,8 @@ impl TreeArena {
   pub const fn new() -> Self {
     Self {
       inner: Arena::new(),
+      logical: Hierarchy::new(),
+      visual: Hierarchy::new(),
       dirty_flags: DirtyFlags::new(),
       attached_values: AttachedValues::new(),
     }
@@ -161,6 +166,8 @@ impl TreeArena {
   #[must_use = "node ID needed to get or free the node from the arena"]
   pub fn alloc(&mut self, value: Box<dyn Object>) -> NodeId {
     let id = NodeId(self.inner.alloc(TreeNode::new(value)));
+    self.logical.insert(id);
+    self.visual.insert(id);
     let dirty = self.dirty_flags.reset(id.slot());
     self
       .node(id)
@@ -206,6 +213,8 @@ impl TreeArena {
   pub fn free(&mut self, node_id: NodeId) -> Option<Box<dyn Object>> {
     let node = self.inner.free(node_id.0)?;
     node.object.visit_properties(&mut |property| property.inherit_from(None));
+    self.logical.remove(node_id);
+    self.visual.remove(node_id);
     self.attached_values.remove(node_id.slot());
     Some(node.object)
   }
@@ -345,10 +354,12 @@ impl TreeArena {
     self.inner.contains(id.0)
   }
 
-  /// Returns the parent of `id` in `tree`, or `None` if it has none or `id` is stale.
-  #[must_use]
-  pub fn parent(&self, tree: Tree, id: NodeId) -> Option<NodeId> {
-    self.inner.get(id.0)?.links(tree).parent
+  #[track_caller]
+  fn node(&self, id: NodeId) -> &TreeNode {
+    match self.inner.get(id.0) {
+      Some(node) => node,
+      None => panic!("node {id:?} is not in the arena"),
+    }
   }
 }
 
