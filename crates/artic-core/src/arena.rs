@@ -30,6 +30,14 @@ pub struct SlotId {
   generation: SlotGeneration,
 }
 
+impl SlotId {
+  /// The slot's position in the arena, the same for every generation of the slot.
+  #[must_use]
+  pub fn index(self) -> usize {
+    self.index as usize
+  }
+}
+
 impl<TValue> Default for Arena<TValue> {
   fn default() -> Self {
     Self::new()

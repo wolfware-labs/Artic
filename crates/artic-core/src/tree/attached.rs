@@ -8,7 +8,6 @@
 
 use crate::property::{AnyProperty, AttachedKey, KeyId, Property};
 use crate::tree::{NodeId, TreeArena};
-use std::rc::Rc;
 
 impl TreeArena {
   /// Returns `node`'s value of the attached property `key`, or the key's default when nothing has
@@ -67,10 +66,9 @@ impl TreeArena {
     if let Some(property) = self.stored(node, key) {
       return property;
     }
-    let tree_node = self.node_mut(node);
     let property = Property::new(key.key(), key.default_value());
-    property.attach(Rc::clone(&tree_node.dirty));
-    tree_node.attached.push(Box::new(property));
+    property.attach(self.dirty_flags.shared(node.slot()));
+    self.node_mut(node).attached.push(Box::new(property));
     property
   }
 

@@ -31,9 +31,11 @@ mod node;
 
 use crate::Object;
 use crate::arena::{Arena, SlotId};
+use dirty::DirtyFlags;
 use node::TreeNode;
 use std::any::Any;
 use std::fmt::Debug;
+use std::rc::Rc;
 
 /// A generational arena that owns the nodes of the UI tree.
 ///
@@ -68,6 +70,7 @@ use std::fmt::Debug;
 #[derive(Debug, Default)]
 pub struct TreeArena {
   inner: Arena<TreeNode>,
+  dirty_flags: DirtyFlags,
 }
 
 /// A handle to a node stored in a [`TreeArena`].
@@ -79,6 +82,22 @@ pub struct TreeArena {
 /// meaningful for the arena that returned it.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct NodeId(SlotId);
+
+impl NodeId {
+  /// The index of the node's slot, which the parts of the arena are indexed by.
+  fn slot(self) -> usize {
+    self.0.index()
+  }
+}
+
+/// Stores `value` at `slot`, growing `values` by one for a slot the arena just appended.
+fn put<T>(values: &mut Vec<T>, slot: usize, value: T) {
+  if slot == values.len() {
+    values.push(value);
+  } else {
+    values[slot] = value;
+  }
+}
 
 /// Which of a node's two trees an operation works on.
 ///
@@ -100,7 +119,10 @@ impl TreeArena {
   /// It doesn't allocate until the first node is added.
   #[must_use]
   pub const fn new() -> Self {
-    Self { inner: Arena::new() }
+    Self {
+      inner: Arena::new(),
+      dirty_flags: DirtyFlags::new(),
+    }
   }
 
   /// Moves `value` into the arena and returns the id that refers to it.
@@ -135,8 +157,13 @@ impl TreeArena {
   /// ```
   #[must_use = "node ID needed to get or free the node from the arena"]
   pub fn alloc(&mut self, value: Box<dyn Object>) -> NodeId {
-    let slot_id = self.inner.alloc(TreeNode::new(value));
-    NodeId(slot_id)
+    let id = NodeId(self.inner.alloc(TreeNode::new(value)));
+    let dirty = self.dirty_flags.reset(id.slot());
+    self
+      .node(id)
+      .object
+      .visit_properties(&mut |property| property.attach(Rc::clone(&dirty)));
+    id
   }
 
   /// Removes the node referred to by `node_id` and returns it.

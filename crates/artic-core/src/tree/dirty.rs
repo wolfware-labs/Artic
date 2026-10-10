@@ -6,7 +6,47 @@
 //! redo: layout clears [`Affects::LAYOUT`], rendering clears [`Affects::RENDER`].
 
 use crate::property::Affects;
-use crate::tree::{NodeId, TreeArena};
+use crate::tree::{NodeId, TreeArena, put};
+use std::cell::Cell;
+use std::rc::Rc;
+
+/// Each slot's dirty flags, shared with the properties of the node in it.
+#[derive(Debug, Default)]
+pub(super) struct DirtyFlags {
+  flags: Vec<Rc<Cell<Affects>>>,
+}
+
+impl DirtyFlags {
+  pub(super) const fn new() -> Self {
+    Self { flags: Vec::new() }
+  }
+
+  /// Gives `slot` new flags with layout and rendering dirty, and returns them for the node's
+  /// properties to share. The flags of the slot's previous node stay with that node's properties.
+  pub(super) fn reset(&mut self, slot: usize) -> Rc<Cell<Affects>> {
+    let flags = Rc::new(Cell::new(Affects::LAYOUT | Affects::RENDER));
+    put(&mut self.flags, slot, Rc::clone(&flags));
+    flags
+  }
+
+  pub(super) fn get(&self, slot: usize) -> Affects {
+    self.flags[slot].get()
+  }
+
+  pub(super) fn mark(&self, slot: usize, stages: Affects) {
+    let flags = &self.flags[slot];
+    flags.set(flags.get() | stages);
+  }
+
+  pub(super) fn clear(&self, slot: usize, stages: Affects) {
+    let flags = &self.flags[slot];
+    flags.set(flags.get().without(stages));
+  }
+
+  pub(super) fn shared(&self, slot: usize) -> Rc<Cell<Affects>> {
+    Rc::clone(&self.flags[slot])
+  }
+}
 
 impl TreeArena {
   /// Returns the frame stages `id` needs redone, or none if `id` is stale.
@@ -15,7 +55,11 @@ impl TreeArena {
   /// its properties adds the stages its key [`affects`](crate::property::PropertyKey::affects).
   #[must_use]
   pub fn dirty(&self, id: NodeId) -> Affects {
-    self.inner.get(id.0).map_or(Affects::NONE, |node| node.dirty.get())
+    if self.contains(id) {
+      self.dirty_flags.get(id.slot())
+    } else {
+      Affects::NONE
+    }
   }
 
   /// Adds `stages` to the frame stages `id` needs redone.
@@ -25,8 +69,8 @@ impl TreeArena {
   /// Panics if `id` is stale.
   #[track_caller]
   pub fn mark_dirty(&mut self, id: NodeId, stages: Affects) {
-    let dirty = &self.node(id).dirty;
-    dirty.set(dirty.get() | stages);
+    self.node(id);
+    self.dirty_flags.mark(id.slot(), stages);
   }
 
   /// Removes `stages` from the frame stages `id` needs redone, once they have been redone.
@@ -36,8 +80,8 @@ impl TreeArena {
   /// Panics if `id` is stale.
   #[track_caller]
   pub fn clear_dirty(&mut self, id: NodeId, stages: Affects) {
-    let dirty = &self.node(id).dirty;
-    dirty.set(dirty.get().without(stages));
+    self.node(id);
+    self.dirty_flags.clear(id.slot(), stages);
   }
 }
 
@@ -133,5 +177,19 @@ mod tests {
     arena.clear_dirty(id, Affects::LAYOUT);
 
     assert_eq!(arena.dirty(id), Affects::RENDER);
+  }
+
+  // A freed node's properties keep their own flags: changing one doesn't mark the node that takes
+  // its slot.
+  #[test]
+  fn freed_node_properties_do_not_mark_the_next_node() {
+    let mut arena = TreeArena::new();
+    let (old, font_size, _) = clean_label(&mut arena);
+    arena.free(old);
+    let (next, _, _) = clean_label(&mut arena);
+
+    font_size.set(24);
+
+    assert_eq!(arena.dirty(next), Affects::NONE);
   }
 }

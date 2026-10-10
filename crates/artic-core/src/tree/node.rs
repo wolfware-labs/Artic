@@ -1,20 +1,15 @@
 //! What one slot of the [`TreeArena`](crate::tree::TreeArena) holds.
 //!
-//! A [`TreeNode`] keeps a node's object, its dirty flags, its attached property values and one set of
-//! [`Links`] per tree. It's plain storage: the other files of `tree` give it its behavior, and
-//! creating one connects the object's properties to the dirty flags, so a property change marks its
-//! node from the start.
+//! A [`TreeNode`] keeps a node's object, its attached property values and one set of [`Links`] per
+//! tree. It's plain storage: the other files of `tree` give it its behavior.
 
 use crate::Object;
-use crate::property::{Affects, AnyProperty};
+use crate::property::AnyProperty;
 use crate::tree::{NodeId, Tree};
-use std::cell::Cell;
-use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct TreeNode {
   pub object: Box<dyn Object>,
-  pub dirty: Rc<Cell<Affects>>,
   pub attached: Vec<Box<dyn AnyProperty>>,
   logical: Links,
   visual: Links,
@@ -28,11 +23,8 @@ pub struct Links {
 
 impl TreeNode {
   pub fn new(object: Box<dyn Object>) -> Self {
-    let dirty = Rc::new(Cell::new(Affects::LAYOUT | Affects::RENDER));
-    object.visit_properties(&mut |property| property.attach(Rc::clone(&dirty)));
     Self {
       object,
-      dirty,
       attached: Vec::new(),
       logical: Links::default(),
       visual: Links::default(),
