@@ -1,0 +1,26 @@
+[package]
+name = "artic-vello"
+description = "The vello renderer for artic: draws scenes on wgpu surfaces and into pixel buffers."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+artic-layout.workspace = true
+artic-render.workspace = true
+pollster.workspace = true
+thiserror.workspace = true
+vello.workspace = true
+
+[dev-dependencies]
+artic-core.workspace = true
+pretty_assertions.workspace = true
+# winit's defaults, except Wayland decorations without title text: drawing it needs ttf-parser,
+# which is unmaintained (RUSTSEC-2026-0192). The example only; artic-winit (#39) decides for real.
+winit = { workspace = true, features = ["rwh_06", "x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita-notitle"] }
+
+[lints]
+workspace = true
