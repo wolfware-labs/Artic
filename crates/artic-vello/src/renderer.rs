@@ -66,6 +66,13 @@ impl VelloRenderer {
     })
   }
 
+  /// The GPU this renderer draws with: its name, driver and whether it's a real GPU or a software
+  /// adapter.
+  #[must_use]
+  pub fn adapter_info(&self) -> wgpu::AdapterInfo {
+    self.adapter.get_info()
+  }
+
   /// Draws the translated scene into a fresh texture of `size`, which vello can write.
   fn draw_offscreen(&mut self, size: PhysicalSize, usage: TextureUsages) -> Result<Texture, RenderError> {
     let texture = storage_texture(&self.device, size, usage);

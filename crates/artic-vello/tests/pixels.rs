@@ -1,7 +1,7 @@
 // Draws composed scenes into pixel buffers through the `Renderer` trait and checks the pixels. Each
-// test prints why and returns early when the machine has no GPU adapter. The tests share one
-// renderer, one at a time: software adapters such as Windows' WARP can crash when several devices
-// draw at once.
+// test prints why and returns early when the machine has no GPU adapter, or only WARP, Windows'
+// software DX12 adapter, on which vello's compute shaders crash (GitHub's Windows runners have
+// nothing else). The tests share one renderer, so one device draws at a time.
 
 use artic_core::Object;
 use artic_core::property::AnyProperty;
@@ -51,6 +51,10 @@ impl Nodes for Fills {
 fn with_renderer(test: impl FnOnce(&mut VelloRenderer)) {
   static RENDERER: OnceLock<Mutex<Option<VelloRenderer>>> = OnceLock::new();
   let shared = RENDERER.get_or_init(|| match VelloRenderer::new() {
+    Ok(renderer) if is_warp(&renderer) => {
+      eprintln!("skipped: vello crashes on WARP, the only adapter here ({renderer:?})");
+      Mutex::new(None)
+    }
     Ok(renderer) => {
       eprintln!("using {renderer:?}");
       Mutex::new(Some(renderer))
@@ -65,6 +69,11 @@ fn with_renderer(test: impl FnOnce(&mut VelloRenderer)) {
     Some(renderer) => test(renderer),
     None => eprintln!("skipped: no GPU adapter"),
   }
+}
+
+/// Whether the renderer runs on WARP: a software adapter on Windows.
+fn is_warp(renderer: &VelloRenderer) -> bool {
+  cfg!(windows) && renderer.adapter_info().device_type == vello::wgpu::DeviceType::Cpu
 }
 
 /// Renders `root`'s tree into an `SIZE`×`SIZE` buffer of `format`, and returns its pixels.
