@@ -65,16 +65,18 @@ The workspace is layered. A crate depends only on crates in lower layers, so the
 | 1 | `artic-registry` | Type metadata that maps XAML names to Rust types and properties |
 | 1 | `artic-layout` | Measure and arrange protocol, geometry types, panels |
 | 1 | `artic-i18n` | Optional localizer backed by Fluent `.ftl` files |
-| 2 | `artic-render` | `Renderer` trait, retained scene, `vello` backend |
+| 2 | `artic-render` | `Renderer` trait, retained scene, text shaping (backends are adapter crates) |
 | 2 | `artic-style` | Selectors, styles, setters, resource dictionaries |
 | 2 | `artic-xaml-compiler` | Build-time compiler from XAML to Rust |
 | 2 | `artic-xaml-runtime` | Runtime loader for hot reload and `runtime-xaml` |
 | 3 | `artic-controls` | Templated controls such as `Button`, `TextBox` and `ListBox` |
-| 3 | `artic-platform` | Windows, input, lifecycle, OS services and the `accesskit` adapter |
+| 3 | `artic-platform` | The `Host` seam, `artic::run` and the frame pipeline (hosts are adapter crates) |
 | 3 | `artic-cli` | The `cargo artic` command |
 | 3 | `artic-lsp` | Language server for `.xaml` files |
 | 4 | `artic-theme` | Default token-based theme and control templates |
 | 4 | `artic-test` | Headless host and test helpers |
+| 4 | `artic-winit` | Default host adapter: windows, input and OS services through `winit` |
+| 4 | `artic-vello` | Default renderer adapter: `vello` on `wgpu` |
 | 5 | `artic` | Facade crate that apps depend on |
 
 ```mermaid

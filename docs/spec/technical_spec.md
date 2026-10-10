@@ -29,8 +29,8 @@ A cross-platform desktop and mobile UI framework where views are written in XAML
 | Area | Decision |
 | --- | --- |
 | XAML dialect | MS-XAML 2012 syntax; Avalonia-style vocabulary and CSS-like selectors |
-| Rendering | Own GPU renderer: `wgpu` + `vello` behind a `Renderer` trait; `skia-safe` as an optional second backend |
-| Windowing | `winit` on all five targets behind a `PlatformHost` trait; mobile lifecycle (suspend/resume, surface loss, safe areas) is part of that trait |
+| Rendering | Behind a `Renderer` trait any adapter crate can implement; v1 ships `artic-vello` (`vello` on `wgpu`) |
+| Windowing | Behind a `Host` trait any adapter crate can implement; v1 ships `artic-winit` on all five targets; mobile lifecycle (suspend/resume, surface loss, safe areas) is part of that trait |
 | Platforms v1 | Windows 10+, macOS 12+, Linux (X11 + Wayland), iOS 15+, Android 8+ (API 26) with Vulkan 1.1; one app crate, one binary per target |
 | XAML loading | Both: build-time compiler (`build.rs`) and runtime loader, both driven by one generated type registry. The loader ships in release only with the opt-in `runtime-xaml` feature (D23) |
 | Reactivity | Signals (fine-grained, synchronous, glitch-free) as the primitive and public API; `#[derive(ViewModel)]` and typed `{Binding}` on top, with no reflection in any build (D1, D6) |
@@ -74,9 +74,11 @@ Each layer builds on the ones below it. The exact dependency edges and the rules
 | `artic-element` | The `Element` trait and its render, hit-test, event and accessibility contexts; gesture recognizers. Shared by controls and the platform host (D25) | `Element`, `RenderCx`, `EventCx`, `AccessCx` |
 | `artic-controls` | Templated controls, primitives, default `ControlTemplate`s | `Button`, `TextBox`, `ItemsControl`, … |
 | `artic-style` | Selector parser and matcher, `Style`, `Setter`, pseudo-classes, resource dictionaries, theme switching | `Selector`, `Style`, `ResourceDictionary` |
-| `artic-render` | `Renderer` trait, scene graph (display list), `vello` backend; text via `parley` | `Renderer`, `Scene`, `DrawingContext` |
-| `artic-platform` | Window creation, event loop, frame pipeline (with facade-registered hooks), DPI, clipboard, `accesskit` adapter, native menus and dialogs via `muda`/`rfd` | `Window`, `AppBuilder`, `PlatformEvent` |
-| `artic` | Facade re-exporting the public API with feature flags (`hot-reload`, `runtime-xaml`, `skia`) | `App`, `prelude` |
+| `artic-render` | `Renderer` trait, scene graph (display list), `Target`; text shaping via `parley`. No backend dependencies | `Renderer`, `Scene`, `Target`, `DrawingContext` |
+| `artic-platform` | `Host` trait and its capabilities, `artic::run`, frame pipeline (with facade-registered hooks). No backend dependencies | `Host`, `App`, `SurfaceInfo` |
+| `artic-winit` | Adapter: the desktop and mobile `Host` on `winit`, with `muda`, `rfd`, `arboard`, `accesskit_winit` | `Host` |
+| `artic-vello` | Adapter: the default `Renderer`, `vello` on `wgpu` | `Renderer` |
+| `artic` | Facade re-exporting the public API with feature flags (`hot-reload`, `runtime-xaml`) | `App`, `prelude`, `run` |
 | `artic-theme` | Default theme: token dictionaries (light, dark, touch density) and the default `ControlTemplate` for every v1 control (D18) | `ArticTheme` |
 | `artic-i18n` | Optional fluent-rs implementation of the `Localizer` trait (D6) | `FluentLocalizer` |
 | `artic-test` | Dev-dependency test utilities: `TestHost`, headless arena helpers, tree serializer (D14) | `TestHost` |
@@ -527,7 +529,7 @@ Templates are instantiated per use from their infoset (runtime) or from a genera
 
 - `artic-theme` ships light and dark dictionaries plus the default `ControlTemplate` for every v1 control; the app picks with `<Application.Styles><ArticTheme Mode="System"/></Application.Styles>` (D18). The earlier plan for a Microsoft Fluent theme (`FluentTheme`, `artic-theme-fluent`) is dropped.
 - The theme is token based. Scale tokens cover color (50 to 950 per hue), spacing, radius, shadow and type; semantic tokens (accent, surface, text, border) map onto the scales per light and dark mode. Controls reference semantic tokens only. v1 has no utility classes.
-- `Mode="System"` follows the OS setting via `PlatformHost::color_scheme` and swaps dictionaries through `DynamicResource`.
+- `Mode="System"` follows the OS setting via the host's color-scheme capability and swaps dictionaries through `DynamicResource`.
 - Mobile-specific sizing (44 px touch targets, larger fonts) is a second variant dictionary, `ArticTheme Density="Touch"`, selected automatically when the primary input is touch (§12) or forced.
 
 ### Open questions
@@ -546,6 +548,7 @@ Input becomes routed events (tunnel then bubble through the visual tree, as in W
 - Handlers are stored per node in a small vec keyed by event id; `handled_events_too: bool` lets a handler see already-handled events.
 - Core events (all `Preview*` variants exist for tunnel): `PointerPressed/Released/Moved/Entered/Exited/Wheel`, `Tapped`, `DoubleTapped`, `LongPressed` (touch long-press), `KeyDown/KeyUp`, `TextInput`, `GotFocus/LostFocus`, `Loaded/Unloaded`, `AttachedToVisualTree/Detached`, `SizeChanged`.
 - Gesture recognition (`Tapped`, `DoubleTapped`, `LongPressed`, pan/pinch via `GestureRecognizer` attached collection) runs on raw pointer events in the platform layer and raises the gesture event at the hit-test target, so mouse and touch produce the same high-level events.
+- Hosts report raw input in web-standard vocabulary (W3C Pointer Events, UI Events `key`/`code`, the Standard Gamepad mapping), in physical pixels. artic maps keys and gamepad buttons to actions (`Next`/`Previous`, `Up`/`Down`/`Left`/`Right`, `Activate`, `Cancel`, `Menu`) and moves focus directionally from layout geometry, so a gamepad-driven device needs no adapter-side navigation ([backend design](../design/backends.md) §5).
 - Control-level events (`Button.Click`, `SelectionChanged`, `TextChanged`, `Checked`) are ordinary routed events raised by the control.
 
 ### Code-behind (`x:Class`)
@@ -579,7 +582,7 @@ impl LoginView {
 ### Focus and keyboard navigation
 
 - One focused element per window; `Focusable=true` opts in. `Tab`/`Shift+Tab` follow visual order with `TabIndex` overrides; arrow keys within `SelectingItemsControl`. `:focus-visible` is set only after keyboard navigation, so touch/mouse do not draw focus rings.
-- On mobile, focusing a `TextBox` requests the soft keyboard through `PlatformHost::set_ime(…)`; `Window` content scrolls to keep the focused element above the keyboard inset (§10).
+- On mobile, focusing a `TextBox` requests the soft keyboard through the host's `text_input` capability; `Window` content scrolls to keep the focused element above the keyboard inset (§10).
 
 ### Open question
 
@@ -587,43 +590,46 @@ impl LoginView {
 
 ## 10. Rendering, windowing, platform layer
 
-One `Renderer` implementation (`vello` on `wgpu`) draws every platform; the platform layer's job is only to give it a surface, deliver input, and expose OS services through one `PlatformHost` trait.
-
-### Renderer
-
-- `Renderer` trait: `begin_frame(surface, scale) -> Frame`, `render(&Scene)`, `resize`, `create_image`, `measure_text`. Backends: `vello` (default), `skia-safe` (feature `skia`, for platforms where compute shaders are missing or for A/B testing).
-- Retained `Scene`: each element owns a `SceneFragment` (a backend-neutral recording that each backend translates, D24); `render()` is called only for render-dirty nodes and the root composes fragments with transforms, clips, and opacity groups. Untouched subtrees cost nothing per frame.
-- Primitives: paths (fill/stroke), rounded rects, images, text runs, linear/radial gradients, box shadows (blurred rect), clip (rect, rounded rect, path), layers with opacity and blend mode `Normal` only.
-- Text: `parley` for shaping and line breaking, `skrifa` for glyph outlines, system font discovery via `fontique`; glyph cache is per renderer. Emoji: `COLRv1` via `vello` where supported, bitmap fallback.
-- `wgpu` backends: DX12 on Windows, Metal on macOS and iOS, Vulkan on Linux and Android. Android requires Vulkan 1.1; GLES-only devices are not supported in v1 and the app reports the missing capability instead of starting (D6, M6-03).
-- Frame pacing: render only when dirty or an animation is running; VSync via surface present mode `Fifo`; animations tick from the platform's frame callback (`CADisplayLink`, `Choreographer`, `DwmFlush`, Wayland frame callbacks).
-
-### `PlatformHost` trait
+Backends are adapters. A **`Host`** drives the screen (surfaces, input, the event loop) and a **`Renderer`** turns the `Scene` into pixels; an adapter crate implements one or both, and anyone can add one without changing app or artic code. The [backend design](../design/backends.md) (#240) fixes the seams. v1 ships two adapters, `artic-winit` (the host on all five targets) and `artic-vello` (the renderer). Each target has a launcher of a few lines naming a host, a renderer and the app:
 
 ```rust
-pub trait PlatformHost {
-    fn create_window(&mut self, desc: WindowDesc) -> WindowId;       // mobile: exactly one, full-screen
-    fn run(self, app: App) -> !;                                     // owns the event loop
-    fn request_redraw(&self, w: WindowId);
-    fn scale_factor(&self, w: WindowId) -> f32;
-    fn safe_area(&self, w: WindowId) -> Thickness;                   // notches, home indicator, system bars
-    fn keyboard_inset(&self, w: WindowId) -> f32;                    // soft keyboard height
-    fn set_ime(&self, w: WindowId, state: Option<ImeRequest>);       // show/hide + cursor rect + input hints
-    fn clipboard(&self) -> &dyn Clipboard;
-    fn color_scheme(&self) -> ColorScheme;                            // light/dark, observed via event
-    fn primary_input(&self) -> InputKind;                             // Mouse | Touch | Pen
-    fn open_url(&self, url: &str);
-    fn file_dialog(&self, opts: FileDialogOpts) -> Task<Option<PathBuf>>;   // rfd on desktop, UIDocumentPicker / SAF on mobile
-    fn native_menu(&self, menu: MenuDesc);                            // desktop only; no-op elsewhere
-    fn haptic(&self, kind: Haptic);                                   // mobile only; no-op elsewhere
+fn main() {
+    artic::run(artic_winit::Host::new(), artic_vello::Renderer::new(), my_app::app());
 }
 ```
 
-The trait is target-neutral (D24). `run` does not have to block: a host whose event loop cannot block, such as a future web host, returns control to its caller, and app code calls the same `App::run()` either way. `Renderer` backends receive the surface through a backend-neutral handle, and `SceneFragment` is a backend-neutral display list.
+### Renderer
 
-Implementation: `winit` provides windows, input, DPI and lifecycle on all five targets; the trait wraps it plus per-OS crates (`muda`, `rfd`, `arboard`, `jni`/`ndk` on Android, `objc2` on iOS/macOS).
+- `Renderer` trait: `render(&Scene, Target, scale)` and an optional `surface_lost`. The host offers each surface as a `Target`: `Handles` (`raw-window-handle`: OS windows, DRM/GBM screens, canvases; the renderer presents), `Pixels` (a CPU buffer; the host presents) or `Custom` (a type one adapter's host and renderer agree on). A renderer that can't draw what the host offers is a startup error. Other renderers, such as skia or a CPU `tiny-skia`, are adapter crates, not features.
+- Retained `Scene`: each element owns a `SceneFragment` (a backend-neutral recording that each backend translates, D24) with a generation that increases when it changes, so a renderer may cache unchanged fragments; `render()` is called only for render-dirty nodes and the root composes fragments with transforms, clips, and opacity groups. Untouched subtrees cost nothing per frame.
+- Primitives, all required of every renderer and all drawable on a CPU: paths (fill/stroke), rounded rects, images, glyph runs, linear/radial gradients, box shadows (blurred rect), clip (rect, rounded rect, path), layers with opacity and blend mode `Normal` only. Images are shared data (`Arc<ImageData>`) that a renderer uploads once and caches.
+- Text: artic shapes and breaks lines with `parley` in `artic-render`, with system font discovery via `fontique`, so layout doesn't depend on the renderer. The scene carries positioned glyph runs; a renderer only draws glyphs (`skrifa` outlines for CPU renderers) and keeps its own glyph cache. Emoji: `COLRv1` via `vello` where supported, bitmap fallback.
+- `wgpu` backends (the `artic-vello` adapter): DX12 on Windows, Metal on macOS and iOS, Vulkan on Linux and Android. Android requires Vulkan 1.1; GLES-only devices are not supported in v1 and the app reports the missing capability instead of starting (D6, M6-03).
+- Frame pacing: render only when dirty or an animation is running. Frames are per surface, each paced by its host's frame callback (`CADisplayLink`, `Choreographer`, `DwmFlush`, Wayland frame callbacks), so displays with different refresh rates each run at their own rate.
 
-### Lifecycle events (delivered as `PlatformEvent`)
+### `Host` trait
+
+```rust
+pub trait Host {
+    fn run(self, app: App);                                           // may return at once (browser)
+    fn windows(&mut self) -> Option<&mut dyn Windows> { None }        // capabilities: None = not available
+    fn displays(&self) -> Option<&dyn Displays> { None }
+    fn clipboard(&self) -> Option<&dyn Clipboard> { None }
+    fn text_input(&mut self) -> Option<&mut dyn TextInput> { None }   // IME, soft keyboard, InputMode
+    fn cursor(&mut self) -> Option<&mut dyn Cursor> { None }
+    fn accessibility(&mut self) -> Option<&mut dyn Accessibility> { None }
+    // … color scheme, safe area and keyboard inset, file dialogs, menus, haptics, open_url
+}
+```
+
+- Core, required of every host: surfaces, each reporting `SurfaceInfo { size, scale, display, refresh_rate }` when it appears or changes and when it's lost; raw events (§9, plus gamepads); frames per surface; waking the loop when another thread posts to the `Dispatcher`.
+- Everything else is a capability whose default is `None`; artic decides the fallback at each use (no `clipboard`: Copy does nothing; no `windows`: each `Window` takes one whole surface). A new capability is a new default method, so existing adapters keep compiling.
+- Several displays: a windowed host reports one surface per window, moving between displays with its scale and refresh rate; a host without `windows` reports one full-screen surface per display. The app's `Window`s are assigned to OS windows (on the display their `Display` property names) or to display surfaces in order, so a multi-screen app runs unchanged on both.
+- `run` doesn't have to block: a host whose loop can't block, such as a web host, installs its callbacks and returns, and app code can't tell the difference (D24).
+
+Implementation of `artic-winit`: `winit` provides windows, input, DPI and lifecycle on all five targets, plus per-OS crates (`muda`, `rfd`, `arboard`, `accesskit_winit`, `jni`/`ndk` on Android, `objc2` on iOS/macOS).
+
+### Lifecycle events
 
 | Event | Desktop | Mobile |
 | --- | --- | --- |
@@ -695,7 +701,7 @@ Accessibility, text editing, and input are cross-cutting: every control implemen
 
 - `accesskit` on all five targets (Windows UIA, macOS/iOS NSAccessibility/UIAccessibility, Linux AT-SPI, Android via `accesskit_android`). Each element's `accessibility()` returns a node with role, name, value, state, bounds, and actions; the tree is rebuilt incrementally from render-dirty nodes and pushed once per frame.
 - Attached properties: `Accessibility.Name`, `.HelpText`, `.LabeledBy`, `.LiveRegion`, `.Role` override (D20, renamed from the WPF `AutomationProperties`).
-- Actions (`Click`, `Focus`, `SetValue`, `ScrollIntoView`) arrive as `PlatformEvent::AccessAction` and are routed to the element like input.
+- Actions (`Click`, `Focus`, `SetValue`, `ScrollIntoView`) arrive through the host's `accessibility` capability and are routed to the element like input.
 - Reduced-motion and high-contrast OS settings surface as root pseudo-classes (`:reduced-motion`, `:high-contrast`) so themes react through selectors.
 
 ### Text
@@ -718,7 +724,7 @@ Accessibility, text editing, and input are cross-cutting: every control implemen
 
 - Hit testing walks the visual tree back-to-front honoring `IsHitTestVisible`, clips, transforms, and `ZIndex`; result is cached until layout/render dirtying.
 - Pointer capture (`cx.capture_pointer()`) routes subsequent events to the capturing element until release; required for `Slider` and `ScrollViewer` drags.
-- Touch targets: when `primary_input()` is `Touch`, `TouchInflate` (default 8 px) expands hit rects of `Focusable` elements; the touch theme variant (§8) raises minimum sizes.
+- Touch targets: when the input mode artic tracks (the most recently used input) is touch, `TouchInflate` (default 8 px) expands hit rects of `Focusable` elements; the touch theme variant (§8) raises minimum sizes.
 - Scrolling: `ScrollViewer` handles wheel, precise trackpad deltas, touch pan with inertia and overscroll bounce (iOS style, off by default on desktop), and keyboard.
 - Keyboard shortcuts: `KeyGesture` type converter parses `"Ctrl+Shift+S"`; `Cmd` is written `Ctrl` in XAML and mapped per platform unless the gesture uses the explicit `Meta` modifier.
 
@@ -749,7 +755,7 @@ Build order follows the dependency graph in §2: nothing above a layer starts un
 | Signals | property-based tests (`proptest`) for glitch-freedom and disposal; leak checks via arena counts |
 | Layout | headless `Arena` with no renderer: measure/arrange assertions per panel; fuzzed constraints |
 | Rendering | golden-image tests via `vello` to an offscreen `wgpu` texture; tolerance-based compare, per-platform goldens only where fonts differ |
-| Controls | headless input simulation (`TestHost` implements `PlatformHost`): click, type, tab, touch gestures; asserts on tree state and `accesskit` tree |
+| Controls | headless input simulation (`TestHost` implements `Host`, with a test renderer drawing to `Pixels`): click, type, tab, touch gestures; asserts on tree state and `accesskit` tree |
 | Platforms | CI matrix: Windows, macOS, Ubuntu (X11 + Wayland via `weston` headless), iOS simulator, Android emulator (API 26 and latest) |
 
 ### Milestones
@@ -768,7 +774,7 @@ Build order follows the dependency graph in §2: nothing above a layer starts un
 
 ### Risks
 
-- `vello` is pre-1.0 and its text stack (`parley`) is moving; pin versions and keep the `skia` backend buildable as insurance.
+- `vello` is pre-1.0 and its text stack (`parley`) is moving; pin versions; a second renderer (an `artic-skia` or `artic-tiny-skia` adapter) is the insurance, and the backend seams make it possible without changing artic.
 - `winit` mobile gaps (IME, safe areas, Android lifecycle) may force platform-specific glue earlier than planned (§10 open question).
 - The compile-time registry across crates depends on `linkme` distributed slices, which need care on iOS (no dynamic linking), Android `cdylib` builds and with LTO; verified by the M0-05 spike (D11).
 - Two XAML paths double the surface for subtle divergence; the tree-diff test is the mitigation and must stay in CI.
