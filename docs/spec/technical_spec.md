@@ -412,8 +412,8 @@ impl<T: Element + HasState<ContentState>> HasContent for T {}   // and likewise 
 #[derive(Debug, Element, XamlType)]               // XamlType writes Default
 pub struct Button {
     #[xaml(flatten)] pub base: ElementBase,
-    #[element(state)] pub content: ContentState,    // HasState<ContentState>, so HasContent
-    #[element(state)] pub template: TemplateState,  // HasState<TemplateState>, so Templated
+    #[element(state)] #[xaml(flatten)] pub content: ContentState,    // HasState<ContentState>, so HasContent
+    #[element(state)] #[xaml(flatten)] pub template: TemplateState,  // HasState<TemplateState>, so Templated
     #[xaml] pub click: Event<ClickEvent>,
     #[xaml] pub command: Property<Option<Command>>,
 }
