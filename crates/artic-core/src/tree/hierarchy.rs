@@ -10,46 +10,39 @@
 //! reconnects inherited properties (see `inheritance`), and an edit in the visual tree marks the
 //! parent for layout (see `dirty`), since its children decide its size.
 
+use crate::arena::SlotMap;
 use crate::property::Affects;
-use crate::tree::{NodeId, TreeKind, UiTree, inheritance, put};
+use crate::tree::{NodeId, TreeKind, UiTree, inheritance};
 use std::collections::HashSet;
 use std::iter::{from_fn, successors};
 
 const TREES: [TreeKind; 2] = [TreeKind::Logical, TreeKind::Visual];
 
 /// One tree's links: each live node's parent and ordered children.
-///
-/// An entry remembers its node, so a stale id finds nothing, even once its slot is reused.
 #[derive(Debug, Default)]
 pub(super) struct Tree {
-  entries: Vec<Option<Entry>>,
+  entries: SlotMap<Entry>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Entry {
-  node: NodeId,
   parent: Option<NodeId>,
   children: Vec<NodeId>,
 }
 
 impl Tree {
   pub(super) const fn new() -> Self {
-    Self { entries: Vec::new() }
+    Self { entries: SlotMap::new() }
   }
 
   /// Gives `node` an entry with no parent and no children.
   pub(super) fn insert(&mut self, node: NodeId) {
-    let entry = Entry {
-      node,
-      parent: None,
-      children: Vec::new(),
-    };
-    put(&mut self.entries, node.slot(), Some(entry));
+    self.entries.insert(node.0, Entry::default());
   }
 
   /// Drops `node`'s entry. The nodes it's linked to keep their links to it.
   pub(super) fn remove(&mut self, node: NodeId) {
-    self.entries[node.slot()] = None;
+    self.entries.remove(node.0);
   }
 
   pub(super) fn parent(&self, node: NodeId) -> Option<NodeId> {
@@ -94,13 +87,12 @@ impl Tree {
   }
 
   fn entry(&self, node: NodeId) -> Option<&Entry> {
-    self.entries.get(node.slot())?.as_ref().filter(|entry| entry.node == node)
+    self.entries.get(node.0)
   }
 
   #[track_caller]
   fn entry_mut(&mut self, node: NodeId) -> &mut Entry {
-    let entry = self.entries.get_mut(node.slot()).and_then(Option::as_mut);
-    match entry.filter(|entry| entry.node == node) {
+    match self.entries.get_mut(node.0) {
       Some(entry) => entry,
       None => panic!("node {node:?} is not in the arena"),
     }

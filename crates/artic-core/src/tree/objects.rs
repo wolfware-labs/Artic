@@ -1,8 +1,8 @@
 //! The objects themselves, and the ids that reach them.
 //!
 //! [`Objects`] keeps each node's `Box<dyn Object>` in a generational arena. It's the only part of
-//! the tree that knows whether an id is live: the other parts are indexed by slot, so the arena
-//! checks an id here before it reaches them.
+//! the tree that knows whether an id is live: the other parts only store data under ids it issued,
+//! so `UiTree` checks an id here before it reaches them.
 
 use crate::Object;
 use crate::arena::Arena;

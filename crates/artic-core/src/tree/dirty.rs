@@ -5,46 +5,54 @@
 //! properties; an edit to a node's visual children adds layout. The frame stages clear what they
 //! redo: layout clears [`Affects::LAYOUT`], rendering clears [`Affects::RENDER`].
 
+use crate::arena::SlotMap;
 use crate::property::Affects;
-use crate::tree::{NodeId, UiTree, put};
+use crate::tree::{NodeId, UiTree};
 use std::cell::Cell;
 use std::rc::Rc;
 
-/// Each slot's dirty flags, shared with the properties of the node in it.
+/// Each node's dirty flags, shared with its properties.
 #[derive(Debug, Default)]
 pub(super) struct DirtyFlags {
-  flags: Vec<Rc<Cell<Affects>>>,
+  flags: SlotMap<Rc<Cell<Affects>>>,
 }
 
 impl DirtyFlags {
   pub(super) const fn new() -> Self {
-    Self { flags: Vec::new() }
+    Self { flags: SlotMap::new() }
   }
 
-  /// Gives `slot` new flags with layout and rendering dirty, and returns them for the node's
-  /// properties to share. The flags of the slot's previous node stay with that node's properties.
-  pub(super) fn reset(&mut self, slot: usize) -> Rc<Cell<Affects>> {
+  /// Gives `node` new flags with layout and rendering dirty, and returns them for its properties to
+  /// share.
+  pub(super) fn insert(&mut self, node: NodeId) -> Rc<Cell<Affects>> {
     let flags = Rc::new(Cell::new(Affects::LAYOUT | Affects::RENDER));
-    put(&mut self.flags, slot, Rc::clone(&flags));
+    self.flags.insert(node.0, Rc::clone(&flags));
     flags
   }
 
-  pub(super) fn get(&self, slot: usize) -> Affects {
-    self.flags[slot].get()
+  /// Drops `node`'s flags. Its properties keep their own reference to them.
+  pub(super) fn remove(&mut self, node: NodeId) {
+    self.flags.remove(node.0);
   }
 
-  pub(super) fn mark(&self, slot: usize, stages: Affects) {
-    let flags = &self.flags[slot];
-    flags.set(flags.get() | stages);
+  pub(super) fn get(&self, node: NodeId) -> Affects {
+    self.flags.get(node.0).map_or(Affects::NONE, |flags| flags.get())
   }
 
-  pub(super) fn clear(&self, slot: usize, stages: Affects) {
-    let flags = &self.flags[slot];
-    flags.set(flags.get().without(stages));
+  pub(super) fn mark(&self, node: NodeId, stages: Affects) {
+    if let Some(flags) = self.flags.get(node.0) {
+      flags.set(flags.get() | stages);
+    }
   }
 
-  pub(super) fn shared(&self, slot: usize) -> Rc<Cell<Affects>> {
-    Rc::clone(&self.flags[slot])
+  pub(super) fn clear(&self, node: NodeId, stages: Affects) {
+    if let Some(flags) = self.flags.get(node.0) {
+      flags.set(flags.get().without(stages));
+    }
+  }
+
+  pub(super) fn shared(&self, node: NodeId) -> Rc<Cell<Affects>> {
+    Rc::clone(self.flags.get(node.0).expect("a live node has dirty flags"))
   }
 }
 
@@ -55,11 +63,7 @@ impl UiTree {
   /// its properties adds the stages its key [`affects`](crate::property::PropertyKey::affects).
   #[must_use]
   pub fn dirty(&self, id: NodeId) -> Affects {
-    if self.contains(id) {
-      self.dirty_flags.get(id.slot())
-    } else {
-      Affects::NONE
-    }
+    self.dirty_flags.get(id)
   }
 
   /// Adds `stages` to the frame stages `id` needs redone.
@@ -70,7 +74,7 @@ impl UiTree {
   #[track_caller]
   pub fn mark_dirty(&mut self, id: NodeId, stages: Affects) {
     self.check(id);
-    self.dirty_flags.mark(id.slot(), stages);
+    self.dirty_flags.mark(id, stages);
   }
 
   /// Removes `stages` from the frame stages `id` needs redone, once they have been redone.
@@ -81,7 +85,7 @@ impl UiTree {
   #[track_caller]
   pub fn clear_dirty(&mut self, id: NodeId, stages: Affects) {
     self.check(id);
-    self.dirty_flags.clear(id.slot(), stages);
+    self.dirty_flags.clear(id, stages);
   }
 }
 

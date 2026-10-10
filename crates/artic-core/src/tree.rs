@@ -24,8 +24,9 @@
 //! - `inheritance`: how inheritable properties follow the logical tree, as functions over the
 //!   objects and the logical links.
 //!
-//! The other parts are indexed by slot, so `UiTree` checks an id in `objects` before it reaches
-//! them. `UiTree` also keeps the rules that span parts: a new node gets a place in every part and
+//! The other parts keep their data under the same `NodeId`, in a `SlotMap` each; only `objects`
+//! knows whether an id is live, so `UiTree` checks an id there before it reaches them. `UiTree`
+//! also keeps the rules that span parts: a new node gets a place in every part and
 //! its properties share its dirty flags; a freed node leaves every part; a logical edit reconnects
 //! inheritance; a visual edit marks the parent for layout; a new attached value shares its node's
 //! dirty flags. Each file holds `UiTree`'s public methods for its part next to the part.
@@ -96,22 +97,6 @@ pub struct UiTree {
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct NodeId(SlotId);
 
-impl NodeId {
-  /// The index of the node's slot, which the parts of the tree are indexed by.
-  fn slot(self) -> usize {
-    self.0.index()
-  }
-}
-
-/// Stores `value` at `slot`, growing `values` by one for a slot the tree just appended.
-fn put<T>(values: &mut Vec<T>, slot: usize, value: T) {
-  if slot == values.len() {
-    values.push(value);
-  } else {
-    values[slot] = value;
-  }
-}
-
 /// Which of a node's two trees an operation works on.
 ///
 /// Every node in a [`UiTree`] belongs to two trees at once, with independent parent and child
@@ -176,7 +161,7 @@ impl UiTree {
     let id = self.objects.alloc(value);
     self.logical.insert(id);
     self.visual.insert(id);
-    let dirty = self.dirty_flags.reset(id.slot());
+    let dirty = self.dirty_flags.insert(id);
     self
       .objects
       .object(id)
@@ -223,7 +208,8 @@ impl UiTree {
     object.visit_properties(&mut |property| property.inherit_from(None));
     self.logical.remove(node_id);
     self.visual.remove(node_id);
-    self.attached_values.remove(node_id.slot());
+    self.dirty_flags.remove(node_id);
+    self.attached_values.remove(node_id);
     Some(object)
   }
 
