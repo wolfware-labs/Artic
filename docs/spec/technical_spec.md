@@ -130,7 +130,7 @@ Each property gets its own `PropertyKey` unless `#[xaml(key = FONT_SIZE)]` names
 
 | Item | Fields | Consumer |
 | --- | --- | --- |
-| `TypeInfo` | XAML name, namespace, Rust path, `new: fn(&mut UiTree) -> NodeId`, content field, `is_collection`, properties, events, attached properties, `markup_extension: Option<&MarkupExtensionInfo>`, whitespace, `groups` (flattened property groups such as `ElementBase`) | compiler, loader |
+| `TypeInfo` | XAML name, namespace, Rust path, `new: fn(&mut UiTree) -> NodeId`, content field, `is_collection`, properties, events, attached properties, `markup_extension: Option<&MarkupExtensionInfo>`, whitespace, `kind` (node or value, from the value objects design), `groups` (flattened property groups such as `ElementBase`) | compiler, loader |
 | `PropertyInfo` | name, Rust field path, value type path, `affects: Layout \| Render`, `inherits`, `access: &PropertyAccess` (typed thunks, see below) | compiler emits `node.field.set(v)` directly; loader calls the `access` thunks |
 | `AttachedPropertyInfo` | owner, name, value type, target (`AttachedTarget::ChildrenOfOwner` for `Grid.Row`, `Any` for `Accessibility.Name`) | both |
 | `EventInfo` | name, args type path, `subscribe: fn(&mut UiTree, NodeId, HandlerId)` | both |

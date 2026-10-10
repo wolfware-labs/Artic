@@ -123,7 +123,7 @@ The pipeline builds a `TypeId → ElementType` map once. `cast` answers `LayoutN
 | `HorizontalAlignment`, `VerticalAlignment` | the #41 enums | `Stretch` | layout | |
 | `Visibility` | `Visibility` | `Visible` | layout, render | |
 | `IsEnabled` | `bool` | `true` | render | yes |
-| `Opacity` | `f32`, clamped to 0–1 when read; NaN counts as 1 | `1` | render | |
+| `Opacity` | `f32`; the property keeps any value, and composition clamps it (section 7) | `1` | render | |
 | `RenderTransform` | `Option<Transform>` | `None` | render | |
 | `ZIndex` | `i32`: draw and hit-test order among siblings | `0` | render | |
 | `Classes` | `Classes` (space-separated names) | empty | style, through its signal (#107) | |
@@ -147,8 +147,8 @@ The three states are what web and mobile developers already know: CSS `visibilit
 | `Visibility` | Takes space | Drawn | Hit-testable | accesskit |
 | --- | --- | --- | --- | --- |
 | `Visible` | yes | yes | yes | normal |
-| `Hidden` | yes | no | no | hidden |
-| `Collapsed` | no: desired size zero, children not measured | no | no | hidden |
+| `Hidden` | yes | no | no | not emitted |
+| `Collapsed` | no: desired size zero, children not measured | no | no | not emitted |
 
 Whether an element and all its ancestors are visible is computed when needed, for example by a future `is_visible(tree, node)`, never set.
 
@@ -197,11 +197,11 @@ Lookups search the type's own properties, then each group, and the compiler writ
 
 ## 7. Accessibility and composition
 
-`ElementBase` builds the default accesskit node: the arranged bounds, hidden unless `Visible`, disabled when `IsEnabled` is false. Like composition and hit testing, the accesskit walk skips a node that isn't `Visible` together with its whole subtree, so a `Visible` child of a hidden parent is never exposed. Each control adds its role, name, value and actions in `ElementImpl::accessibility`, which the derive calls with that node (#161 adds the attached properties).
+`ElementBase` builds the default accesskit node: the arranged bounds, and disabled when `IsEnabled` is false. Only `Visible` elements get a node at all: like composition and hit testing, the accesskit walk skips a node that isn't `Visible` together with its whole subtree, so a `Visible` child of a hidden parent is never exposed. Each control adds its role, name, value and actions in `ElementImpl::accessibility`, which the derive calls with that node (#161 adds the attached properties).
 
 `Opacity`, `RenderTransform` and `Visibility` feed #33's per-node layers through the render `Nodes` answer, not each control's `render`: opacity becomes the node's opacity layer and the transform its transform layer. Visibility needs a layer of its own: today `Compositor::visit` always visits a node's visual children, so hiding only the node's own drawing would still draw its children. `Layers` gains `visible: bool`, default `true`, and `visit` skips a node with `visible: false` together with its whole subtree. `Hidden` and `Collapsed` answer `visible: false`.
 
-`Opacity` is a plain `f32`, so a Rust write can set any value, while `Layers.opacity` must be from 0 to 1. `ElementBase` clamps it when it builds the node's `Layers`, and a NaN counts as 1, so composition never sees an invalid value.
+`Opacity` is a plain `f32`, so a Rust write can set any value, while `Layers.opacity` must be from 0 to 1. The property itself keeps whatever was set, and reading it returns that value. Only `ElementBase`'s building of the node's `Layers` clamps it to 0–1, with NaN counting as 1, so composition never sees an invalid value.
 
 `ZIndex` orders siblings. `Layers` gains `z_index: i32`, default `0`, and `visit` draws a node's children sorted by it, stably, so equal values keep tree order. The hit-test walk (#74) uses the same order, reversed, so what is hit is what is drawn on top.
 
