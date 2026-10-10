@@ -1,0 +1,173 @@
+# Design: elements
+
+Issue: #42. Implemented by four pull requests under #42, in order: A (`artic-element`), B (`ElementBase`), C (`#[derive(Element)]`), D (accessibility and composition). Related: #41 (layout), #33 (scene composition), #84 (`ContentState`, `TemplateState`), #241 (`linkme` on wasm).
+
+Every control has the same body: a size, a margin, an alignment, a visibility, an opacity. WPF gives it to them through a base class, `FrameworkElement`. Rust has no class inheritance, so artic gives it through composition: a control embeds an `ElementBase`, and `#[derive(Element)]` writes the code that connects the two. This document fixes the traits, the base and what the derive writes.
+
+## 1. Pieces
+
+| Piece | Crate | What it is |
+| --- | --- | --- |
+| `Element` | `artic-element` | The trait the frame pipeline drives: layout, render, hit testing, input, accessibility |
+| `ElementImpl` | `artic-element` | The trait a control author implements: only what is special about the control |
+| `HasState<S>` | `artic-element` | Gives a control's state structs to the traits built on them |
+| `ElementType` | `artic-element` | How the pipeline finds a node's `&dyn Element` |
+| `HitTestCx`, `EventCx`, `RenderCx`, `AccessCx`, `HitTestResult`, `Handled` | `artic-element` | Placeholders M3 fills in, enough for the defaults |
+| `InputEvent` | `artic-core` | Placeholder input data, named to avoid `Event<A>`, the field type |
+| `ElementBase`, `Visibility`, `Cursor` | `artic-controls` | The universal properties |
+| `#[derive(Element)]`, `#[derive(XamlProperties)]` | `artic-macros` | The two new derives |
+
+## 2. The traits
+
+```rust
+pub trait Element: Object + Layoutable {
+  fn render(&self, cx: &mut RenderCx<'_>, scene: &mut SceneBuilder);
+  fn hit_test(&self, cx: &HitTestCx<'_>, point: Point) -> HitTestResult { cx.bounds_test(point) }
+  fn on_event(&mut self, cx: &mut EventCx<'_>, event: &InputEvent) -> Handled { Handled::No }
+  fn accessibility(&self, cx: &AccessCx<'_>) -> accesskit::Node;
+}
+
+pub trait ElementImpl {
+  /// The content's size within `available`, which already excludes the margin and is held within
+  /// the element's limits.
+  fn measure_override(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size { Size::ZERO }
+  /// Places the children within `size`, in the element's own coordinates.
+  fn arrange_override(&self, cx: &mut LayoutCx<'_>, size: Size) {}
+  fn render(&self, cx: &mut RenderCx<'_>, scene: &mut SceneBuilder) {}
+}
+```
+
+- The supertrait is `Object`, the trait in `artic-core`; spec §7's `XamlObject` is renamed to match. Not every node comes from markup: builder-made and test nodes implement `Object` too.
+- `Layoutable` (#41) brings `measure` and `arrange`, so `Element` adds only what layout doesn't need.
+- `Element` is what the pipeline calls; `ElementImpl` is what the author writes. The derive connects them, so an author can't skip the shared work by overriding the wrong method. A control with no content writes `impl ElementImpl for Spacer {}`.
+
+## 3. What the derive writes
+
+`#[derive(Element)]` requires a field `base: ElementBase` and writes `Layoutable` and `Element` for the struct:
+
+| Method | Shared work, from `ElementBase` | Then calls |
+| --- | --- | --- |
+| `measure` | `Collapsed`: returns zero, children not measured. Otherwise #41's `measure_with`: margin off, limits on | `measure_override` |
+| `arrange` | #41's `arrange_with`: margin, limits, alignment | `arrange_override` with the content's size |
+| `render` | `Hidden` and `Collapsed` draw nothing | `ElementImpl::render` |
+| `hit_test`, `on_event` | the trait defaults | |
+| `accessibility` | the default node (section 7) | |
+
+A struct without `base: ElementBase` fails to compile with an error that names the missing field.
+
+### State structs
+
+A field marked `#[element(state)]` gives the struct `HasState<S>` for the field's type:
+
+```rust
+pub trait HasState<S> {
+  fn state(&self) -> &S;
+  fn state_mut(&mut self) -> &mut S;
+}
+
+#[derive(Element, XamlType)]
+pub struct Button {
+  #[xaml(flatten)] pub base: ElementBase,
+  #[element(state)] pub content: ContentState, // the derive emits impl HasState<ContentState> for Button
+}
+
+// next to ContentState, in artic-controls (#84):
+impl<T: Element + HasState<ContentState>> HasContent for T {}
+```
+
+The rule, as documented on the derive: each `#[element(state)]` field of type `S` gives the struct `HasState<S>`, and the traits built on a state are implemented through `HasState<S>`. There is no table of type names in the macro, so aliases work, and any crate, apps included, can add a state struct and its trait without changing `artic-macros`.
+
+## 4. Finding a node's `Element`
+
+`UiTree` stores `Box<dyn Object>`, and Rust can't downcast a `&dyn Object` to a trait `artic-core` doesn't know. `#[derive(Element)]` therefore adds the type to a `linkme` slice in `artic-element`:
+
+```rust
+pub struct ElementType {
+  pub type_id: fn() -> TypeId,
+  pub cast: fn(&dyn Object) -> Option<&dyn Element>,
+}
+
+// emitted for Border:
+cast: |object| object.downcast_ref::<Border>().map(|border| border as &dyn Element),
+```
+
+The pipeline builds a `TypeId → cast` map once and answers `LayoutNodes` and the render `Nodes` from it. A hand-written `Element` registers with `element_type!(TestElement)`, the line the derive emits. App controls need no registration call, as spec §7 requires. `linkme` doesn't support wasm yet; the registry has the same limit, and #241 fixes both.
+
+## 5. `ElementBase`
+
+`ElementBase` is a property group, not a XAML type: `#[derive(XamlProperties)]` gives it its keys, `PROPERTIES`, `visit_properties` and `Default`, and markup can't create one. Its keys are generated once, so every control shares them, and `IsEnabled` inherits across control types.
+
+| Property | Type | Default | Affects | Inherits |
+| --- | --- | --- | --- | --- |
+| `Width`, `Height` | `Option<f32>` | `None` (size to content) | layout | |
+| `MinWidth`, `MinHeight` | `f32` | `0` | layout | |
+| `MaxWidth`, `MaxHeight` | `f32` | infinity | layout | |
+| `Margin` | `Thickness` | zero | layout | |
+| `HorizontalAlignment`, `VerticalAlignment` | the #41 enums | `Stretch` | layout | |
+| `Visibility` | `Visibility` | `Visible` | layout, render | |
+| `IsEnabled` | `bool` | `true` | render | yes |
+| `Opacity` | `f32` | `1` | render | |
+| `RenderTransform` | `Option<Transform>` | `None` | render | |
+| `ZIndex` | `i32` | `0` | render | |
+| `Classes` | `Classes` (space-separated names) | empty | | |
+| `Name` | `Option<String>` | `None` | | |
+| `DataContext` | `Option<NodeId>` (a view-model node) | `None` | | yes |
+| `Cursor` | `Cursor` | `Arrow` | | |
+| `Focusable` | `bool` | `false` | | |
+| `ToolTip` | `Option<String>` | `None` | | |
+
+The size properties and the alignments are what #41's `Sizing` holds; `ElementBase` builds a `Sizing` from them for `measure_with` and `arrange_with`.
+
+`Visibility`, `Cursor` and `Classes` live in `artic-controls`, with `#[derive(XamlEnum)]` for the enums. The alignment enums already live in `artic-layout`, below the registry; they get `FromStr` the way `Thickness` does.
+
+### Visibility
+
+There is one visibility property, `Visibility`, as in WPF; spec §7's `IsVisible` is dropped. Two settable properties for one fact would need a rule for when they disagree.
+
+| `Visibility` | Takes space | Drawn | Hit-testable | accesskit |
+| --- | --- | --- | --- | --- |
+| `Visible` | yes | yes | yes | normal |
+| `Hidden` | yes | no | no | hidden |
+| `Collapsed` | no: desired size zero, children not measured | no | no | hidden |
+
+Whether an element and all its ancestors are visible is computed when needed, for example by a future `is_visible(tree, node)`, never set.
+
+## 6. Registry: flattened groups
+
+`#[derive(XamlType)]` skips fields without `#[xaml]`, so a plain `base: ElementBase` would be missing from the registry and from `visit_properties`: `Margin` couldn't be set from markup, changing it wouldn't mark the node dirty, and `IsEnabled` wouldn't inherit. A control marks the field:
+
+```rust
+#[derive(Element, XamlType)]
+#[xaml(namespace = "https://artic.rs/ui", content = child)]
+pub struct Border {
+  #[xaml(flatten)] pub base: ElementBase,
+  #[xaml] pub child: Property<Option<NodeId>>,
+}
+```
+
+For a flattened field, `derive(XamlType)`:
+
+- calls `self.base.visit_properties(visit)` from the struct's own `visit_properties`;
+- adds `PropertyGroupInfo { field: "base", properties: ElementBase::PROPERTIES }` to the type's `TypeInfo.groups`.
+
+Lookups search the type's own properties, then each group, and the compiler writes `node.base.margin.set(...)`. A slice of groups, not one merged list, because a `const` can't join two slices whose lengths come from different crates. Spec §3's `Border` gains the attribute.
+
+## 7. Accessibility and composition
+
+`ElementBase` builds the default accesskit node: the arranged bounds, hidden unless `Visible`, disabled when `IsEnabled` is false. Controls add their role and name on top (#161 adds the attached properties).
+
+`Opacity`, `RenderTransform` and `Visibility` feed #33's per-node layers through the render `Nodes` answer, not each control's `render`: opacity becomes the node's opacity layer, the transform its transform layer, and `Hidden` or `Collapsed` records nothing.
+
+## 8. Pull requests
+
+| PR | Contents | Done when |
+| --- | --- | --- |
+| A | `artic-element`: `Element`, `ElementImpl`, `HasState`, `ElementType` and `element_type!`, the placeholder contexts; `InputEvent` in `artic-core` | a hand-written element is laid out through `LayoutManager` by way of the cast table |
+| B | `ElementBase` with `#[derive(XamlProperties)]`, the enums, `#[xaml(flatten)]` in `derive(XamlType)` and `PropertyGroupInfo`, the measure and arrange outline | `element_base_properties_registered`, `margin_and_alignment_layout`, `min_max_clamp_desired_size`, `collapsed_takes_no_space` |
+| C | `#[derive(Element)]`: the outline from section 3, the missing-`base` error, `#[element(state)]` | the two trybuild cases: missing `base`, and a test-only state giving a test trait through a blanket impl |
+| D | the default accesskit node; opacity, transform and visibility in composition | `base_accessibility_node`; a pixel test where opacity changes the drawn color |
+
+## 9. Spec changes
+
+- §7: `Element: Object + Layoutable` instead of `Element: XamlObject`; `ElementImpl` and `HasState` added; `IsVisible` replaced by `Visibility` and its table.
+- §3: `Border`'s `base` field gains `#[xaml(flatten)]`; `TypeInfo` gains `groups`.
