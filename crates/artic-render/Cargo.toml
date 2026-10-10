@@ -11,6 +11,8 @@ repository.workspace = true
 [dependencies]
 artic-core.workspace = true
 artic-layout.workspace = true
+raw-window-handle.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true
