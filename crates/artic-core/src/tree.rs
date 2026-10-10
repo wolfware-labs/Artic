@@ -17,7 +17,7 @@
 //!
 //! `TreeArena`'s methods are split by concern, one file each:
 //!
-//! - `node`: what a slot holds, the storage the others work on.
+//! - `objects`: the objects themselves, and whether an id is live.
 //! - `hierarchy`: the structure of both trees, and the rules every edit follows.
 //! - `dirty`: which frame stages each node needs redone.
 //! - `inheritance`: how inheritable properties follow the logical tree.
@@ -27,14 +27,14 @@ mod attached;
 mod dirty;
 mod hierarchy;
 mod inheritance;
-mod node;
+mod objects;
 
 use crate::Object;
-use crate::arena::{Arena, SlotId};
+use crate::arena::SlotId;
 use attached::AttachedValues;
 use dirty::DirtyFlags;
 use hierarchy::Hierarchy;
-use node::TreeNode;
+use objects::Objects;
 use std::any::Any;
 use std::fmt::Debug;
 use std::rc::Rc;
@@ -71,7 +71,7 @@ use std::rc::Rc;
 /// ```
 #[derive(Debug, Default)]
 pub struct TreeArena {
-  inner: Arena<TreeNode>,
+  objects: Objects,
   logical: Hierarchy,
   visual: Hierarchy,
   dirty_flags: DirtyFlags,
@@ -125,7 +125,7 @@ impl TreeArena {
   #[must_use]
   pub const fn new() -> Self {
     Self {
-      inner: Arena::new(),
+      objects: Objects::new(),
       logical: Hierarchy::new(),
       visual: Hierarchy::new(),
       dirty_flags: DirtyFlags::new(),
@@ -165,13 +165,13 @@ impl TreeArena {
   /// ```
   #[must_use = "node ID needed to get or free the node from the arena"]
   pub fn alloc(&mut self, value: Box<dyn Object>) -> NodeId {
-    let id = NodeId(self.inner.alloc(TreeNode::new(value)));
+    let id = self.objects.alloc(value);
     self.logical.insert(id);
     self.visual.insert(id);
     let dirty = self.dirty_flags.reset(id.slot());
     self
-      .node(id)
-      .object
+      .objects
+      .object(id)
       .visit_properties(&mut |property| property.attach(Rc::clone(&dirty)));
     id
   }
@@ -211,12 +211,12 @@ impl TreeArena {
   /// assert!(arena.is_empty());
   /// ```
   pub fn free(&mut self, node_id: NodeId) -> Option<Box<dyn Object>> {
-    let node = self.inner.free(node_id.0)?;
-    node.object.visit_properties(&mut |property| property.inherit_from(None));
+    let object = self.objects.free(node_id)?;
+    object.visit_properties(&mut |property| property.inherit_from(None));
     self.logical.remove(node_id);
     self.visual.remove(node_id);
     self.attached_values.remove(node_id.slot());
-    Some(node.object)
+    Some(object)
   }
 
   /// Returns a reference to the node referred to by `id`, or `None` if `id` is stale.
@@ -224,7 +224,7 @@ impl TreeArena {
   /// Use [`get_as`](TreeArena::get_as) to get the node as its concrete type.
   #[must_use]
   pub fn get(&self, id: NodeId) -> Option<&dyn Object> {
-    self.inner.get(id.0).map(|node| node.object.as_ref())
+    self.objects.get(id)
   }
 
   /// Returns a reference to the node referred to by `id` as a `T`.
@@ -270,7 +270,7 @@ impl TreeArena {
   /// Use [`get_as_mut`](TreeArena::get_as_mut) to get the node as its concrete type.
   #[must_use]
   pub fn get_mut(&mut self, id: NodeId) -> Option<&mut dyn Object> {
-    self.inner.get_mut(id.0).map(|node| node.object.as_mut())
+    self.objects.get_mut(id)
   }
 
   /// Returns a mutable reference to the node referred to by `id` as a `T`.
@@ -312,13 +312,13 @@ impl TreeArena {
   /// Freed slots waiting to be reused aren't counted.
   #[must_use]
   pub fn len(&self) -> usize {
-    self.inner.len()
+    self.objects.len()
   }
 
   /// Returns `true` if the arena holds no live nodes.
   #[must_use]
   pub fn is_empty(&self) -> bool {
-    self.inner.is_empty()
+    self.objects.is_empty()
   }
 
   /// Returns `true` if `id` refers to a live node.
@@ -351,15 +351,13 @@ impl TreeArena {
   /// ```
   #[must_use]
   pub fn contains(&self, id: NodeId) -> bool {
-    self.inner.contains(id.0)
+    self.objects.contains(id)
   }
 
+  /// Panics if `id` is stale: every edit checks its nodes before it reaches their parts.
   #[track_caller]
-  fn node(&self, id: NodeId) -> &TreeNode {
-    match self.inner.get(id.0) {
-      Some(node) => node,
-      None => panic!("node {id:?} is not in the arena"),
-    }
+  fn check(&self, id: NodeId) {
+    self.objects.object(id);
   }
 }
 

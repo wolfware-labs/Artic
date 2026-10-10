@@ -91,7 +91,7 @@ impl TreeArena {
     if let Some(property) = self.stored(node, key) {
       return property;
     }
-    self.node(node);
+    self.check(node);
     let property = Property::new(key.key(), key.default_value());
     property.attach(self.dirty_flags.shared(node.slot()));
     self.attached_values.insert(node.slot(), Box::new(property));
@@ -104,7 +104,7 @@ impl TreeArena {
   where
     T: PartialEq + 'static,
   {
-    self.node(node);
+    self.check(node);
     let property = self.attached_values.find(node.slot(), KeyId::of(key.key()))?;
     let property = property.as_any().downcast_ref::<Property<T>>();
     Some(*property.expect("a key's property has the key's value type"))

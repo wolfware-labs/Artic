@@ -252,7 +252,7 @@ impl TreeArena {
   /// Panics if `id` is stale.
   #[track_caller]
   pub fn free_subtree(&mut self, id: NodeId) {
-    self.node(id);
+    self.check(id);
     let mut subtree = HashSet::from([id]);
     let mut pending = vec![id];
     while let Some(node) = pending.pop() {
@@ -292,8 +292,8 @@ impl TreeArena {
 
   #[track_caller]
   fn check_attach(&self, tree: Tree, parent: NodeId, child: NodeId) {
-    self.node(parent);
-    self.node(child);
+    self.check(parent);
+    self.check(child);
     let is_cycle = self.hierarchy(tree).would_cycle(parent, child);
     assert!(
       !is_cycle,

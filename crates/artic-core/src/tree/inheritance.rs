@@ -14,7 +14,7 @@ impl TreeArena {
   pub(super) fn resolve_inheritance(&self, root: NodeId) {
     let subtree: Vec<NodeId> = once(root).chain(self.descendants(Tree::Logical, root)).collect();
     for node in subtree {
-      self.node(node).object.visit_properties(&mut |property| {
+      self.objects.object(node).visit_properties(&mut |property| {
         if property.inherits() {
           self.inherit_from_nearest_ancestor(node, property);
         }
@@ -25,7 +25,7 @@ impl TreeArena {
   fn inherit_from_nearest_ancestor(&self, node: NodeId, property: &dyn AnyProperty) {
     for ancestor in self.ancestors(Tree::Logical, node) {
       let mut found = false;
-      self.node(ancestor).object.visit_properties(&mut |candidate| {
+      self.objects.object(ancestor).visit_properties(&mut |candidate| {
         if !found && candidate.key_id() == property.key_id() {
           property.inherit_from(Some(candidate));
           found = true;

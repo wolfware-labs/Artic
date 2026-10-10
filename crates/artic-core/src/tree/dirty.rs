@@ -69,7 +69,7 @@ impl TreeArena {
   /// Panics if `id` is stale.
   #[track_caller]
   pub fn mark_dirty(&mut self, id: NodeId, stages: Affects) {
-    self.node(id);
+    self.check(id);
     self.dirty_flags.mark(id.slot(), stages);
   }
 
@@ -80,7 +80,7 @@ impl TreeArena {
   /// Panics if `id` is stale.
   #[track_caller]
   pub fn clear_dirty(&mut self, id: NodeId, stages: Affects) {
-    self.node(id);
+    self.check(id);
     self.dirty_flags.clear(id.slot(), stages);
   }
 }
