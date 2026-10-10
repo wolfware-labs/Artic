@@ -1,6 +1,6 @@
 [package]
 name = "artic-render"
-description = "Renderer trait, retained scene and rendering backends for artic."
+description = "The renderer seam and retained scene for artic, with no backend."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,6 +11,10 @@ repository.workspace = true
 [dependencies]
 artic-core.workspace = true
 artic-layout.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+static_assertions.workspace = true
 
 [lints]
 workspace = true

@@ -1,1 +1,17 @@
-//! Renderer trait, retained scene and rendering backends for artic.
+//! The renderer seam and the retained scene.
+//!
+//! Elements record their drawing into a [`SceneBuilder`]; each node's recording is a
+//! [`SceneFragment`], kept until the node is render-dirty again. Composition wraps the fragments in
+//! their nodes' transforms, clips and opacity, in visual order, to make one frame: a [`Scene`]. A
+//! renderer, from any adapter crate, draws the scene. This crate holds no backend: see the
+//! [backend design](https://github.com/wolfware-labs/artic/blob/main/docs/design/backends.md).
+
+mod builder;
+mod color;
+mod compose;
+mod scene;
+
+pub use builder::SceneBuilder;
+pub use color::Color;
+pub use compose::{Compositor, Layers, Nodes};
+pub use scene::{Clip, Command, Layer, Scene, SceneFragment, SceneItem};
