@@ -130,10 +130,10 @@ Each property gets its own `PropertyKey` unless `#[xaml(key = FONT_SIZE)]` names
 
 | Item | Fields | Consumer |
 | --- | --- | --- |
-| `TypeInfo` | XAML name, namespace, Rust path, `new: fn(&mut Arena) -> NodeId`, content field, `is_collection`, `is_markup_extension`, `groups` (flattened property groups such as `ElementBase`) | compiler, loader |
-| `PropertyInfo` | name, Rust field path, value type path, `parse: fn(&str) -> Result<Value, ParseError>` (from `FromStr`), `set: fn(&mut Arena, NodeId, Value)`, `affects: Layout \| Render`, `inherits` | compiler emits `node.field.set(v)` directly; loader calls `set` |
+| `TypeInfo` | XAML name, namespace, Rust path, `new: fn(&mut UiTree) -> NodeId`, content field, `is_collection`, properties, events, attached properties, `markup_extension: Option<&MarkupExtensionInfo>`, whitespace, `groups` (flattened property groups such as `ElementBase`) | compiler, loader |
+| `PropertyInfo` | name, Rust field path, value type path, `parse: fn(&str) -> Result<Value, ParseError>` (from `FromStr`), `set: fn(&mut UiTree, NodeId, Value)`, `affects: Layout \| Render`, `inherits` | compiler emits `node.field.set(v)` directly; loader calls `set` |
 | `AttachedPropertyInfo` | owner, name, value type, target (`AttachedTarget::ChildrenOfOwner` for `Grid.Row`, `Any` for `Accessibility.Name`) | both |
-| `EventInfo` | name, args type path, `subscribe: fn(&mut Arena, NodeId, HandlerId)` | both |
+| `EventInfo` | name, args type path, `subscribe: fn(&mut UiTree, NodeId, HandlerId)` | both |
 | `MarkupExtensionInfo` | positional/named argument schema (the extension's properties); `expand` comes with the loader (M2) | both |
 
 The loader path needs a way to turn markup into typed property values. The original `Value` enum with a `Parsed(TypeId, Box<dyn Any>)` variant is rejected (D9). Instead, the derive emits typed thunks per property (`PropertyInfo.access`), whose signatures are type-free and whose bodies call `FromStr` and `Property::set_at`; see [the loader values design](../design/loader-values.md) (M0-19), implemented in M2-01. Values written as object elements (brushes, `RowDefinition`, `KeyBinding`) are value types (`TypeInfo.kind` is `Value`): staged through `TypeInfo::new`, converted into the property's type with `FromXamlObject` in the loader and `Into` in compiled code; see [the value objects design](../design/value-objects.md) (M0-31). The compiled path never calls these thunks.
@@ -579,7 +579,7 @@ impl LoginView {
 }
 ```
 
-- The macro generates: the struct's element wrapper (a `UserControl` node owning `Self`), a `build(&mut Arena) -> NodeId` from the compiled XAML, typed `Handle<T>` handles for every `x:Name`, and a handler table `name → fn` used by both paths.
+- The macro generates: the struct's element wrapper (a `UserControl` node owning `Self`), a `build(&mut UiTree) -> NodeId` from the compiled XAML, typed `Handle<T>` handles for every `x:Name`, and a handler table `name → fn` used by both paths.
 - Handler signature is `fn(&mut self, &mut ViewCx, &Args)`; `ViewCx` gives tree access and the dispatcher. Handlers are `&mut self`, so no interior mutability in code-behind.
 - A handler name that does not exist is a compile error in the compiled path, a load error in the runtime path.
 - Code-behind and view-model are both available: `self.view_model::<LoginVm>()` returns the `DataContext` downcast.
@@ -697,7 +697,7 @@ The UI is single-threaded by construction: the tree, signals, and view-models ar
 
 ### Rules for app code
 
-1. Touch the tree only from the UI thread; the tree's `NodeId` is `Send` but `Arena` methods require `&mut Arena` obtained from `ViewCx`/`Dispatcher`, which only exist there.
+1. Touch the tree only from the UI thread; the tree's `NodeId` is `Send` but `UiTree` methods require `&mut UiTree` obtained from `ViewCx`/`Dispatcher`, which only exist there.
 2. Signals are `!Send`; to publish from a worker, send the value and let the posted closure call `set()`.
 3. A long computation in an effect or handler blocks input; the debug build warns on any dispatcher task over 16 ms.
 
@@ -765,7 +765,7 @@ Build order follows the dependency graph in §2: nothing above a layer starts un
 | Parser | fixture corpus of `.xaml` → infoset snapshots (`insta`), including MS-XAML whitespace and markup-extension edge cases |
 | Compiler vs runtime | every fixture loaded both ways; object trees serialized and diffed — must be identical |
 | Signals | property-based tests (`proptest`) for glitch-freedom and disposal; leak checks via tree counts |
-| Layout | headless `Arena` with no renderer: measure/arrange assertions per panel; fuzzed constraints |
+| Layout | headless `UiTree` with no renderer: measure/arrange assertions per panel; fuzzed constraints |
 | Rendering | golden-image tests via `vello` to an offscreen `wgpu` texture; tolerance-based compare, per-platform goldens only where fonts differ |
 | Controls | headless input simulation (`TestHost` implements `Host`, with a test renderer drawing to `Pixels`): click, type, tab, touch gestures; asserts on tree state and `accesskit` tree |
 | Platforms | CI matrix: Windows, macOS, Ubuntu (X11 + Wayland via `weston` headless), iOS simulator, Android emulator (API 26 and latest) |
