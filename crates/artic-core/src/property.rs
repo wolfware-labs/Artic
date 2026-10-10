@@ -34,7 +34,7 @@
 //! says which frame stages a change [`Affects`], and says whether it inherits. Properties on
 //! different node types are the same kind when they share the key.
 //!
-//! Once a node is in a [`TreeArena`](crate::tree::TreeArena), a change to the effective value of
+//! Once a node is in a [`UiTree`](crate::tree::UiTree), a change to the effective value of
 //! one of its properties adds the key's stages to the node's dirty flags right away. A write that
 //! readers can't see marks nothing.
 //!
@@ -47,7 +47,7 @@
 //! link when a node moves in the logical tree; the visual tree plays no part.
 //!
 //! A property belongs to the [`Scope`](crate::reactive::Scope) it was created in, and a node to its
-//! arena. Dispose a node's scope only once the node has left the tree: a descendant that still
+//! tree. Dispose a node's scope only once the node has left the tree: a descendant that still
 //! inherits from a disposed property panics when read.
 
 mod affects;

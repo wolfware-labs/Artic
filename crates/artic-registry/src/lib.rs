@@ -27,7 +27,7 @@ use linkme::distributed_slice;
 /// ```
 /// use artic_core::Object;
 /// use artic_core::property::AnyProperty;
-/// use artic_core::tree::{NodeId, TreeArena};
+/// use artic_core::tree::{NodeId, UiTree};
 /// use artic_registry::{Registry, TypeInfo, Whitespace};
 ///
 /// #[derive(Debug)]
@@ -40,7 +40,7 @@ use linkme::distributed_slice;
 ///   name: "Gauge",
 ///   namespace: "using:my_app::views",
 ///   rust_path: "my_app::views::Gauge",
-///   new: |arena: &mut TreeArena| -> NodeId { arena.alloc(Box::new(Gauge)) },
+///   new: |tree: &mut UiTree| -> NodeId { tree.alloc(Box::new(Gauge)) },
 ///   content: None,
 ///   is_collection: false,
 ///   properties: &[],
@@ -84,7 +84,7 @@ pub static XAML_TYPES: [&'static TypeInfo];
 /// ```
 /// use artic_core::Object;
 /// use artic_core::property::AnyProperty;
-/// use artic_core::tree::{NodeId, TreeArena};
+/// use artic_core::tree::{NodeId, UiTree};
 /// use artic_registry::{Registry, TypeInfo, Whitespace};
 ///
 /// #[derive(Debug)]
@@ -97,7 +97,7 @@ pub static XAML_TYPES: [&'static TypeInfo];
 ///   name: "Dial",
 ///   namespace: "using:my_app::views",
 ///   rust_path: "my_app::views::Dial",
-///   new: |arena: &mut TreeArena| -> NodeId { arena.alloc(Box::new(Dial)) },
+///   new: |tree: &mut UiTree| -> NodeId { tree.alloc(Box::new(Dial)) },
 ///   content: None,
 ///   is_collection: false,
 ///   properties: &[],

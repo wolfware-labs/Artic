@@ -98,7 +98,7 @@ mod tests {
   use crate::{AttachedTarget, Whitespace};
   use artic_core::Object;
   use artic_core::property::AnyProperty;
-  use artic_core::tree::{NodeId, TreeArena};
+  use artic_core::tree::{NodeId, UiTree};
   use pretty_assertions::assert_eq;
 
   const UI: &str = "https://artic.rs/ui";
@@ -110,8 +110,8 @@ mod tests {
     fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
   }
 
-  fn new_node(arena: &mut TreeArena) -> NodeId {
-    arena.alloc(Box::new(Node))
+  fn new_node(tree: &mut UiTree) -> NodeId {
+    tree.alloc(Box::new(Node))
   }
 
   /// Returns a descriptor with no properties, events or attached properties.

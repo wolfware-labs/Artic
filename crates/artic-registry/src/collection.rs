@@ -16,7 +16,7 @@ use artic_core::tree::NodeId;
 /// ```
 /// use artic_core::Object;
 /// use artic_core::property::AnyProperty;
-/// use artic_core::tree::{NodeId, TreeArena};
+/// use artic_core::tree::{NodeId, UiTree};
 /// use artic_registry::XamlCollection;
 ///
 /// #[derive(Debug)]
@@ -25,9 +25,9 @@ use artic_core::tree::NodeId;
 ///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
 /// }
 ///
-/// let mut arena = TreeArena::new();
+/// let mut tree = UiTree::new();
 /// let mut children: Vec<NodeId> = Vec::new();
-/// children.push_child(arena.alloc(Box::new(Item)));
+/// children.push_child(tree.alloc(Box::new(Item)));
 /// assert_eq!(children.len(), 1);
 /// ```
 #[diagnostic::on_unimplemented(

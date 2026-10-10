@@ -3,7 +3,7 @@
 
 use artic_core::event::Event;
 use artic_core::property::{Affects, Precedence, Property, PropertyKey};
-use artic_core::tree::{NodeId, Tree, TreeArena};
+use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_macros::XamlType;
 use artic_registry::{AttachedTarget, Registry, TypeInfo, Whitespace, XamlType};
 use pretty_assertions::assert_eq;
@@ -142,11 +142,11 @@ fn border_is_registered_with_its_members() {
 // The descriptor's constructor creates a node of the type with its default values.
 #[test]
 fn new_creates_a_node_with_defaults() {
-  let mut arena = TreeArena::new();
+  let mut tree = UiTree::new();
 
-  let node = (lookup("Border").new)(&mut arena);
+  let node = (lookup("Border").new)(&mut tree);
 
-  let border = arena.get_as::<Border>(node).expect("a Border node");
+  let border = tree.get_as::<Border>(node).expect("a Border node");
   assert_eq!(border.child.get(), None);
   assert_eq!(border.background.get(), None);
   assert_eq!(border.corner_radius.get(), CornerRadius(0.0));
@@ -184,14 +184,14 @@ fn whitespace_setting_reaches_the_descriptor() {
 // metadata reaches both descriptors.
 #[test]
 fn shared_key_inherits_across_types() {
-  let mut arena = TreeArena::new();
-  let window = (Window::TYPE_INFO.new)(&mut arena);
-  let text = (TextBlock::TYPE_INFO.new)(&mut arena);
+  let mut tree = UiTree::new();
+  let window = (Window::TYPE_INFO.new)(&mut tree);
+  let text = (TextBlock::TYPE_INFO.new)(&mut tree);
 
-  arena.add_child(Tree::Logical, window, text);
-  arena.get_as::<Window>(window).expect("a Window").font_size.set(20.0);
+  tree.add_child(TreeKind::Logical, window, text);
+  tree.get_as::<Window>(window).expect("a Window").font_size.set(20.0);
 
-  assert_eq!(arena.get_as::<TextBlock>(text).expect("a TextBlock").font_size.get(), 20.0);
+  assert_eq!(tree.get_as::<TextBlock>(text).expect("a TextBlock").font_size.get(), 20.0);
   assert_eq!(TextBlock::TYPE_INFO.properties[0].name, "FontSize");
   assert!(TextBlock::TYPE_INFO.properties[0].inherits);
 }
@@ -224,19 +224,19 @@ fn attached_property_is_found_by_owner_and_name() {
 // overrides a style value until it's cleared.
 #[test]
 fn attached_helpers_set_and_read_with_precedence() {
-  let mut arena = TreeArena::new();
-  let border = (Border::TYPE_INFO.new)(&mut arena);
-  assert_eq!(Grid::row(&arena, border), 0);
-  assert_eq!(Grid::label(&arena, border), "unnamed");
+  let mut tree = UiTree::new();
+  let border = (Border::TYPE_INFO.new)(&mut tree);
+  assert_eq!(Grid::row(&tree, border), 0);
+  assert_eq!(Grid::label(&tree, border), "unnamed");
 
-  Grid::set_row(&mut arena, border, 3);
-  assert_eq!(Grid::row(&arena, border), 3);
+  Grid::set_row(&mut tree, border, 3);
+  assert_eq!(Grid::row(&tree, border), 3);
 
-  let row = arena.attached_property(border, Grid::ROW);
+  let row = tree.attached_property(border, Grid::ROW);
   row.set_at(Precedence::StyleSetter, 2);
-  assert_eq!(Grid::row(&arena, border), 3, "a local value overrides a style value");
+  assert_eq!(Grid::row(&tree, border), 3, "a local value overrides a style value");
   row.clear(Precedence::Local);
-  assert_eq!(Grid::row(&arena, border), 2);
+  assert_eq!(Grid::row(&tree, border), 2);
 }
 
 // An attached key carries the metadata its declaration gives.

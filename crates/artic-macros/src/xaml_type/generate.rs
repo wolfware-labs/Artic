@@ -117,8 +117,8 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
         #(#attached_helpers)*
       }
 
-      fn __new(arena: &mut __artic::TreeArena) -> __artic::NodeId {
-        arena.alloc(::std::boxed::Box::new(<#ident as ::core::default::Default>::default()))
+      fn __new(tree: &mut __artic::UiTree) -> __artic::NodeId {
+        tree.alloc(::std::boxed::Box::new(<#ident as ::core::default::Default>::default()))
       }
 
       static __TYPE_INFO: __artic::TypeInfo = __artic::TypeInfo {
@@ -234,14 +234,14 @@ fn attached_helpers(owner: &Ident, attached: &Attached) -> TokenStream {
     pub const #constant: &'static __artic::AttachedKey<#ty> = &#key;
 
     #[doc = #setter_doc]
-    pub fn #setter(arena: &mut __artic::TreeArena, node: impl ::core::convert::Into<__artic::NodeId>, #value: #ty) {
-      arena.attached_property(node.into(), Self::#constant).set(#value);
+    pub fn #setter(tree: &mut __artic::UiTree, node: impl ::core::convert::Into<__artic::NodeId>, #value: #ty) {
+      tree.attached_property(node.into(), Self::#constant).set(#value);
     }
 
     #[doc = #getter_doc]
     #[must_use]
-    pub fn #getter(arena: &__artic::TreeArena, node: impl ::core::convert::Into<__artic::NodeId>) -> #ty {
-      arena.attached(node.into(), Self::#constant)
+    pub fn #getter(tree: &__artic::UiTree, node: impl ::core::convert::Into<__artic::NodeId>) -> #ty {
+      tree.attached(node.into(), Self::#constant)
     }
   }
 }

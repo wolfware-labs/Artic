@@ -68,16 +68,16 @@ pub struct PropertyInfo {
 /// How the loader writes one property. Signatures are type-free; bodies are typed.
 pub struct PropertyAccess {
   /// Parses `text` with the value type's `FromStr` and sets it at `level`.
-  pub set_text: fn(&mut TreeArena, NodeId, &str, Precedence) -> Result<(), ValueError>,
+  pub set_text: fn(&mut UiTree, NodeId, &str, Precedence) -> Result<(), ValueError>,
   /// Sets a child node, for child slots (`Property<NodeId>` / `Property<Option<NodeId>>`).
-  pub set_node: Option<fn(&mut TreeArena, NodeId, NodeId, Precedence) -> Result<(), ValueError>>,
+  pub set_node: Option<fn(&mut UiTree, NodeId, NodeId, Precedence) -> Result<(), ValueError>>,
   /// Converts a built object into the value type with `FromXamlObject` and sets it. Present for
   /// every property; types that can't come from an object return `ValueError::WrongType`.
-  pub set_object: fn(&mut TreeArena, NodeId, NodeId, Precedence) -> Result<(), ValueError>,
+  pub set_object: fn(&mut UiTree, NodeId, NodeId, Precedence) -> Result<(), ValueError>,
   /// Sets `None`, only for `Property<Option<T>>`. `None` here means "not nullable".
-  pub set_null: Option<fn(&mut TreeArena, NodeId, Precedence) -> Result<(), ValueError>>,
+  pub set_null: Option<fn(&mut UiTree, NodeId, Precedence) -> Result<(), ValueError>>,
   /// Empties `level`, when a style stops matching or a reload removes the attribute.
-  pub clear: fn(&mut TreeArena, NodeId, Precedence),
+  pub clear: fn(&mut UiTree, NodeId, Precedence),
 }
 
 pub struct AttachedPropertyInfo {
@@ -88,7 +88,7 @@ pub struct AttachedPropertyInfo {
 pub struct TypeInfo {
   // existing fields …
   /// Appends a child node to the content collection, when `content` names a `XamlCollection` field.
-  pub add_child: Option<fn(&mut TreeArena, NodeId, NodeId) -> Result<(), ValueError>>,   // new
+  pub add_child: Option<fn(&mut UiTree, NodeId, NodeId) -> Result<(), ValueError>>,   // new
 }
 
 /// Why a thunk refused a value. Positions are added by the loader.
@@ -109,18 +109,18 @@ Function pointers are `Copy`, `const`-friendly and fit in the `static` descripto
 What the derive would generate for `Border.padding`, shown as plain Rust:
 
 ```rust
-fn padding_set_text(arena: &mut TreeArena, node: NodeId, text: &str, level: Precedence) -> Result<(), ValueError> {
+fn padding_set_text(tree: &mut UiTree, node: NodeId, text: &str, level: Precedence) -> Result<(), ValueError> {
   let value: Thickness = text.parse().map_err(|error: <Thickness as FromStr>::Err| ValueError::Parse {
     expected: "Thickness",
     message: error.to_string(),
   })?;
-  let border = arena.get_as::<Border>(node).ok_or(ValueError::WrongNode)?;
+  let border = tree.get_as::<Border>(node).ok_or(ValueError::WrongNode)?;
   border.padding.set_at(level, value);
   Ok(())
 }
 ```
 
-`set_object`'s body converts the built object with the value type's `FromXamlObject`, which checks "is this a `T`?" with `T` known statically, the same check `TreeArena::get_as::<T>` already makes. It happens inside typed code; the loader and the public API never see `Any`. How value objects such as `SolidColorBrush` are staged and converted is the [value objects design](value-objects.md).
+`set_object`'s body converts the built object with the value type's `FromXamlObject`, which checks "is this a `T`?" with `T` known statically, the same check `UiTree::get_as::<T>` already makes. It happens inside typed code; the loader and the public API never see `Any`. How value objects such as `SolidColorBrush` are staged and converted is the [value objects design](value-objects.md).
 
 ### Precedence
 
@@ -150,21 +150,21 @@ Every markup extension resolves to one of the four inputs (text, child node, obj
 
 1. The loader resolves `Border` with `Registry::type_by_name` and creates the node with `TypeInfo::new`.
 2. It finds `PropertyInfo` `Padding` in `border.properties`.
-3. It calls `(padding.access.set_text)(arena, node, "4,8", Precedence::Local)`.
+3. It calls `(padding.access.set_text)(tree, node, "4,8", Precedence::Local)`.
 4. The thunk parses a `Thickness` and calls `border.padding.set_at(Local, value)`.
 
 **A `StaticResource` brush.** `<Border Background="{StaticResource Accent}"/>`, with `<SolidColorBrush x:Key="Accent" Color="#3B82F6"/>` in an ancestor's resources.
 
 1. The loader resolves `Accent` to the entry's node: an `Object` of type `SolidColorBrush`.
 2. It builds that object as it would inline (`TypeInfo::new`, then its members through their own thunks).
-3. It calls `(background.access.set_object)(arena, border, brush, Precedence::Local)`.
+3. It calls `(background.access.set_object)(tree, border, brush, Precedence::Local)`.
 4. The thunk converts the object with `Brush::from_object` ([value objects](value-objects.md)) and sets it.
 
 **A style `Setter`.** `<Style Selector="Border.card"><Setter Property="Padding" Value="12"/></Style>`
 
 1. When the selector matches a `Border`, the style system finds `PropertyInfo` `Padding` on the target type.
-2. It calls `(padding.access.set_text)(arena, node, "12", Precedence::StyleSetter)`.
-3. A local `Padding` on the same `Border` still wins (#13); when the selector stops matching, it calls `(padding.access.clear)(arena, node, Precedence::StyleSetter)`.
+2. It calls `(padding.access.set_text)(tree, node, "12", Precedence::StyleSetter)`.
+3. A local `Padding` on the same `Border` still wins (#13); when the selector stops matching, it calls `(padding.access.clear)(tree, node, Precedence::StyleSetter)`.
 
 **A type mismatch.** `<Border Background="{StaticResource Gap}"/>`, where `Gap` is an `x:Double`.
 

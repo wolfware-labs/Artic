@@ -161,7 +161,7 @@ mod tests {
   use crate::{Color, Command, Compositor, Layers, Nodes, SceneBuilder, SceneItem};
   use artic_core::Object;
   use artic_core::property::AnyProperty;
-  use artic_core::tree::{NodeId, TreeArena};
+  use artic_core::tree::{NodeId, UiTree};
   use artic_layout::geometry::Rect;
   use pretty_assertions::assert_eq;
 
@@ -205,19 +205,19 @@ mod tests {
   struct Red;
 
   impl Nodes for Red {
-    fn layers(&self, _arena: &TreeArena, _node: NodeId) -> Layers {
+    fn layers(&self, _arena: &UiTree, _node: NodeId) -> Layers {
       Layers::default()
     }
 
-    fn record(&mut self, _arena: &TreeArena, _node: NodeId, builder: &mut SceneBuilder) {
+    fn record(&mut self, _arena: &UiTree, _node: NodeId, builder: &mut SceneBuilder) {
       builder.fill_rect(Rect::new(0.0, 0.0, 2.0, 1.0), Color::rgb(255, 0, 0));
     }
   }
 
   fn red_scene() -> Scene {
-    let mut arena = TreeArena::new();
-    let root = arena.alloc(Box::new(Node));
-    Compositor::default().compose(&mut arena, root, &mut Red)
+    let mut tree = UiTree::new();
+    let root = tree.alloc(Box::new(Node));
+    Compositor::default().compose(&mut tree, root, &mut Red)
   }
 
   fn surface(target: Target<'_>) -> Surface<'_> {

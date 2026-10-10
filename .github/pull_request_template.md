@@ -1,4 +1,4 @@
-<!-- The PR title becomes the squash commit on main, so write it as a conventional commit, for example "feat(core): add TreeArena::contains". -->
+<!-- The PR title becomes the squash commit on main, so write it as a conventional commit, for example "feat(core): add UiTree::contains". -->
 
 ## Summary
 

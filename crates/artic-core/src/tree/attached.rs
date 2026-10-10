@@ -6,7 +6,7 @@
 //! default without storing anything, and connected to the node's dirty flags like a field.
 
 use crate::property::{AnyProperty, AttachedKey, KeyId, Property};
-use crate::tree::{NodeId, TreeArena};
+use crate::tree::{NodeId, UiTree};
 use std::collections::BTreeMap;
 
 /// The attached property values of each slot that has any.
@@ -34,7 +34,7 @@ impl AttachedValues {
   }
 }
 
-impl TreeArena {
+impl UiTree {
   /// Returns `node`'s value of the attached property `key`, or the key's default when nothing has
   /// set it. Reading never stores anything on the node.
   ///
@@ -65,7 +65,7 @@ impl TreeArena {
   /// ```
   /// use artic_core::Object;
   /// use artic_core::property::{Affects, AnyProperty, AttachedKey, Precedence};
-  /// use artic_core::tree::TreeArena;
+  /// use artic_core::tree::UiTree;
   ///
   /// static ROW: AttachedKey<usize> = AttachedKey::new("Row", Affects::LAYOUT, || 0);
   ///
@@ -75,13 +75,13 @@ impl TreeArena {
   ///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
   /// }
   ///
-  /// let mut arena = TreeArena::new();
-  /// let button = arena.alloc(Box::new(Button));
-  /// assert_eq!(arena.attached(button, &ROW), 0);
+  /// let mut tree = UiTree::new();
+  /// let button = tree.alloc(Box::new(Button));
+  /// assert_eq!(tree.attached(button, &ROW), 0);
   ///
-  /// arena.attached_property(button, &ROW).set_at(Precedence::StyleSetter, 2);
-  /// arena.attached_property(button, &ROW).set(1);
-  /// assert_eq!(arena.attached(button, &ROW), 1, "a local value overrides a style value");
+  /// tree.attached_property(button, &ROW).set_at(Precedence::StyleSetter, 2);
+  /// tree.attached_property(button, &ROW).set(1);
+  /// assert_eq!(tree.attached(button, &ROW), 1, "a local value overrides a style value");
   /// ```
   #[track_caller]
   pub fn attached_property<T>(&mut self, node: NodeId, key: &'static AttachedKey<T>) -> Property<T>
@@ -115,7 +115,7 @@ impl TreeArena {
 mod tests {
   use crate::Object;
   use crate::property::{Affects, AnyProperty, AttachedKey, Precedence};
-  use crate::tree::{NodeId, TreeArena};
+  use crate::tree::{NodeId, UiTree};
   use pretty_assertions::assert_eq;
 
   static ROW: AttachedKey<usize> = AttachedKey::new("Row", Affects::LAYOUT, || 0);
@@ -128,81 +128,81 @@ mod tests {
     fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
   }
 
-  /// An arena with one button whose dirty flags are already cleared.
-  fn clean_button() -> (TreeArena, NodeId) {
-    let mut arena = TreeArena::new();
-    let button = arena.alloc(Box::new(Button));
-    arena.clear_dirty(button, Affects::LAYOUT | Affects::RENDER);
-    (arena, button)
+  /// A tree with one button whose dirty flags are already cleared.
+  fn clean_button() -> (UiTree, NodeId) {
+    let mut tree = UiTree::new();
+    let button = tree.alloc(Box::new(Button));
+    tree.clear_dirty(button, Affects::LAYOUT | Affects::RENDER);
+    (tree, button)
   }
 
   // Reading an attached property nothing set returns its default and stores nothing.
   #[test]
   fn unset_value_is_the_default_without_storing() {
-    let (arena, button) = clean_button();
+    let (tree, button) = clean_button();
 
-    assert_eq!(arena.attached(button, &ROW), 0);
-    assert_eq!(arena.attached(button, &LABEL), "none");
-    assert!(!arena.attached_values.values.contains_key(&button.slot()));
+    assert_eq!(tree.attached(button, &ROW), 0);
+    assert_eq!(tree.attached(button, &LABEL), "none");
+    assert!(!tree.attached_values.values.contains_key(&button.slot()));
   }
 
   // A set value reads back, and the property is created once.
   #[test]
   fn set_value_reads_back() {
-    let (mut arena, button) = clean_button();
+    let (mut tree, button) = clean_button();
 
-    arena.attached_property(button, &ROW).set(3);
+    tree.attached_property(button, &ROW).set(3);
 
-    assert_eq!(arena.attached(button, &ROW), 3);
-    assert_eq!(arena.attached_property(button, &ROW).get(), 3);
-    assert_eq!(arena.attached_values.values[&button.slot()].len(), 1);
+    assert_eq!(tree.attached(button, &ROW), 3);
+    assert_eq!(tree.attached_property(button, &ROW).get(), 3);
+    assert_eq!(tree.attached_values.values[&button.slot()].len(), 1);
   }
 
   // A local value overrides a style value, which shows again when the local value is cleared.
   #[test]
   fn local_overrides_style() {
-    let (mut arena, button) = clean_button();
-    let row = arena.attached_property(button, &ROW);
+    let (mut tree, button) = clean_button();
+    let row = tree.attached_property(button, &ROW);
 
     row.set_at(Precedence::StyleSetter, 2);
     row.set(1);
-    assert_eq!(arena.attached(button, &ROW), 1);
+    assert_eq!(tree.attached(button, &ROW), 1);
 
     row.clear(Precedence::Local);
-    assert_eq!(arena.attached(button, &ROW), 2);
+    assert_eq!(tree.attached(button, &ROW), 2);
   }
 
   // Two attached properties on one node are independent.
   #[test]
   fn kinds_are_independent() {
-    let (mut arena, button) = clean_button();
+    let (mut tree, button) = clean_button();
 
-    arena.attached_property(button, &ROW).set(4);
-    arena.attached_property(button, &LABEL).set("ok".to_owned());
+    tree.attached_property(button, &ROW).set(4);
+    tree.attached_property(button, &LABEL).set("ok".to_owned());
 
-    assert_eq!(arena.attached(button, &ROW), 4);
-    assert_eq!(arena.attached(button, &LABEL), "ok");
+    assert_eq!(tree.attached(button, &ROW), 4);
+    assert_eq!(tree.attached(button, &LABEL), "ok");
   }
 
   // A change marks the node dirty with the key's stages, like a field.
   #[test]
   fn change_marks_the_node_dirty() {
-    let (mut arena, button) = clean_button();
+    let (mut tree, button) = clean_button();
 
-    arena.attached_property(button, &LABEL).set("ok".to_owned());
+    tree.attached_property(button, &LABEL).set("ok".to_owned());
 
-    assert_eq!(arena.dirty(button), Affects::RENDER);
+    assert_eq!(tree.dirty(button), Affects::RENDER);
   }
 
   // The values go with their node: a node that later takes the slot starts at the defaults.
   #[test]
   fn values_go_with_their_node() {
-    let (mut arena, button) = clean_button();
-    arena.attached_property(button, &ROW).set(5);
+    let (mut tree, button) = clean_button();
+    tree.attached_property(button, &ROW).set(5);
 
-    arena.free(button);
-    let next = arena.alloc(Box::new(Button));
+    tree.free(button);
+    let next = tree.alloc(Box::new(Button));
 
-    assert_eq!(arena.attached(next, &ROW), 0);
+    assert_eq!(tree.attached(next, &ROW), 0);
   }
 }

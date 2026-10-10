@@ -2,7 +2,7 @@
 
 Issue: #32. Builds on: [loader values](loader-values.md) (#20). Related: #21 (builder API), #35 (`Color` and `Brush`), #43 (builder generation), #57 (loader values implementation).
 
-Some XAML elements aren't UI nodes. `<SolidColorBrush Color="#3B82F6"/>` is a value, like a number: it ends up inside a property such as `Border.Background`, or in a resource dictionary, and never in the tree. The registry from #17 can only build nodes (`TypeInfo::new: fn(&mut TreeArena) -> NodeId`). This document decides how both XAML paths build values, without `Box<dyn Any>` (D9) and without a second registry.
+Some XAML elements aren't UI nodes. `<SolidColorBrush Color="#3B82F6"/>` is a value, like a number: it ends up inside a property such as `Border.Background`, or in a resource dictionary, and never in the tree. The registry from #17 can only build nodes (`TypeInfo::new: fn(&mut UiTree) -> NodeId`). This document decides how both XAML paths build values, without `Box<dyn Any>` (D9) and without a second registry.
 
 ## Inventory
 
@@ -36,12 +36,12 @@ pub enum TypeKind {
 
 pub struct TypeInfo {
   // existing fields …
-  pub new: fn(&mut TreeArena) -> NodeId,   // unchanged
+  pub new: fn(&mut UiTree) -> NodeId,   // unchanged
   pub kind: TypeKind,                      // new
 }
 ```
 
-A single `fn` pointer type can't return a `Brush` for one entry and a `RowDefinition` for another, so a value constructor that returns the value is impossible without erasing its type. Instead, `new` **stages** a value: it allocates the value struct in the arena with its defaults, the loader sets its members through the usual thunks, and the target property then moves it out (below). The arena serves as a typed construction site; only what happens after construction depends on the kind.
+A single `fn` pointer type can't return a `Brush` for one entry and a `RowDefinition` for another, so a value constructor that returns the value is impossible without erasing its type. Instead, `new` **stages** a value: it allocates the value struct in the tree with its defaults, the loader sets its members through the usual thunks, and the target property then moves it out (below). The tree serves as a typed construction site; only what happens after construction depends on the kind.
 
 A value type uses the same derive with a `value` flag. Its fields are plain, not `Property`:
 
@@ -70,8 +70,8 @@ A property's value type may be a family rather than the element's type: #35 plan
 // artic-registry
 /// A property value type that can be taken from a staged XAML object.
 pub trait FromXamlObject: Sized {
-  /// Takes the staged object `object` out of the arena as `Self`.
-  fn from_object(arena: &mut TreeArena, object: NodeId) -> Result<Self, ValueError>;
+  /// Takes the staged object `object` out of the tree as `Self`.
+  fn from_object(tree: &mut UiTree, object: NodeId) -> Result<Self, ValueError>;
 }
 
 /// Every XAML type takes itself: free the staging node and check it is a `T`.
@@ -79,7 +79,7 @@ impl<T: XamlType + 'static> FromXamlObject for T { /* … */ }
 
 // In #35's crate: a family accepts its members, written in terms of its `From` impls.
 impl FromXamlObject for Brush {
-  fn from_object(arena: &mut TreeArena, object: NodeId) -> Result<Brush, ValueError> {
+  fn from_object(tree: &mut UiTree, object: NodeId) -> Result<Brush, ValueError> {
     // a SolidColorBrush becomes Brush::from(solid), a LinearGradientBrush Brush::from(linear),
     // anything else ValueError::WrongType
   }
@@ -88,16 +88,16 @@ impl FromXamlObject for Brush {
 
 The blanket impl and a family's impl don't conflict: only the crate that owns `Brush` could make it a `XamlType`, so Rust's coherence rules accept both (checked with a two-crate prototype).
 
-The [loader values](loader-values.md) thunk `set_object` for `Property<V>` or `Property<Option<V>>` is then `V::from_object(arena, object)?` followed by `set_at(level, value)`. The derive can't know at macro time whether `V` implements `FromXamlObject`, so `set_object` is generated for every property: with the same autoref selection #18 uses for its value check, it calls `from_object` when available, and otherwise returns `ValueError::WrongType { expected, found: "an object element" }`. `PropertyAccess.set_object` is therefore always present, not an `Option` (the loader values design is updated accordingly).
+The [loader values](loader-values.md) thunk `set_object` for `Property<V>` or `Property<Option<V>>` is then `V::from_object(tree, object)?` followed by `set_at(level, value)`. The derive can't know at macro time whether `V` implements `FromXamlObject`, so `set_object` is generated for every property: with the same autoref selection #18 uses for its value check, it calls `from_object` when available, and otherwise returns `ValueError::WrongType { expected, found: "an object element" }`. `PropertyAccess.set_object` is therefore always present, not an `Option` (the loader values design is updated accordingly).
 
 ## Loader steps
 
 For `<Border.Background><SolidColorBrush Color="#3B82F6"/></Border.Background>`:
 
 1. Resolve `SolidColorBrush` in the registry. Its `kind` is `Value`.
-2. Stage it: `(info.new)(arena)` allocates a `SolidColorBrush` with its defaults.
+2. Stage it: `(info.new)(tree)` allocates a `SolidColorBrush` with its defaults.
 3. Set its members through their thunks: `Color`'s `set_text("#3B82F6")` parses a `Color` and assigns the field.
-4. Call `Background`'s `set_object(arena, border, staged, Precedence::Local)`.
+4. Call `Background`'s `set_object(tree, border, staged, Precedence::Local)`.
 5. The thunk calls `Brush::from_object`, which frees the staging node, takes the `SolidColorBrush` out and converts it with `Brush::from`, then calls `background.set_at(Local, Some(brush))`.
 
 The staging node is always freed by `from_object`, on success and on error, so no value is left in the tree.

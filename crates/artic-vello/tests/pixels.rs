@@ -5,7 +5,7 @@
 
 use artic_core::Object;
 use artic_core::property::AnyProperty;
-use artic_core::tree::{NodeId, Tree, TreeArena};
+use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_layout::geometry::{Rect, Transform};
 use artic_render::{
   Clip, Color, Compositor, Layers, Nodes, PhysicalSize, PixelBuffer, PixelFormat, RenderError, Renderer, SceneBuilder, Surface,
@@ -36,11 +36,11 @@ struct Fills {
 }
 
 impl Nodes for Fills {
-  fn layers(&self, _arena: &TreeArena, node: NodeId) -> Layers {
+  fn layers(&self, _arena: &UiTree, node: NodeId) -> Layers {
     self.layers.get(&node).copied().unwrap_or_default()
   }
 
-  fn record(&mut self, _arena: &TreeArena, node: NodeId, builder: &mut SceneBuilder) {
+  fn record(&mut self, _arena: &UiTree, node: NodeId, builder: &mut SceneBuilder) {
     if let Some((rect, color)) = self.fills.get(&node) {
       builder.fill_rect(*rect, *color);
     }
@@ -79,12 +79,12 @@ fn is_warp(renderer: &VelloRenderer) -> bool {
 /// Renders `root`'s tree into an `SIZE`×`SIZE` buffer of `format`, and returns its pixels.
 fn render(
   renderer: &mut VelloRenderer,
-  arena: &mut TreeArena,
+  tree: &mut UiTree,
   root: NodeId,
   nodes: &mut Fills,
   format: PixelFormat,
 ) -> Vec<[u8; 4]> {
-  let scene = Compositor::default().compose(arena, root, nodes);
+  let scene = Compositor::default().compose(tree, root, nodes);
   let mut data = vec![0; (SIZE * SIZE * 4) as usize];
   let surface = Surface {
     id: SurfaceId::new(1),
@@ -112,14 +112,14 @@ fn full() -> Rect {
 #[test]
 fn renders_scene_into_pixels() {
   with_renderer(|renderer| {
-    let mut arena = TreeArena::new();
-    let root = arena.alloc(Box::new(Node));
+    let mut tree = UiTree::new();
+    let root = tree.alloc(Box::new(Node));
     let mut nodes = Fills::default();
     nodes.fills.insert(root, (full(), RED));
 
-    let rgba = render(renderer, &mut arena, root, &mut nodes, PixelFormat::Rgba8);
-    arena.mark_dirty(root, artic_core::property::Affects::RENDER);
-    let bgra = render(renderer, &mut arena, root, &mut nodes, PixelFormat::Bgra8);
+    let rgba = render(renderer, &mut tree, root, &mut nodes, PixelFormat::Rgba8);
+    tree.mark_dirty(root, artic_core::property::Affects::RENDER);
+    let bgra = render(renderer, &mut tree, root, &mut nodes, PixelFormat::Bgra8);
 
     assert!(rgba.iter().all(|pixel| *pixel == [255, 0, 0, 255]), "{rgba:?}");
     assert!(bgra.iter().all(|pixel| *pixel == [0, 0, 255, 255]), "{bgra:?}");
@@ -130,10 +130,10 @@ fn renders_scene_into_pixels() {
 #[test]
 fn transform_and_clip_place_the_child() {
   with_renderer(|renderer| {
-    let mut arena = TreeArena::new();
-    let [root, panel, child] = [(); 3].map(|()| arena.alloc(Box::new(Node)));
-    arena.add_child(Tree::Visual, root, panel);
-    arena.add_child(Tree::Visual, panel, child);
+    let mut tree = UiTree::new();
+    let [root, panel, child] = [(); 3].map(|()| tree.alloc(Box::new(Node)));
+    tree.add_child(TreeKind::Visual, root, panel);
+    tree.add_child(TreeKind::Visual, panel, child);
     let mut nodes = Fills::default();
     nodes.fills.insert(root, (full(), BLUE));
     nodes.fills.insert(child, (Rect::new(0.0, 0.0, 4.0, 4.0), GREEN));
@@ -152,7 +152,7 @@ fn transform_and_clip_place_the_child() {
       },
     );
 
-    let pixels = render(renderer, &mut arena, root, &mut nodes, PixelFormat::Rgba8);
+    let pixels = render(renderer, &mut tree, root, &mut nodes, PixelFormat::Rgba8);
 
     assert_eq!(pixel(&pixels, 1, 1), [0, 0, 255, 255], "outside the moved child");
     assert_eq!(pixel(&pixels, 5, 5), [0, 255, 0, 255], "inside the child and its clip");
@@ -164,9 +164,9 @@ fn transform_and_clip_place_the_child() {
 #[test]
 fn opacity_blends_the_layer() {
   with_renderer(|renderer| {
-    let mut arena = TreeArena::new();
-    let [root, overlay] = [(); 2].map(|()| arena.alloc(Box::new(Node)));
-    arena.add_child(Tree::Visual, root, overlay);
+    let mut tree = UiTree::new();
+    let [root, overlay] = [(); 2].map(|()| tree.alloc(Box::new(Node)));
+    tree.add_child(TreeKind::Visual, root, overlay);
     let mut nodes = Fills::default();
     nodes.fills.insert(root, (full(), Color::rgb(0, 0, 0)));
     nodes.fills.insert(overlay, (full(), Color::rgb(255, 255, 255)));
@@ -178,7 +178,7 @@ fn opacity_blends_the_layer() {
       },
     );
 
-    let pixels = render(renderer, &mut arena, root, &mut nodes, PixelFormat::Rgba8);
+    let pixels = render(renderer, &mut tree, root, &mut nodes, PixelFormat::Rgba8);
 
     let [r, g, b, a] = pixel(&pixels, 3, 3);
     assert!(r.abs_diff(128) <= 2 && r == g && g == b, "half-white grey, got {r} {g} {b}");

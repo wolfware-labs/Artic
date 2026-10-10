@@ -46,13 +46,13 @@ impl Layoutable for Node {
 struct Nodes;
 
 impl LayoutNodes for Nodes {
-  fn layoutable<'a>(&self, arena: &'a TreeArena, node: NodeId) -> Option<&'a dyn Layoutable> {
-    arena.get_as::<Node>(node).map(|node| node as &dyn Layoutable)
+  fn layoutable<'a>(&self, tree: &'a UiTree, node: NodeId) -> Option<&'a dyn Layoutable> {
+    tree.get_as::<Node>(node).map(|node| node as &dyn Layoutable)
   }
 }
 
-fn leaf(arena: &mut TreeArena, width: f32, height: f32) -> NodeId {
-  arena.alloc(Box::new(Node {
+fn leaf(tree: &mut UiTree, width: f32, height: f32) -> NodeId {
+  tree.alloc(Box::new(Node {
     stack: false,
     size: Cell::new(Size::new(width, height)),
     measured: Cell::new(0),
@@ -60,33 +60,33 @@ fn leaf(arena: &mut TreeArena, width: f32, height: f32) -> NodeId {
   }))
 }
 
-fn stack(arena: &mut TreeArena, children: &[NodeId]) -> NodeId {
-  let node = arena.alloc(Box::new(Node {
+fn stack(tree: &mut UiTree, children: &[NodeId]) -> NodeId {
+  let node = tree.alloc(Box::new(Node {
     stack: true,
     size: Cell::new(Size::ZERO),
     measured: Cell::new(0),
     arranged: Cell::new(0),
   }));
   for child in children {
-    arena.add_child(Tree::Visual, node, *child);
+    tree.add_child(TreeKind::Visual, node, *child);
   }
   node
 }
 
-fn node(arena: &TreeArena, id: NodeId) -> &Node {
-  arena.get_as::<Node>(id).expect("a test node")
+fn node(tree: &UiTree, id: NodeId) -> &Node {
+  tree.get_as::<Node>(id).expect("a test node")
 }
 
 /// How often each of `ids` was measured and arranged.
-fn counts(arena: &TreeArena, ids: &[NodeId]) -> Vec<(u32, u32)> {
+fn counts(tree: &UiTree, ids: &[NodeId]) -> Vec<(u32, u32)> {
   ids
     .iter()
-    .map(|id| (node(arena, *id).measured.get(), node(arena, *id).arranged.get()))
+    .map(|id| (node(tree, *id).measured.get(), node(tree, *id).arranged.get()))
     .collect()
 }
 
-fn run(manager: &mut LayoutManager, arena: &mut TreeArena, root: NodeId, available: Size) {
-  manager.run(arena, &Nodes, root, available, 1.0, false);
+fn run(manager: &mut LayoutManager, tree: &mut UiTree, root: NodeId, available: Size) {
+  manager.run(tree, &Nodes, root, available, 1.0, false);
 }
 
 const WINDOW: Size = Size::new(400.0, 300.0);
@@ -94,30 +94,30 @@ const WINDOW: Size = Size::new(400.0, 300.0);
 // Measuring a node again in the same available size, with nothing changed, doesn't call it.
 #[test]
 fn measure_cached_for_same_available() {
-  let mut arena = TreeArena::new();
-  let child = leaf(&mut arena, 100.0, 20.0);
-  let root = stack(&mut arena, &[child]);
+  let mut tree = UiTree::new();
+  let child = leaf(&mut tree, 100.0, 20.0);
+  let root = stack(&mut tree, &[child]);
   let mut manager = LayoutManager::default();
 
-  run(&mut manager, &mut arena, root, WINDOW);
-  run(&mut manager, &mut arena, root, WINDOW);
+  run(&mut manager, &mut tree, root, WINDOW);
+  run(&mut manager, &mut tree, root, WINDOW);
 
-  assert_eq!(counts(&arena, &[root, child]), [(1, 1), (1, 1)]);
+  assert_eq!(counts(&tree, &[root, child]), [(1, 1), (1, 1)]);
   assert_eq!(manager.desired(root), Some(Size::new(100.0, 20.0)));
 }
 
 // A different available size measures again, and the new results are kept.
 #[test]
 fn measure_reruns_on_available_change() {
-  let mut arena = TreeArena::new();
-  let child = leaf(&mut arena, 100.0, 20.0);
-  let root = stack(&mut arena, &[child]);
+  let mut tree = UiTree::new();
+  let child = leaf(&mut tree, 100.0, 20.0);
+  let root = stack(&mut tree, &[child]);
   let mut manager = LayoutManager::default();
 
-  run(&mut manager, &mut arena, root, WINDOW);
-  run(&mut manager, &mut arena, root, Size::new(500.0, 300.0));
+  run(&mut manager, &mut tree, root, WINDOW);
+  run(&mut manager, &mut tree, root, Size::new(500.0, 300.0));
 
-  assert_eq!(counts(&arena, &[root, child]), [(2, 2), (2, 2)]);
+  assert_eq!(counts(&tree, &[root, child]), [(2, 2), (2, 2)]);
   assert_eq!(manager.rect(child), Some(Rect::new(0.0, 0.0, 500.0, 20.0)));
 }
 
@@ -125,46 +125,46 @@ fn measure_reruns_on_available_change() {
 // its parent and siblings keep their results.
 #[test]
 fn unchanged_desired_size_stops_propagation() {
-  let mut arena = TreeArena::new();
-  let [first, second] = [leaf(&mut arena, 100.0, 20.0), leaf(&mut arena, 100.0, 30.0)];
-  let root = stack(&mut arena, &[first, second]);
+  let mut tree = UiTree::new();
+  let [first, second] = [leaf(&mut tree, 100.0, 20.0), leaf(&mut tree, 100.0, 30.0)];
+  let root = stack(&mut tree, &[first, second]);
   let mut manager = LayoutManager::default();
-  run(&mut manager, &mut arena, root, WINDOW);
+  run(&mut manager, &mut tree, root, WINDOW);
 
-  LayoutManager::invalidate_measure(&mut arena, first);
-  run(&mut manager, &mut arena, root, WINDOW);
+  LayoutManager::invalidate_measure(&mut tree, first);
+  run(&mut manager, &mut tree, root, WINDOW);
 
-  assert_eq!(counts(&arena, &[root, first, second]), [(1, 1), (2, 2), (1, 1)]);
+  assert_eq!(counts(&tree, &[root, first, second]), [(1, 1), (2, 2), (1, 1)]);
 }
 
 // A node whose size changes measures its parent again, which moves the siblings after it.
 #[test]
 fn changed_desired_size_propagates_to_the_parent() {
-  let mut arena = TreeArena::new();
-  let [first, second] = [leaf(&mut arena, 100.0, 20.0), leaf(&mut arena, 100.0, 30.0)];
-  let root = stack(&mut arena, &[first, second]);
+  let mut tree = UiTree::new();
+  let [first, second] = [leaf(&mut tree, 100.0, 20.0), leaf(&mut tree, 100.0, 30.0)];
+  let root = stack(&mut tree, &[first, second]);
   let mut manager = LayoutManager::default();
-  run(&mut manager, &mut arena, root, WINDOW);
+  run(&mut manager, &mut tree, root, WINDOW);
 
-  node(&arena, first).size.set(Size::new(100.0, 50.0));
-  LayoutManager::invalidate_measure(&mut arena, first);
-  run(&mut manager, &mut arena, root, WINDOW);
+  node(&tree, first).size.set(Size::new(100.0, 50.0));
+  LayoutManager::invalidate_measure(&mut tree, first);
+  run(&mut manager, &mut tree, root, WINDOW);
 
-  assert_eq!(counts(&arena, &[root, first, second]), [(2, 2), (2, 2), (1, 2)]);
+  assert_eq!(counts(&tree, &[root, first, second]), [(2, 2), (2, 2), (1, 2)]);
   assert_eq!(manager.rect(second), Some(Rect::new(0.0, 50.0, 400.0, 30.0)));
 }
 
 // Removing a visual child lays its parent out again, and drops the child's results.
 #[test]
 fn removed_children_relayout_the_parent() {
-  let mut arena = TreeArena::new();
-  let [first, second] = [leaf(&mut arena, 100.0, 20.0), leaf(&mut arena, 100.0, 30.0)];
-  let root = stack(&mut arena, &[first, second]);
+  let mut tree = UiTree::new();
+  let [first, second] = [leaf(&mut tree, 100.0, 20.0), leaf(&mut tree, 100.0, 30.0)];
+  let root = stack(&mut tree, &[first, second]);
   let mut manager = LayoutManager::default();
-  run(&mut manager, &mut arena, root, WINDOW);
+  run(&mut manager, &mut tree, root, WINDOW);
 
-  arena.detach(Tree::Visual, first);
-  run(&mut manager, &mut arena, root, WINDOW);
+  tree.detach(TreeKind::Visual, first);
+  run(&mut manager, &mut tree, root, WINDOW);
 
   assert_eq!(manager.rect(second), Some(Rect::new(0.0, 0.0, 400.0, 30.0)));
   assert_eq!(manager.desired(first), None);
@@ -173,27 +173,27 @@ fn removed_children_relayout_the_parent() {
 // Arrange-only invalidation arranges the node again in the same rectangle, without measuring.
 #[test]
 fn invalidate_arrange_skips_measure() {
-  let mut arena = TreeArena::new();
-  let child = leaf(&mut arena, 100.0, 20.0);
-  let root = stack(&mut arena, &[child]);
+  let mut tree = UiTree::new();
+  let child = leaf(&mut tree, 100.0, 20.0);
+  let root = stack(&mut tree, &[child]);
   let mut manager = LayoutManager::default();
-  run(&mut manager, &mut arena, root, WINDOW);
+  run(&mut manager, &mut tree, root, WINDOW);
 
   manager.invalidate_arrange(child);
-  run(&mut manager, &mut arena, root, WINDOW);
+  run(&mut manager, &mut tree, root, WINDOW);
 
-  assert_eq!(counts(&arena, &[root, child]), [(1, 1), (1, 2)]);
+  assert_eq!(counts(&tree, &[root, child]), [(1, 1), (1, 2)]);
 }
 
 // An infinite available size is legal: the stack offers its children infinite height.
 #[test]
 fn infinite_available_is_legal() {
-  let mut arena = TreeArena::new();
-  let child = leaf(&mut arena, 100.0, 20.0);
-  let root = stack(&mut arena, &[child]);
+  let mut tree = UiTree::new();
+  let child = leaf(&mut tree, 100.0, 20.0);
+  let root = stack(&mut tree, &[child]);
   let mut manager = LayoutManager::default();
 
-  run(&mut manager, &mut arena, root, Size::INFINITY);
+  run(&mut manager, &mut tree, root, Size::INFINITY);
 
   assert_eq!(manager.desired(child), Some(Size::new(100.0, 20.0)));
   assert_eq!(
@@ -208,23 +208,23 @@ fn infinite_available_is_legal() {
 #[cfg(debug_assertions)]
 #[should_panic(expected = "returned an invalid desired size")]
 fn infinite_desired_size_panics_in_debug() {
-  let mut arena = TreeArena::new();
-  let child = leaf(&mut arena, f32::INFINITY, 20.0);
-  let root = stack(&mut arena, &[child]);
+  let mut tree = UiTree::new();
+  let child = leaf(&mut tree, f32::INFINITY, 20.0);
+  let root = stack(&mut tree, &[child]);
 
-  run(&mut LayoutManager::default(), &mut arena, root, WINDOW);
+  run(&mut LayoutManager::default(), &mut tree, root, WINDOW);
 }
 
 // The panic names the node that returned the infinite size.
 #[test]
 #[cfg(debug_assertions)]
 fn infinite_desired_size_names_the_node() {
-  let mut arena = TreeArena::new();
-  let child = leaf(&mut arena, f32::INFINITY, 20.0);
-  let root = stack(&mut arena, &[child]);
+  let mut tree = UiTree::new();
+  let child = leaf(&mut tree, f32::INFINITY, 20.0);
+  let root = stack(&mut tree, &[child]);
 
   let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-    run(&mut LayoutManager::default(), &mut arena, root, WINDOW);
+    run(&mut LayoutManager::default(), &mut tree, root, WINDOW);
   }))
   .expect_err("panics");
 
@@ -236,12 +236,12 @@ fn infinite_desired_size_names_the_node() {
 #[test]
 fn layout_rounding_snaps_to_device_pixels() {
   for scale in [1.0_f32, 1.25, 2.0] {
-    let mut arena = TreeArena::new();
-    let children = [10.3, 10.3, 10.3].map(|height| leaf(&mut arena, 33.3, height));
-    let root = stack(&mut arena, &children);
+    let mut tree = UiTree::new();
+    let children = [10.3, 10.3, 10.3].map(|height| leaf(&mut tree, 33.3, height));
+    let root = stack(&mut tree, &children);
     let mut manager = LayoutManager::default();
 
-    manager.run(&mut arena, &Nodes, root, Size::new(100.3, 200.0), scale, true);
+    manager.run(&mut tree, &Nodes, root, Size::new(100.3, 200.0), scale, true);
 
     for child in children {
       let rect = manager.rect(child).expect("arranged");

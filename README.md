@@ -5,7 +5,7 @@ A cross-platform UI framework for Rust. Views are written in XAML, all logic is 
 ## Goals
 
 - Views use XAML syntax (a defined subset of MS-XAML 2012) with CSS-like style selectors.
-- The design follows Rust, not a class hierarchy: controls are structs composed from shared state, nodes live in an arena and are referenced by id, and values convert through `FromStr` and `TryFrom`.
+- The design follows Rust, not a class hierarchy: controls are structs composed from shared state, nodes live in a tree and are referenced by id, and values convert through `FromStr` and `TryFrom`.
 - Bindings are typed and checked at compile time. There is no runtime reflection.
 - Release builds compile XAML to plain Rust in `build.rs`, so there is no parsing at startup. With `--features hot-reload`, views reload from disk while the app runs.
 - Signals propagate every change. View-models and `{Binding}` are built on them.
@@ -59,7 +59,7 @@ The workspace is layered. A crate depends only on crates in lower layers, so the
 
 | Layer | Crate | Responsibility |
 | --- | --- | --- |
-| 0 | `artic-core` | Signals, effects, `Property<T>`, the node arena and trees, the UI dispatcher |
+| 0 | `artic-core` | Signals, effects, `Property<T>`, the node tree and trees, the UI dispatcher |
 | 0 | `artic-macros` | `#[derive(XamlType)]`, `#[derive(ViewModel)]`, `#[xaml_class]` and related macros |
 | 0 | `artic-xaml` | XAML parser, markup extension grammar and spanned diagnostics |
 | 1 | `artic-registry` | Type metadata that maps XAML names to Rust types and properties |

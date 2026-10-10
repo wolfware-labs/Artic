@@ -3,7 +3,7 @@
 //! - [`reactive`]: signals, memos, effects and scopes, the only change-propagation mechanism.
 //! - [`property`]: [`Property`](property::Property), a reactive value that several sources write at
 //!   once, ranked by precedence, with metadata for invalidation and inheritance.
-//! - [`tree`]: [`TreeArena`](tree::TreeArena), which owns every node and links it into a logical and
+//! - [`tree`]: [`UiTree`](tree::UiTree), which owns every node and links it into a logical and
 //!   a visual tree, with per-node dirty flags.
 //! - [`Object`]: the trait every node type implements.
 //! - [`event`]: [`Event`](event::Event), the field type that declares a node's XAML events.
