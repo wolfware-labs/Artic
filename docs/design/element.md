@@ -109,9 +109,10 @@ pub struct ElementType {
 }
 
 // emitted for Border; downcasting is defined on dyn Any, so the object is upcast first, as
-// UiTree::get_as does:
-cast: |object| (object as &dyn Any).downcast_ref::<Border>().map(|border| border as &dyn Element),
-cast_mut: |object| (object as &mut dyn Any).downcast_mut::<Border>().map(|border| border as &mut dyn Element),
+// UiTree::get_as does. Generated code names every item by its full path, since `Any` isn't in the
+// prelude:
+cast: |object| (object as &dyn ::core::any::Any).downcast_ref::<Border>().map(|border| border as &dyn Element),
+cast_mut: |object| (object as &mut dyn ::core::any::Any).downcast_mut::<Border>().map(|border| border as &mut dyn Element),
 ```
 
 The pipeline builds a `TypeId → ElementType` map once. `cast` answers `LayoutNodes` and the render `Nodes`; `cast_mut` serves input dispatch, which calls `on_event(&mut self)`. A hand-written `Element` registers with `element_type!(TestElement)`, the line the derive emits. App controls need no registration call, as spec §7 requires. `linkme` doesn't support wasm yet; the registry has the same limit, and #241 fixes both.
