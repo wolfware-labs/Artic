@@ -20,7 +20,7 @@ A cross-platform UI framework for Rust. Views are written in XAML, all logic is 
              x:Class="app::views::LoginView"
              x:DataType="app::vm::LoginVm">
   <StackPanel Spacing="8" Margin="16">
-    <TextBox Text="{Binding Email, Mode=TwoWay}" Watermark="Email"/>
+    <TextBox Text="{Binding Email, Mode=TwoWay}" Placeholder="Email"/>
     <Button Classes="primary" Content="Sign in" Command="{Binding SignIn}"/>
   </StackPanel>
 </UserControl>
