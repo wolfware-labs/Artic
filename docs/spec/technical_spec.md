@@ -234,7 +234,7 @@ Each text `Value` keeps both forms: `text` after these rules (empty for whitespa
     <SolidColorBrush x:Key="Accent" Color="#3B82F6"/>
   </UserControl.Resources>
   <StackPanel Spacing="8" Margin="16">
-    <TextBox x:Name="email" Text="{Binding Email, Mode=TwoWay}" Watermark="Email"/>
+    <TextBox x:Name="email" Text="{Binding Email, Mode=TwoWay}" Placeholder="Email"/>
     <Button Classes="primary" Content="Sign in"
             Command="{Binding SignIn}" Click="on_click"/>
   </StackPanel>
@@ -408,7 +408,7 @@ pub struct Button {
 }
 ```
 
-- `ElementBase` holds the universal state: `Width/Height/Min*/Max*`, `Margin`, `HorizontalAlignment/VerticalAlignment`, `Visibility`, `IsEnabled`, `IsVisible`, `Opacity`, `ZIndex`, `Classes`, `Name`, `DataContext`, `Cursor`, `Focusable`, `ToolTip` (v1: text), `RenderTransform` (translate/scale/rotate).
+- `ElementBase` holds the universal state: `Width/Height/Min*/Max*`, `Margin`, `HorizontalAlignment/VerticalAlignment`, `IsEnabled`, `IsVisible`, `Opacity`, `ZIndex`, `Classes`, `Name`, `DataContext`, `Cursor`, `Focusable`, `ToolTip` (v1: text), `RenderTransform` (translate/scale/rotate).
 - Reusable state structs (`ContentState`, `TemplateState`, `SelectionState`, `RangeState`) replace the WPF base classes `ContentControl`, `TemplatedControl`, `SelectingItemsControl`, `RangeBase`; the derive implements the matching trait when it sees the field.
 - Style selectors match on the Rust type name; "derived type" matching (`Button` matching a `ToggleButton`) does not exist. A style meant for several controls lists them or uses a class.
 - App-defined controls are the same derive on the same traits; nothing in the framework is special-cased.
@@ -422,7 +422,7 @@ WPF two-pass measure/arrange with these rules:
 2. `arrange(rect)` positions children; alignment and `Margin` are applied by `ElementBase` before the element's own `arrange_override`, so control authors only place children.
 3. Infinite constraints are legal (`ScrollViewer`, `StackPanel` on its axis). An element that returns an infinite desired size is a bug and panics in debug.
 4. Layout runs top-down from the highest dirty node; a dirty leaf whose desired size does not change stops propagation (`LayoutCx::desired_size_changed`).
-5. Units are logical pixels (`f32`); the platform layer supplies the scale factor; rounding to device pixels happens in `arrange` (`UseLayoutRounding` on by default).
+5. Units are logical pixels (`f32`); the platform layer supplies the scale factor; rounding to device pixels happens in `arrange` (`SnapToPixels` on by default).
 6. Layout is synchronous and single-threaded; a `LayoutManager` runs it once per frame after effects.
 
 ### Panels (v1)
@@ -448,7 +448,7 @@ WPF two-pass measure/arrange with these rules:
 | `Button` | base + content + template | `PART_ContentPresenter` | `Click`, `Command`, `CommandParameter`, `IsDefault`, `IsCancel` |
 | `ToggleButton` | Button's parts + `ToggleState` | same | `IsChecked: Option<bool>` |
 | `CheckBox`, `RadioButton` | as ToggleButton | same | `GroupName` on radio |
-| `TextBox` | base + template + `TextEditor` | `PART_TextPresenter`, `PART_ScrollViewer` | single/multi-line, selection, IME (§12), `Watermark`, `PasswordChar`, `AcceptsReturn` |
+| `TextBox` | base + template + `TextEditor` | `PART_TextPresenter`, `PART_ScrollViewer` | single/multi-line, selection, IME (§12), `Placeholder`, `PasswordChar`, `AcceptsReturn` |
 | `Slider` | base + template + `RangeState` | `PART_Track`, `PART_Thumb` | `Minimum/Maximum/Value`, keyboard steps |
 | `ScrollViewer` | base + content + template | `PART_Content`, `PART_HScrollBar`, `PART_VScrollBar` | smooth wheel scrolling, overlay scrollbars on macOS |
 | `ItemsControl` | base + template + `ItemsState` | `PART_ItemsPresenter` | `Items`, `ItemTemplate`, `ItemsPanel`; consumes `ObservableVec` diffs |
@@ -544,8 +544,8 @@ Input becomes routed events (tunnel then bubble through the visual tree, as in W
 
 - `RoutedEvent<A>` is a static descriptor (name, routing strategy `Tunnel | Bubble | Direct`, args type). Raising one walks the visual tree from root to target (tunnel, `Preview*`) then target to root (bubble); any handler sets `args.handled = true` to stop.
 - Handlers are stored per node in a small vec keyed by event id; `handled_events_too: bool` lets a handler see already-handled events.
-- Core events (all `Preview*` variants exist for tunnel): `PointerPressed/Released/Moved/Entered/Exited/Wheel`, `Tapped`, `DoubleTapped`, `Holding` (touch long-press), `KeyDown/KeyUp`, `TextInput`, `GotFocus/LostFocus`, `Loaded/Unloaded`, `AttachedToVisualTree/Detached`, `SizeChanged`.
-- Gesture recognition (`Tapped`, `DoubleTapped`, `Holding`, pan/pinch via `GestureRecognizer` attached collection) runs on raw pointer events in the platform layer and raises the gesture event at the hit-test target, so mouse and touch produce the same high-level events.
+- Core events (all `Preview*` variants exist for tunnel): `PointerPressed/Released/Moved/Entered/Exited/Wheel`, `Tapped`, `DoubleTapped`, `LongPressed` (touch long-press), `KeyDown/KeyUp`, `TextInput`, `GotFocus/LostFocus`, `Loaded/Unloaded`, `AttachedToVisualTree/Detached`, `SizeChanged`.
+- Gesture recognition (`Tapped`, `DoubleTapped`, `LongPressed`, pan/pinch via `GestureRecognizer` attached collection) runs on raw pointer events in the platform layer and raises the gesture event at the hit-test target, so mouse and touch produce the same high-level events.
 - Control-level events (`Button.Click`, `SelectionChanged`, `TextChanged`, `Checked`) are ordinary routed events raised by the control.
 
 ### Code-behind (`x:Class`)
@@ -574,7 +574,7 @@ impl LoginView {
 - `Command` is a concrete value produced by `#[command]` on a view-model method (§6): `execute(&self, param: P)`, `enabled: Memo<bool>`, `running: Signal<bool>`. No trait object; the parameter type `P` is checked at compile time against `CommandParameter`.
 - `Button`, `MenuItem` (v2), and `KeyBinding` consume commands; `IsEnabled` follows `enabled` unless a local value overrides it.
 - `KeyBindings`: `<UserControl.KeyBindings><KeyBinding Gesture="Ctrl+S" Command="{Binding Save}"/></UserControl.KeyBindings>`; `Cmd` on macOS maps from `Ctrl` via `PlatformModifier`.
-- Handlers return `Handled::Yes | No` rather than mutating a flag on the event; routing stops on `Yes`. `HandledEventsToo` becomes `subscribe_all(…)`.
+- Handlers return `Handled::Yes | No` rather than mutating a flag on the event; routing stops on `Yes`. `HandledEventsToo` becomes `subscribe_including_handled(…)`.
 
 ### Focus and keyboard navigation
 
@@ -639,7 +639,7 @@ Implementation: `winit` provides windows, input, DPI and lifecycle on all five t
 
 - Desktop: multiple top-level windows, each with its own root, focus, and render surface; popups (`ComboBox`, tooltips) are an overlay layer inside the owning window, not OS windows, so they render identically on all targets.
 - Mobile: exactly one `Window`, sized to the screen; `Window.Content` gets `Padding` = safe area by default (`RespectSafeArea="True"`).
-- Window chrome: OS decorations by default; `ExtendClientAreaToDecorations` (custom title bar) supported on Windows and macOS in v1, Linux v2.
+- Window chrome: OS decorations by default; `ExtendIntoTitleBar` (custom title bar) supported on Windows and macOS in v1, Linux v2.
 
 ### Packaging
 
@@ -703,7 +703,7 @@ Accessibility, text editing, and input are cross-cutting: every control implemen
 - Fonts: `FontFamily` accepts a list (`"Inter, Segoe UI, sans-serif"`); resolution through `fontique` with per-platform default stacks; app fonts bundled via `Source="crate://…"`.
 - `TextBlock`: shaping, bidi, line breaking (UAX #14), `TextWrapping`, `TextTrimming`, `MaxLines`, `LineHeight`, inline runs with per-run brush/weight/style.
 - `TextBox` editing model: `TextEditor` service (in `artic-core::text`) owns the rope-like buffer, selection, undo/redo, and word/line navigation; `TextBox` is a thin control over it. Grapheme-cluster cursor movement, `Ctrl/Alt+Arrow` word jumps, platform shortcut mapping (`Cmd` on Apple).
-- IME: composition events (`ImeStart/Update/Commit`) from the platform draw the preedit inline with underline styling; the control reports the cursor rect through `set_ime` so candidate windows and the mobile keyboard position correctly. `InputScope` (`Email`, `Number`, `Url`) maps to keyboard types on mobile.
+- IME: composition events (`ImeStart/Update/Commit`) from the platform draw the preedit inline with underline styling; the control reports the cursor rect through `set_ime` so candidate windows and the mobile keyboard position correctly. `InputMode` (`Text`, `Numeric`, `Decimal`, `Tel`, `Email`, `Url`, `Search`, as HTML `inputmode`) maps to keyboard types on mobile.
 - Clipboard: plain text in v1; rich text v2. Reading is async so a web host can implement it (D24).
 
 ### Input

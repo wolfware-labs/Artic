@@ -37,9 +37,9 @@ Object UserControl [https://artic.rs/ui] 1:2..1:13
                 Value "Email" 9:44..9:49
               Mode 9:51..9:55
                 Value "TwoWay" 9:56..9:62
-          Watermark 9:65..9:74
-            Value "Email" 9:76..9:81
-        Value "" raw "\n    " 9:84..10:5
+          Placeholder 9:65..9:76
+            Value "Email" 9:78..9:83
+        Value "" raw "\n    " 9:86..10:5
         Object Button [https://artic.rs/ui] 10:6..10:12
           Classes 10:13..10:20
             Value "primary" 10:22..10:29
