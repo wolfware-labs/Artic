@@ -4,10 +4,10 @@ error[E0277]: `String` can't hold child elements
 7 |   text: String,
   |         ^^^^^^ `#[xaml]` on a field that isn't a `Property` or an `Event` makes it a collection of children
   |
-  = help: the trait `artic_registry::__private::XamlCollection` is not implemented for `String`
+  = help: the trait `XamlCollection` is not implemented for `String`
   = note: to make this field a XAML property, declare it as `Property<String>`
-help: the trait `artic_registry::__private::XamlCollection` is implemented for `Vec<artic_registry::__private::NodeId>`
- --> $WORKSPACE/crates/artic-core/src/tree/collection.rs
+help: the trait `XamlCollection` is implemented for `Vec<artic_registry::__private::NodeId>`
+ --> $WORKSPACE/crates/artic-registry/src/collection.rs
   |
   | impl XamlCollection for Vec<NodeId> {
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

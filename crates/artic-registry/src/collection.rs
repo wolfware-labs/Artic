@@ -4,7 +4,7 @@
 //! elements inside the type's element, each child's node is pushed into it, in order, through
 //! [`XamlCollection`].
 
-use crate::tree::NodeId;
+use artic_core::tree::NodeId;
 
 /// A field that receives the child elements written inside a XAML element, in order.
 ///
@@ -16,7 +16,8 @@ use crate::tree::NodeId;
 /// ```
 /// use artic_core::Object;
 /// use artic_core::property::AnyProperty;
-/// use artic_core::tree::{NodeId, TreeArena, XamlCollection};
+/// use artic_core::tree::{NodeId, TreeArena};
+/// use artic_registry::XamlCollection;
 ///
 /// #[derive(Debug)]
 /// struct Item;

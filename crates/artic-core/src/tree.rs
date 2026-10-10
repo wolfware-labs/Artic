@@ -22,10 +22,8 @@
 //! - `dirty`: which frame stages each node needs redone.
 //! - `inheritance`: how inheritable properties follow the logical tree.
 //! - `attached`: attached property values, stored on their target nodes.
-//! - `collection`: the fields that receive child elements.
 
 mod attached;
-mod collection;
 mod dirty;
 mod inheritance;
 mod links;
@@ -33,7 +31,6 @@ mod node;
 
 use crate::Object;
 use crate::arena::{Arena, SlotId};
-pub use collection::XamlCollection;
 use node::TreeNode;
 use std::any::Any;
 use std::fmt::Debug;
