@@ -122,7 +122,7 @@ pub struct Border {
 }
 ```
 
-The derive emits a `TypeInfo` static and registers it with `linkme` (distributed slice) so the registry is assembled at link time. It also writes the type's `Default` (each property created with its key and default) and `Object` impls, so the struct derives `Debug` but not `Default`. Field types decide everything: a `Property<T>` is a settable XAML property if `T: FromStr` or `T: XamlType` (looking through `Option`, and `NodeId` marks a child slot); an `Event<A>` is a XAML event; any other `#[xaml]` field must implement `XamlCollection` and accepts child elements.
+The derive emits a `TypeInfo` static and registers it with `linkme` (distributed slice) so the registry is assembled at link time. It also writes the type's `Default` (each property created with its key and default) and `Object` impls, so the struct derives `Debug` but not `Default`. Field types decide everything: a `Property<T>` is a settable XAML property if `T: FromStr` or `T: XamlType` (looking through `Option`, and `NodeId` marks a child slot); an `Event<A>` is a XAML event; a `#[xaml(flatten)]` field is a property group (`#[derive(XamlProperties)]`, such as `ElementBase`) whose properties are listed as the type's; any other `#[xaml]` field must implement `XamlCollection` and accepts child elements.
 
 Each property gets its own `PropertyKey` unless `#[xaml(key = FONT_SIZE)]` names a shared one; properties that inherit across types share their key. `affects = layout | render` and `inherits` set the metadata of a generated key.
 
@@ -393,7 +393,7 @@ pub trait Element: Object + Layoutable {          // Layoutable (§7 Layout prot
     fn hit_test(&self, cx: &HitTestCx, point: Point) -> HitTestResult { cx.bounds_test(point) }
     fn on_event(&mut self, cx: &mut EventCx, event: &InputEvent) -> Handled { Handled::No }
     fn accessibility(&self, cx: &AccessCx) -> accesskit::Node;
-    fn layers(&self) -> Layers { Layers::default() }   // transform, opacity, visibility, z-index for composition
+    fn layers(&self, size: Size) -> Layers { Layers::default() }   // transform, clip, opacity, visibility, z-index
 }
 pub trait ElementImpl {                           // what a control writes; the derive calls it
     fn measure_override(&self, cx: &mut LayoutCx, available: Size) -> Size { Size::ZERO }
@@ -401,6 +401,7 @@ pub trait ElementImpl {                           // what a control writes; the 
     fn render(&self, cx: &mut RenderCx, scene: &mut SceneBuilder) {}
     fn on_event(&mut self, cx: &mut EventCx, event: &InputEvent) -> Handled { Handled::No }
     fn accessibility(&self, cx: &AccessCx, node: &mut accesskit::Node) {}   // adds to ElementBase's node
+    fn clip(&self, size: Size) -> Option<Clip> { None }                    // clips the descendants
     fn on_apply_template(&mut self, cx: &mut TemplateCx) {}   // per-control hooks live here, defaulted; added with TemplateCx in #84
 }
 pub trait HasState<S> { fn state(&self) -> &S; fn state_mut(&mut self) -> &mut S; }
