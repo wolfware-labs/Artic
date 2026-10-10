@@ -19,6 +19,7 @@ members = [
     "crates/artic-style",
     "crates/artic-test",
     "crates/artic-theme",
+    "crates/artic-vello",
     "crates/artic-xaml",
     "crates/artic-xaml-compiler",
     "crates/artic-xaml-runtime",
@@ -47,12 +48,14 @@ artic-render = { path = "crates/artic-render", version = "0.1.0" }
 artic-style = { path = "crates/artic-style", version = "0.1.0" }
 artic-test = { path = "crates/artic-test", version = "0.1.0" }
 artic-theme = { path = "crates/artic-theme", version = "0.1.0" }
+artic-vello = { path = "crates/artic-vello", version = "0.1.0" }
 artic-xaml = { path = "crates/artic-xaml", version = "0.1.0" }
 artic-xaml-compiler = { path = "crates/artic-xaml-compiler", version = "0.1.0" }
 artic-xaml-runtime = { path = "crates/artic-xaml-runtime", version = "0.1.0" }
 
 insta = "1.49.0"
 linkme = "0.3.37"
+pollster = "1.0.1"
 pretty_assertions = "1.4.1"
 proc-macro-crate = "3.5.0"
 proc-macro2 = "1.0.107"
@@ -63,6 +66,9 @@ static_assertions = "1.1.0"
 syn = { version = "3.0.6", features = ["full"] }
 thiserror = "2.0.21"
 trybuild = "1.0.122"
+# vello is pre-1.0 (spec §13 risks): pinned exactly. Its wgpu is used through `vello::wgpu`.
+vello = "=0.11.0"
+winit = "0.30.13"
 xmlparser = "0.13.6"
 
 [workspace.lints.rust]

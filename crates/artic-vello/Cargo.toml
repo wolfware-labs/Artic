@@ -1,0 +1,24 @@
+[package]
+name = "artic-vello"
+description = "The vello renderer for artic: draws scenes on wgpu surfaces and into pixel buffers."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+artic-layout.workspace = true
+artic-render.workspace = true
+pollster.workspace = true
+thiserror.workspace = true
+vello.workspace = true
+
+[dev-dependencies]
+artic-core.workspace = true
+pretty_assertions.workspace = true
+winit.workspace = true
+
+[lints]
+workspace = true

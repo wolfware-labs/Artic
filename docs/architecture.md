@@ -83,7 +83,7 @@ The graph omits edges that a lower edge already implies (for example `artic-cont
 | `artic-theme` | `artic-controls`, `artic-style` |
 | `artic-test` | `artic-core`, `artic-registry`, `artic-layout`, `artic-render`, `artic-element`, `artic-style`, `artic-platform` |
 | `artic-winit` | `artic-core`, `artic-render`, `artic-platform` |
-| `artic-vello` | `artic-render` |
+| `artic-vello` | `artic-layout`, `artic-render` |
 | `artic` | every app-facing crate; `artic-xaml-runtime` only with the `hot-reload` or `runtime-xaml` feature |
 
 ## Rules
