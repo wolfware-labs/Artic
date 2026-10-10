@@ -1,9 +1,21 @@
 name: CI
 
+# Minutes on private repositories are billed per job rounded up to the minute, with macOS at 10×
+# and Windows at 2× the Linux rate. So pull requests run only the Linux jobs, Windows and macOS run
+# after merging to main (or by hand), and the Rust jobs skip changes that touch no Rust.
+#
+# If the change filter itself fails, every job runs: a broken filter must cost minutes, never skip
+# a check, since a skipped job satisfies a required one.
+#
+# The "Protect main" ruleset requires every job below by name. A skipped job still satisfies its
+# required check, but only under its exact name, which is why the test jobs aren't a matrix: a
+# skipped matrix job reports the unexpanded `Test (${{ matrix.os }})`.
+
 on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -11,28 +23,77 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # Smaller target directories: faster to link and to cache.
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
 
 jobs:
-  test:
-    name: Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    # The filter lists a pull request's files through the API.
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      dependencies: ${{ steps.filter.outputs.dependencies }}
     steps:
       - uses: actions/checkout@v7
-      - name: Install toolchain from rust-toolchain.toml
-        run: rustup toolchain install && rustc --version
-      - uses: actions/cache@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name != 'workflow_dispatch'
         with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-${{ github.job }}-
+          filters: |
+            rust:
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'rustfmt.toml'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/**'
+            dependencies:
+              - '**/Cargo.toml'
+              - 'Cargo.lock'
+              - 'deny.toml'
+              - '.github/workflows/ci.yml'
+
+  test-ubuntu:
+    name: Test (ubuntu-latest)
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.rust == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust
+      - name: Build
+        run: cargo build --workspace --all-targets
+      - name: Test
+        run: cargo test --workspace
+
+  test-windows:
+    name: Test (windows-latest)
+    needs: changes
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && (needs.changes.result != 'success' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.rust == 'true') }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust
+      - name: Build
+        run: cargo build --workspace --all-targets
+      - name: Test
+        run: cargo test --workspace
+
+  test-macos:
+    name: Test (macos-latest)
+    needs: changes
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && (needs.changes.result != 'success' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.rust == 'true') }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust
       - name: Build
         run: cargo build --workspace --all-targets
       - name: Test
@@ -40,20 +101,12 @@ jobs:
 
   lint:
     name: Lint
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.rust == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Install toolchain from rust-toolchain.toml
-        run: rustup toolchain install && rustc --version
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-${{ github.job }}-
+      - uses: ./.github/actions/setup-rust
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
@@ -62,30 +115,29 @@ jobs:
 
   docs:
     name: Docs
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.rust == 'true') }}
     runs-on: ubuntu-latest
     env:
       RUSTDOCFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v7
-      - name: Install toolchain from rust-toolchain.toml
-        run: rustup toolchain install && rustc --version
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-${{ github.job }}-
+      - uses: ./.github/actions/setup-rust
       - name: Build docs
         run: cargo doc --workspace --no-deps
 
   deny:
     name: Deny
+    needs: changes
+    # Advisories appear without any change here, so main always checks; pull requests only when
+    # their dependencies change.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.dependencies == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      # A prebuilt binary: seconds, instead of building cargo-deny's Docker image from Docker Hub.
+      - uses: taiki-e/install-action@v2
         with:
-          command: check
+          tool: cargo-deny
+      - name: Check
+        run: cargo deny check

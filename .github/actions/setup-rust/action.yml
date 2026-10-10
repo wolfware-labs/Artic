@@ -1,0 +1,15 @@
+name: Set up Rust
+description: Installs the toolchain from rust-toolchain.toml and restores the dependency cache.
+
+runs:
+  using: composite
+  steps:
+    - name: Install toolchain from rust-toolchain.toml
+      shell: bash
+      run: rustup toolchain install && rustc --version
+    # Caches dependencies, not the workspace's own build output, and prunes what's stale. Only
+    # `main` saves: pull requests restore main's cache but never write their own, which would fill
+    # the repository's 10 GB cache quota and evict main's.
+    - uses: Swatinem/rust-cache@v2
+      with:
+        save-if: ${{ github.ref == 'refs/heads/main' }}
