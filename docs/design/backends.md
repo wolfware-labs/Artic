@@ -91,11 +91,12 @@ A host offers each surface as a `Target`, split by how a renderer gets pixels on
 ```rust
 pub enum Target<'a> {
   /// Native handles (`raw-window-handle`): OS windows, DRM/GBM screens, browser canvases. The
-  /// renderer creates its swapchain from them and presents.
+  /// renderer creates its swapchain from them and presents. They stay valid until the host reports
+  /// the surface lost, so a swapchain may outlive a frame.
   Handles(&'a dyn RawHandles),
-  /// A CPU pixel buffer (size, stride, format): framebuffers, offscreen tests, `putImageData`.
-  /// The renderer fills it; the host presents it.
-  Pixels(&'a mut PixelBuffer),
+  /// A CPU pixel buffer (data, stride, format; the size is the surface's): framebuffers, offscreen
+  /// tests, `putImageData`. The renderer fills it; the host presents it.
+  Pixels(PixelBuffer<'a>),
   /// Anything else, for a host and renderer from one adapter crate that agree on the type.
   Custom(&'a mut dyn Any),
 }
@@ -111,13 +112,26 @@ pub enum Target<'a> {
 
 ```rust
 pub trait Renderer {
-  /// Draws `scene` on `target`, whose pixels are `scale` times the scene's logical units.
-  fn render(&mut self, scene: &Scene, target: Target<'_>, scale: f32) -> Result<(), RenderError>;
+  /// Whether it can draw on targets of `kind`; `artic::run` asks before the host starts.
+  fn accepts(&self, kind: TargetKind) -> bool;
 
-  /// Releases what the renderer holds for a surface that's gone. Default: nothing.
+  /// Draws `scene` on `surface`.
+  fn render(&mut self, scene: &Scene, surface: Surface<'_>) -> Result<(), RenderError>;
+
+  /// Releases what the renderer holds for a surface that's gone, such as its swapchain.
   fn surface_lost(&mut self, surface: SurfaceId) {}
 }
+
+/// One surface to draw on this frame.
+pub struct Surface<'a> {
+  pub id: SurfaceId,        // which surface: a renderer keeps a swapchain per surface
+  pub size: PhysicalSize,   // in device pixels: a swapchain needs it, and handles don't carry it
+  pub scale: f32,           // device pixels per logical unit
+  pub target: Target<'a>,
+}
 ```
+
+(Implementing #33 refined the first sketch, `render(&Scene, Target, scale)`: a renderer with several windows needs to know which surface it draws on and at what size, and `artic::run`'s pairing check needs `accepts`.)
 
 - **Text is shaped by artic,** with `parley`, in its own crate. Layout measures text through it, and the scene carries **positioned glyph runs**: font data, glyph ids, positions and size. A renderer draws glyphs; it never shapes, breaks lines or measures. vello and skia draw glyph runs from font data directly, and a CPU renderer gets outlines from a `skrifa` helper artic provides. (The previous spec's `Renderer::measure_text` is gone, and layout no longer depends on which renderer runs.)
 - **Images are shared data** (`Arc<ImageData>`) with a stable identity. A renderer uploads an image the first time it sees it and caches it. (`Renderer::create_image` is gone.)
@@ -201,7 +215,7 @@ Compared with today's §2 and `docs/architecture.md`:
 | Before | After |
 | --- | --- |
 | `PlatformHost` with 14 required methods | `Host`: `run`, plus capabilities whose default is `None` |
-| `Renderer::begin_frame`, `render`, `resize`, `create_image`, `measure_text` | `Renderer::render(&Scene, Target, scale)` and `surface_lost` |
+| `Renderer::begin_frame`, `render`, `resize`, `create_image`, `measure_text` | `Renderer::accepts`, `render(&Scene, Surface)` and `surface_lost` |
 | A "backend-neutral surface handle" | `Target::Handles`, `Pixels` or `Custom` |
 | `primary_input()` from the host | input mode tracked by artic |
 | `Focus` moves in `Tab` order | actions, with directional focus from geometry |
