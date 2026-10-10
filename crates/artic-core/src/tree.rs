@@ -15,13 +15,20 @@
 //!
 //! # How this module is organized
 //!
-//! `TreeArena`'s methods are split by concern, one file each:
+//! `TreeArena` is a front over parts with one job each, one file per part:
 //!
-//! - `objects`: the objects themselves, and whether an id is live.
-//! - `hierarchy`: the structure of both trees, and the rules every edit follows.
+//! - `objects`: the objects themselves, and the only part that knows whether an id is live.
+//! - `hierarchy`: one tree's parent and child links; the arena keeps one per tree.
 //! - `dirty`: which frame stages each node needs redone.
-//! - `inheritance`: how inheritable properties follow the logical tree.
-//! - `attached`: attached property values, stored on their target nodes.
+//! - `attached`: attached property values, stored per node.
+//! - `inheritance`: how inheritable properties follow the logical tree, as functions over the
+//!   objects and the logical links.
+//!
+//! The other parts are indexed by slot, so the arena checks an id in `objects` before it reaches
+//! them. The arena also keeps the rules that span parts: a new node gets a place in every part and
+//! its properties share its dirty flags; a freed node leaves every part; a logical edit reconnects
+//! inheritance; a visual edit marks the parent for layout; a new attached value shares its node's
+//! dirty flags. Each file holds the arena's public methods for its part next to the part.
 
 mod attached;
 mod dirty;
