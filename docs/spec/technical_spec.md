@@ -113,7 +113,7 @@ XAML needs to name types and properties by string; Rust does not. The registry e
 #[derive(Debug, XamlType)]
 #[xaml(namespace = "https://artic.rs/ui", content = child)]
 pub struct Border {
-    pub base: ElementBase,                       // composition, not inheritance
+    #[xaml(flatten)] pub base: ElementBase,      // composition; its properties are listed as Border's
     #[xaml] pub child: Property<Option<NodeId>>,
     #[xaml(default = Thickness::ZERO, affects = layout)] pub padding: Property<Thickness>,
     #[xaml(affects = render)] pub background: Property<Option<Brush>>,
@@ -130,7 +130,7 @@ Each property gets its own `PropertyKey` unless `#[xaml(key = FONT_SIZE)]` names
 
 | Item | Fields | Consumer |
 | --- | --- | --- |
-| `TypeInfo` | XAML name, namespace, Rust path, `new: fn(&mut Arena) -> NodeId`, content field, `is_collection`, `is_markup_extension` | compiler, loader |
+| `TypeInfo` | XAML name, namespace, Rust path, `new: fn(&mut Arena) -> NodeId`, content field, `is_collection`, `is_markup_extension`, `groups` (flattened property groups such as `ElementBase`) | compiler, loader |
 | `PropertyInfo` | name, Rust field path, value type path, `parse: fn(&str) -> Result<Value, ParseError>` (from `FromStr`), `set: fn(&mut Arena, NodeId, Value)`, `affects: Layout \| Render`, `inherits` | compiler emits `node.field.set(v)` directly; loader calls `set` |
 | `AttachedPropertyInfo` | owner, name, value type, target (`AttachedTarget::ChildrenOfOwner` for `Grid.Row`, `Any` for `Accessibility.Name`) | both |
 | `EventInfo` | name, args type path, `subscribe: fn(&mut Arena, NodeId, HandlerId)` | both |
@@ -388,30 +388,34 @@ Two trees, as in WPF/Avalonia: the **logical tree** (what the XAML declared; sco
 There is no control class hierarchy. A control is a struct that embeds the state it needs and implements the traits for the behavior it has; `#[derive(Element)]` delegates the shared parts to the embedded `ElementBase`.
 
 ```rust
-pub trait Element: XamlObject {
-    fn measure(&self, cx: &mut LayoutCx, available: Size) -> Size;
-    fn arrange(&self, cx: &mut LayoutCx, final_rect: Rect);
+pub trait Element: Object + Layoutable {          // Layoutable (§7 Layout protocol) brings measure/arrange
     fn render(&self, cx: &mut RenderCx, scene: &mut SceneBuilder);
     fn hit_test(&self, cx: &HitTestCx, point: Point) -> HitTestResult { cx.bounds_test(point) }
     fn on_event(&mut self, cx: &mut EventCx, event: &InputEvent) -> Handled { Handled::No }
     fn accessibility(&self, cx: &AccessCx) -> accesskit::Node;
 }
+pub trait ElementImpl {                           // what a control writes; the derive calls it
+    fn measure_override(&self, cx: &mut LayoutCx, available: Size) -> Size { Size::ZERO }
+    fn arrange_override(&self, cx: &mut LayoutCx, size: Size) {}
+    fn render(&self, cx: &mut RenderCx, scene: &mut SceneBuilder) {}
+}
+pub trait HasState<S> { fn state(&self) -> &S; fn state_mut(&mut self) -> &mut S; }
 pub trait Templated: Element { fn template(&self) -> &Property<Option<ControlTemplate>>; fn on_apply_template(&mut self, cx: &mut TemplateCx); }
 pub trait HasContent: Element { fn content(&self) -> &Property<Content>; }
 pub trait Selecting: Element { fn selection(&self) -> &Selection; }
 
 #[derive(Element, XamlType, Default)]
 pub struct Button {
-    pub base: ElementBase,
-    pub content: ContentState,       // gives HasContent via derive delegation
-    pub template: TemplateState,     // gives Templated
+    #[xaml(flatten)] pub base: ElementBase,
+    #[element(state)] pub content: ContentState,    // HasState<ContentState>, so HasContent
+    #[element(state)] pub template: TemplateState,  // HasState<TemplateState>, so Templated
     #[xaml] pub click: Event<ClickEvent>,
     #[xaml] pub command: Property<Option<Command>>,
 }
 ```
 
-- `ElementBase` holds the universal state: `Width/Height/Min*/Max*`, `Margin`, `HorizontalAlignment/VerticalAlignment`, `IsEnabled`, `IsVisible`, `Opacity`, `ZIndex`, `Classes`, `Name`, `DataContext`, `Cursor`, `Focusable`, `ToolTip` (v1: text), `RenderTransform` (translate/scale/rotate).
-- Reusable state structs (`ContentState`, `TemplateState`, `SelectionState`, `RangeState`) replace the WPF base classes `ContentControl`, `TemplatedControl`, `SelectingItemsControl`, `RangeBase`; the derive implements the matching trait when it sees the field.
+- `ElementBase` holds the universal state: `Width/Height/Min*/Max*`, `Margin`, `HorizontalAlignment/VerticalAlignment`, `Visibility` (`Visible`, `Hidden` keeps its space, `Collapsed` takes none), `IsEnabled`, `Opacity`, `ZIndex`, `Classes`, `Name`, `DataContext`, `Cursor`, `Focusable`, `ToolTip` (v1: text), `RenderTransform` (translate/scale/rotate).
+- Reusable state structs (`ContentState`, `TemplateState`, `SelectionState`, `RangeState`) replace the WPF base classes `ContentControl`, `TemplatedControl`, `SelectingItemsControl`, `RangeBase`. The derive gives a struct `HasState<S>` for each `#[element(state)]` field, and each trait is implemented for every `HasState` of its state by a blanket impl. See [the elements design](../design/element.md).
 - Style selectors match on the Rust type name; "derived type" matching (`Button` matching a `ToggleButton`) does not exist. A style meant for several controls lists them or uses a class.
 - App-defined controls are the same derive on the same traits; nothing in the framework is special-cased.
 - `Content` is an enum, not `Box<dyn Any>`: `Text(String)`, `Node(NodeId)`, `Data(DataRef)` (a view-model node plus a `DataTemplate` lookup).
