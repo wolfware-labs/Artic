@@ -1,3 +1,11 @@
+//! Attached property values, stored on the nodes they're set on.
+//!
+//! An attached property, such as `Grid.Row`, is declared by one type and set on nodes of others, so
+//! the node has no field for it. Its value lives in the node's attached list, keyed by its
+//! [`AttachedKey`]: created at the key's default the first time it's
+//! needed, read as that default without storing anything, and connected to the node's dirty flags
+//! like a field.
+
 use crate::property::{AnyProperty, AttachedKey, KeyId, Property};
 use crate::tree::{NodeId, TreeArena};
 use std::rc::Rc;
