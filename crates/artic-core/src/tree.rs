@@ -31,6 +31,7 @@ mod node;
 
 use crate::Object;
 use crate::arena::{Arena, SlotId};
+use attached::AttachedValues;
 use dirty::DirtyFlags;
 use node::TreeNode;
 use std::any::Any;
@@ -71,6 +72,7 @@ use std::rc::Rc;
 pub struct TreeArena {
   inner: Arena<TreeNode>,
   dirty_flags: DirtyFlags,
+  attached_values: AttachedValues,
 }
 
 /// A handle to a node stored in a [`TreeArena`].
@@ -122,6 +124,7 @@ impl TreeArena {
     Self {
       inner: Arena::new(),
       dirty_flags: DirtyFlags::new(),
+      attached_values: AttachedValues::new(),
     }
   }
 
@@ -203,6 +206,7 @@ impl TreeArena {
   pub fn free(&mut self, node_id: NodeId) -> Option<Box<dyn Object>> {
     let node = self.inner.free(node_id.0)?;
     node.object.visit_properties(&mut |property| property.inherit_from(None));
+    self.attached_values.remove(node_id.slot());
     Some(node.object)
   }
 
