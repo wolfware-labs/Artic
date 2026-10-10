@@ -37,6 +37,8 @@ pub trait ElementImpl {
 }
 ```
 
+`ElementImpl` is also where every per-control hook goes, each with a default: `on_apply_template` (#84) joins it rather than living on `Templated`, because state traits come from blanket impls (section 3), which a control can't override.
+
 - The supertrait is `Object`, the trait in `artic-core`; spec §7's `XamlObject` is renamed to match. Not every node comes from markup: builder-made and test nodes implement `Object` too.
 - `Layoutable` (#41) brings `measure` and `arrange`, so `Element` adds only what layout doesn't need.
 - `Element` is what the pipeline calls; `ElementImpl` is what the author writes. The derive connects them, so an author can't skip the shared work by overriding the wrong method. A control with no content writes `impl ElementImpl for Spacer {}`.
@@ -49,8 +51,9 @@ pub trait ElementImpl {
 | --- | --- | --- |
 | `measure` | `Collapsed`: returns zero, children not measured. Otherwise #41's `measure_with`: margin off, limits on | `measure_override` |
 | `arrange` | #41's `arrange_with`: margin, limits, alignment | `arrange_override` with the content's size |
-| `render` | `Hidden` and `Collapsed` draw nothing | `ElementImpl::render` |
-| `hit_test`, `on_event` | the trait defaults | |
+| `render` | | `ElementImpl::render`; a hidden subtree is skipped by composition (section 7) |
+| `hit_test` | not `Visible`: a miss. Otherwise the trait default, `cx.bounds_test(point)` | |
+| `on_event` | the trait default | |
 | `accessibility` | the default node (section 7) | |
 
 A struct without `base: ElementBase` fails to compile with an error that names the missing field.
@@ -72,10 +75,15 @@ pub struct Button {
 }
 
 // next to ContentState, in artic-controls (#84):
+pub trait HasContent: Element + HasState<ContentState> {
+  fn content(&self) -> &Property<Content> {
+    &HasState::<ContentState>::state(self).content
+  }
+}
 impl<T: Element + HasState<ContentState>> HasContent for T {}
 ```
 
-The rule, as documented on the derive: each `#[element(state)]` field of type `S` gives the struct `HasState<S>`, and the traits built on a state are implemented through `HasState<S>`. There is no table of type names in the macro, so aliases work, and any crate, apps included, can add a state struct and its trait without changing `artic-macros`.
+The rule, as documented on the derive: each `#[element(state)]` field of type `S` gives the struct `HasState<S>`, and the traits built on a state are implemented through `HasState<S>` by a blanket impl. A state trait therefore holds only methods its state fully determines, each with a default that reads the state; it names the state type (`HasState::<ContentState>::state(self)`) because a struct can have several. A blanket impl can't be overridden for one type, so anything a control customizes is an `ElementImpl` hook instead (section 2). There is no table of type names in the macro, so aliases work, and any crate, apps included, can add a state struct and its trait without changing `artic-macros`.
 
 ## 4. Finding a node's `Element`
 
@@ -85,13 +93,15 @@ The rule, as documented on the derive: each `#[element(state)]` field of type `S
 pub struct ElementType {
   pub type_id: fn() -> TypeId,
   pub cast: fn(&dyn Object) -> Option<&dyn Element>,
+  pub cast_mut: fn(&mut dyn Object) -> Option<&mut dyn Element>,
 }
 
 // emitted for Border:
 cast: |object| object.downcast_ref::<Border>().map(|border| border as &dyn Element),
+cast_mut: |object| object.downcast_mut::<Border>().map(|border| border as &mut dyn Element),
 ```
 
-The pipeline builds a `TypeId → cast` map once and answers `LayoutNodes` and the render `Nodes` from it. A hand-written `Element` registers with `element_type!(TestElement)`, the line the derive emits. App controls need no registration call, as spec §7 requires. `linkme` doesn't support wasm yet; the registry has the same limit, and #241 fixes both.
+The pipeline builds a `TypeId → ElementType` map once. `cast` answers `LayoutNodes` and the render `Nodes`; `cast_mut` serves input dispatch, which calls `on_event(&mut self)`. A hand-written `Element` registers with `element_type!(TestElement)`, the line the derive emits. App controls need no registration call, as spec §7 requires. `linkme` doesn't support wasm yet; the registry has the same limit, and #241 fixes both.
 
 ## 5. `ElementBase`
 
@@ -156,7 +166,9 @@ Lookups search the type's own properties, then each group, and the compiler writ
 
 `ElementBase` builds the default accesskit node: the arranged bounds, hidden unless `Visible`, disabled when `IsEnabled` is false. Controls add their role and name on top (#161 adds the attached properties).
 
-`Opacity`, `RenderTransform` and `Visibility` feed #33's per-node layers through the render `Nodes` answer, not each control's `render`: opacity becomes the node's opacity layer, the transform its transform layer, and `Hidden` or `Collapsed` records nothing.
+`Opacity`, `RenderTransform` and `Visibility` feed #33's per-node layers through the render `Nodes` answer, not each control's `render`: opacity becomes the node's opacity layer and the transform its transform layer. Visibility needs a layer of its own: today `Compositor::visit` always visits a node's visual children, so hiding only the node's own drawing would still draw its children. `Layers` gains `visible: bool`, default `true`, and `visit` skips a node with `visible: false` together with its whole subtree. `Hidden` and `Collapsed` answer `visible: false`.
+
+Hit testing follows the same rule: the derive's `hit_test` misses when the element isn't `Visible`, and the hit-test walk (#74) doesn't descend into a node that isn't `Visible`.
 
 ## 8. Pull requests
 
@@ -165,7 +177,7 @@ Lookups search the type's own properties, then each group, and the compiler writ
 | A | `artic-element`: `Element`, `ElementImpl`, `HasState`, `ElementType` and `element_type!`, the placeholder contexts; `InputEvent` in `artic-core` | a hand-written element is laid out through `LayoutManager` by way of the cast table |
 | B | `ElementBase` with `#[derive(XamlProperties)]`, the enums, `#[xaml(flatten)]` in `derive(XamlType)` and `PropertyGroupInfo`, the measure and arrange outline | `element_base_properties_registered`, `margin_and_alignment_layout`, `min_max_clamp_desired_size`, `collapsed_takes_no_space` |
 | C | `#[derive(Element)]`: the outline from section 3, the missing-`base` error, `#[element(state)]` | the two trybuild cases: missing `base`, and a test-only state giving a test trait through a blanket impl |
-| D | the default accesskit node; opacity, transform and visibility in composition | `base_accessibility_node`; a pixel test where opacity changes the drawn color |
+| D | the default accesskit node; opacity, transform and visibility in composition, with `Layers.visible` | `base_accessibility_node`; a pixel test where opacity changes the drawn color; a hidden parent's child isn't drawn |
 
 ## 9. Spec changes
 

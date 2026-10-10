@@ -398,13 +398,16 @@ pub trait ElementImpl {                           // what a control writes; the 
     fn measure_override(&self, cx: &mut LayoutCx, available: Size) -> Size { Size::ZERO }
     fn arrange_override(&self, cx: &mut LayoutCx, size: Size) {}
     fn render(&self, cx: &mut RenderCx, scene: &mut SceneBuilder) {}
+    fn on_apply_template(&mut self, cx: &mut TemplateCx) {}   // per-control hooks live here, defaulted
 }
 pub trait HasState<S> { fn state(&self) -> &S; fn state_mut(&mut self) -> &mut S; }
-pub trait Templated: Element { fn template(&self) -> &Property<Option<ControlTemplate>>; fn on_apply_template(&mut self, cx: &mut TemplateCx); }
-pub trait HasContent: Element { fn content(&self) -> &Property<Content>; }
-pub trait Selecting: Element { fn selection(&self) -> &Selection; }
+// State traits: only methods the state determines, defaulted, given by blanket impls
+pub trait Templated: Element + HasState<TemplateState> { fn template(&self) -> &Property<Option<ControlTemplate>> { … } }
+pub trait HasContent: Element + HasState<ContentState> { fn content(&self) -> &Property<Content> { … } }
+pub trait Selecting: Element + HasState<SelectionState> { fn selection(&self) -> &Selection { … } }
+impl<T: Element + HasState<ContentState>> HasContent for T {}   // and likewise for the others
 
-#[derive(Element, XamlType, Default)]
+#[derive(Element, XamlType)]                      // XamlType writes Default
 pub struct Button {
     #[xaml(flatten)] pub base: ElementBase,
     #[element(state)] pub content: ContentState,    // HasState<ContentState>, so HasContent
