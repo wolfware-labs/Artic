@@ -1,3 +1,4 @@
+use crate::property::Affects;
 use crate::tree::node::TreeNode;
 use crate::tree::{NodeId, Tree, TreeArena};
 use std::collections::HashSet;
@@ -195,6 +196,7 @@ impl TreeArena {
   fn attach(&mut self, tree: Tree, parent: NodeId, index: usize, child: NodeId) {
     self.node_mut(parent).links_mut(tree).children.insert(index, child);
     self.node_mut(child).links_mut(tree).parent = Some(parent);
+    self.children_changed(tree, parent);
     if tree == Tree::Logical {
       self.resolve_inheritance(child);
     }
@@ -204,7 +206,15 @@ impl TreeArena {
   fn unlink(&mut self, tree: Tree, node: NodeId) -> Option<NodeId> {
     let parent = self.node_mut(node).links_mut(tree).parent.take()?;
     self.node_mut(parent).links_mut(tree).children.retain(|child| *child != node);
+    self.children_changed(tree, parent);
     Some(parent)
+  }
+
+  /// A node's visual children size and place it, so changing them means laying it out again.
+  fn children_changed(&mut self, tree: Tree, parent: NodeId) {
+    if tree == Tree::Visual {
+      self.mark_dirty(parent, Affects::LAYOUT);
+    }
   }
 
   #[track_caller]
@@ -227,7 +237,7 @@ impl TreeArena {
 #[cfg(test)]
 mod tests {
   use crate::Object;
-  use crate::property::AnyProperty;
+  use crate::property::{Affects, AnyProperty};
   use crate::tree::{NodeId, Tree, TreeArena};
   use pretty_assertions::assert_eq;
   use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -237,6 +247,13 @@ mod tests {
 
   impl Object for Control {
     fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  }
+
+  /// Clears every node's dirty flags.
+  fn clean(arena: &mut TreeArena, ids: &[NodeId]) {
+    for id in ids {
+      arena.clear_dirty(*id, Affects::LAYOUT | Affects::RENDER);
+    }
   }
 
   /// Allocates `count` nodes and returns their ids, in order.
@@ -512,5 +529,32 @@ mod tests {
     arena.free_subtree(root);
 
     assert!(arena.is_empty());
+  }
+
+  // Adding, moving or removing a visual child marks the parent for layout; logical edits don't.
+  #[test]
+  fn visual_edits_mark_the_parent_for_layout() {
+    let mut arena = TreeArena::new();
+    let ids = nodes(&mut arena, 3);
+    let [panel, other, child] = ids[..] else { unreachable!() };
+    clean(&mut arena, &ids);
+
+    arena.add_child(Tree::Logical, panel, child);
+    assert_eq!(arena.dirty(panel), Affects::NONE, "logical edits leave layout alone");
+
+    arena.add_child(Tree::Visual, panel, child);
+    assert_eq!(arena.dirty(panel), Affects::LAYOUT);
+
+    clean(&mut arena, &ids);
+    arena.add_child(Tree::Visual, other, child);
+    assert_eq!(
+      (arena.dirty(panel), arena.dirty(other)),
+      (Affects::LAYOUT, Affects::LAYOUT),
+      "both parents of a move"
+    );
+
+    clean(&mut arena, &ids);
+    arena.detach(Tree::Visual, child);
+    assert_eq!(arena.dirty(other), Affects::LAYOUT);
   }
 }
