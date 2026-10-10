@@ -1,3 +1,14 @@
+//! The structure of the two trees: who is whose parent and child.
+//!
+//! Every node is in the logical tree and the visual tree at once, with a parent and ordered children
+//! in each. This file adds, inserts, moves, detaches and frees nodes, and walks children, ancestors
+//! and descendants, always for the [`Tree`] it's given.
+//!
+//! All edits go through two private functions, `attach` and `unlink`, so the rules hold for every
+//! public one: an edit can't make a cycle or reach a freed node, an edit in the logical tree
+//! reconnects inherited properties (see `inheritance`), and an edit in the visual tree marks the
+//! parent for layout (see `dirty`), since its children decide its size.
+
 use crate::property::Affects;
 use crate::tree::node::TreeNode;
 use crate::tree::{NodeId, Tree, TreeArena};

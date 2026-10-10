@@ -1,3 +1,10 @@
+//! Which frame stages each node needs redone.
+//!
+//! A node's dirty flags are an [`Affects`]: layout, render, or both. A new node starts with both. A
+//! property change adds the stages its key affects, through flags the node shares with its
+//! properties; an edit to a node's visual children adds layout. The frame stages clear what they
+//! redo: layout clears [`Affects::LAYOUT`], rendering clears [`Affects::RENDER`].
+
 use crate::property::Affects;
 use crate::tree::{NodeId, TreeArena};
 
