@@ -173,7 +173,7 @@ mod tests {
   use crate::{LayoutCx, LayoutManager, LayoutNodes, Layoutable};
   use artic_core::Object;
   use artic_core::property::AnyProperty;
-  use artic_core::tree::{NodeId, TreeArena};
+  use artic_core::tree::{NodeId, UiTree};
   use pretty_assertions::assert_eq;
   use std::cell::Cell;
 
@@ -274,8 +274,8 @@ mod tests {
   struct Elements;
 
   impl LayoutNodes for Elements {
-    fn layoutable<'a>(&self, arena: &'a TreeArena, node: NodeId) -> Option<&'a dyn Layoutable> {
-      arena.get_as::<Element>(node).map(|element| element as &dyn Layoutable)
+    fn layoutable<'a>(&self, tree: &'a UiTree, node: NodeId) -> Option<&'a dyn Layoutable> {
+      tree.get_as::<Element>(node).map(|element| element as &dyn Layoutable)
     }
   }
 
@@ -283,21 +283,21 @@ mod tests {
   // content: what it gets is the content's rectangle, not the slot.
   #[test]
   fn margin_and_alignment_applied_before_arrange_override() {
-    let mut arena = TreeArena::new();
+    let mut tree = UiTree::new();
     let sizing = Sizing {
       margin: Thickness::new(10.0, 20.0, 10.0, 20.0),
       horizontal: HorizontalAlignment::Right,
       vertical: VerticalAlignment::Center,
       ..Sizing::default()
     };
-    let element = arena.alloc(Box::new(Element {
+    let element = tree.alloc(Box::new(Element {
       sizing,
       inner_rect: Cell::new(None),
     }));
 
-    LayoutManager::default().run(&mut arena, &Elements, element, SLOT.size(), 1.0, false);
+    LayoutManager::default().run(&mut tree, &Elements, element, SLOT.size(), 1.0, false);
 
-    let inner = arena.get_as::<Element>(element).expect("the element").inner_rect.get();
+    let inner = tree.get_as::<Element>(element).expect("the element").inner_rect.get();
     assert_eq!(inner, Some(Rect::new(330.0, 140.0, 60.0, 20.0)));
   }
 }

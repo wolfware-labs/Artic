@@ -4,13 +4,13 @@ use std::fmt::{Debug, Formatter, Result};
 use std::str::FromStr;
 
 pub use crate::{
-  ArgInfo, AttachedPropertyInfo, AttachedTarget, EventInfo, MarkupExtensionInfo, PropertyInfo, TypeInfo, Whitespace, XamlType,
-  register_type,
+  ArgInfo, AttachedPropertyInfo, AttachedTarget, EventInfo, MarkupExtensionInfo, PropertyInfo, TypeInfo, Whitespace,
+  XamlCollection, XamlType, register_type,
 };
 pub use artic_core::Object;
 pub use artic_core::event::Event;
 pub use artic_core::property::{Affects, AnyProperty, AttachedKey, ParseEnumError, Property, PropertyKey};
-pub use artic_core::tree::{NodeId, TreeArena, XamlCollection};
+pub use artic_core::tree::{NodeId, UiTree};
 pub use std::marker::PhantomData;
 
 /// Wraps a property's value type for the check below.

@@ -52,8 +52,8 @@ use syn::{DeriveInput, parse_macro_input};
 ///
 /// ```ignore
 /// pub const ROW: &'static AttachedKey<usize>;
-/// pub fn set_row(arena: &mut TreeArena, node: impl Into<NodeId>, row: usize);
-/// pub fn row(arena: &TreeArena, node: impl Into<NodeId>) -> usize;
+/// pub fn set_row(tree: &mut UiTree, node: impl Into<NodeId>, row: usize);
+/// pub fn row(tree: &UiTree, node: impl Into<NodeId>) -> usize;
 /// ```
 ///
 /// A helper named like one of the type's properties is an error: rename one with `name = ...`.

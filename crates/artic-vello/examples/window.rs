@@ -7,7 +7,7 @@
 
 use artic_core::Object;
 use artic_core::property::AnyProperty;
-use artic_core::tree::{NodeId, Tree, TreeArena};
+use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_layout::geometry::{Rect, Transform};
 use artic_render::{Clip, Color, Compositor, Layers, Nodes, PhysicalSize, Renderer, SceneBuilder, Surface, SurfaceId, Target};
 use artic_vello::VelloRenderer;
@@ -53,7 +53,7 @@ struct Scene {
 }
 
 impl Nodes for Scene {
-  fn layers(&self, _arena: &TreeArena, node: NodeId) -> Layers {
+  fn layers(&self, _arena: &UiTree, node: NodeId) -> Layers {
     if node == self.panel {
       Layers {
         transform: Some(Transform::translate(40.0, 40.0)),
@@ -77,7 +77,7 @@ impl Nodes for Scene {
     }
   }
 
-  fn record(&mut self, _arena: &TreeArena, node: NodeId, builder: &mut SceneBuilder) {
+  fn record(&mut self, _arena: &UiTree, node: NodeId, builder: &mut SceneBuilder) {
     if node == self.background {
       builder.fill_rect(Rect::new(0.0, 0.0, self.width, self.height), Color::rgb(24, 26, 33));
     } else if node == self.panel {
@@ -96,7 +96,7 @@ impl Nodes for Scene {
 struct Demo {
   renderer: VelloRenderer,
   compositor: Compositor,
-  arena: TreeArena,
+  tree: UiTree,
   scene: Scene,
   window: Option<Arc<Window>>,
   start: Instant,
@@ -104,16 +104,16 @@ struct Demo {
 
 impl Demo {
   fn new(renderer: VelloRenderer) -> Demo {
-    let mut arena = TreeArena::new();
-    let [background, panel, header, overlay, spinner] = [(); 5].map(|()| arena.alloc(Box::new(Node)));
-    arena.add_child(Tree::Visual, background, panel);
-    arena.add_child(Tree::Visual, panel, header);
-    arena.add_child(Tree::Visual, background, overlay);
-    arena.add_child(Tree::Visual, background, spinner);
+    let mut tree = UiTree::new();
+    let [background, panel, header, overlay, spinner] = [(); 5].map(|()| tree.alloc(Box::new(Node)));
+    tree.add_child(TreeKind::Visual, background, panel);
+    tree.add_child(TreeKind::Visual, panel, header);
+    tree.add_child(TreeKind::Visual, background, overlay);
+    tree.add_child(TreeKind::Visual, background, spinner);
     Demo {
       renderer,
       compositor: Compositor::default(),
-      arena,
+      tree,
       scene: Scene {
         background,
         panel,
@@ -137,7 +137,7 @@ impl Demo {
     if (width, height) != (self.scene.width, self.scene.height) {
       // Only the background depends on the size, so only it records again.
       self
-        .arena
+        .tree
         .mark_dirty(self.scene.background, artic_core::property::Affects::RENDER);
       (self.scene.width, self.scene.height) = (width, height);
     }
@@ -145,7 +145,7 @@ impl Demo {
 
     let scene = self
       .compositor
-      .compose(&mut self.arena, self.scene.background, &mut self.scene);
+      .compose(&mut self.tree, self.scene.background, &mut self.scene);
     let surface = Surface {
       id: SurfaceId::new(1),
       size: PhysicalSize::new(physical.width, physical.height),

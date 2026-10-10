@@ -3,7 +3,7 @@ mod tests;
 
 use crate::geometry::{Rect, Size};
 use artic_core::property::Affects;
-use artic_core::tree::{NodeId, Tree, TreeArena};
+use artic_core::tree::{NodeId, TreeKind, UiTree};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Something layout can size and place: an element, seen by the layout pass.
@@ -29,7 +29,7 @@ pub trait Layoutable {
 pub trait LayoutNodes {
   /// The node as layout sees it, or `None` for a node with nothing to lay out, which takes no
   /// space.
-  fn layoutable<'a>(&self, arena: &'a TreeArena, node: NodeId) -> Option<&'a dyn Layoutable>;
+  fn layoutable<'a>(&self, tree: &'a UiTree, node: NodeId) -> Option<&'a dyn Layoutable>;
 }
 
 /// What layout knows about one node.
@@ -61,27 +61,19 @@ impl LayoutManager {
   /// With `snap`, every arranged rectangle has its edges on the device-pixel grid. The root's
   /// rectangle is `available` where it's finite, and its desired size where it isn't. Results of
   /// nodes no longer in the subtree are dropped.
-  pub fn run(
-    &mut self,
-    arena: &mut TreeArena,
-    nodes: &impl LayoutNodes,
-    root: NodeId,
-    available: Size,
-    scale: f32,
-    snap: bool,
-  ) {
+  pub fn run(&mut self, tree: &mut UiTree, nodes: &impl LayoutNodes, root: NodeId, available: Size, scale: f32, snap: bool) {
     let mut depths = HashMap::new();
     let mut dirty = HashSet::new();
     let mut pending = vec![(root, 0_usize)];
     while let Some((node, depth)) = pending.pop() {
       depths.insert(node, depth);
-      if arena.dirty(node).contains(Affects::LAYOUT) {
+      if tree.dirty(node).contains(Affects::LAYOUT) {
         dirty.insert(node);
       }
-      pending.extend(arena.children(Tree::Visual, node).map(|child| (child, depth + 1)));
+      pending.extend(tree.children(TreeKind::Visual, node).map(|child| (child, depth + 1)));
     }
     for node in &dirty {
-      arena.clear_dirty(*node, Affects::LAYOUT);
+      tree.clear_dirty(*node, Affects::LAYOUT);
     }
     self.slots.retain(|node, _| depths.contains_key(node));
 
@@ -90,7 +82,7 @@ impl LayoutManager {
       by_depth.entry(depths[node]).or_default().push(*node);
     }
     let mut cx = LayoutCx {
-      arena,
+      tree,
       nodes,
       slots: &mut self.slots,
       dirty,
@@ -112,7 +104,7 @@ impl LayoutManager {
           None => true,
         };
         if changed
-          && let Some(parent) = cx.arena.parent(Tree::Visual, node)
+          && let Some(parent) = cx.tree.parent(TreeKind::Visual, node)
           && cx.dirty.insert(parent)
         {
           by_depth.entry(depths[&parent]).or_default().push(parent);
@@ -153,8 +145,8 @@ impl LayoutManager {
   }
 
   /// Marks `node` to be measured again in the next [`run`](LayoutManager::run).
-  pub fn invalidate_measure(arena: &mut TreeArena, node: NodeId) {
-    arena.mark_dirty(node, Affects::LAYOUT);
+  pub fn invalidate_measure(tree: &mut UiTree, node: NodeId) {
+    tree.mark_dirty(node, Affects::LAYOUT);
   }
 
   /// Marks `node` to be arranged again in the next [`run`](LayoutManager::run), in the same
@@ -183,7 +175,7 @@ impl LayoutManager {
 /// What an element measures and arranges its children through, during a
 /// [`LayoutManager::run`].
 pub struct LayoutCx<'a> {
-  arena: &'a TreeArena,
+  tree: &'a UiTree,
   nodes: &'a dyn LayoutNodes,
   slots: &'a mut HashMap<NodeId, Slot>,
   /// The nodes to measure again, whatever their parent offers.
@@ -207,14 +199,14 @@ impl<'a> LayoutCx<'a> {
 
   /// The tree being laid out.
   #[must_use]
-  pub fn arena(&self) -> &'a TreeArena {
-    self.arena
+  pub fn tree(&self) -> &'a UiTree {
+    self.tree
   }
 
   /// The visual children of the node being laid out, in order.
   pub fn children(&self) -> impl Iterator<Item = NodeId> + use<'a> {
-    let (arena, node) = (self.arena, self.node());
-    arena.children(Tree::Visual, node)
+    let (tree, node) = (self.tree, self.node());
+    tree.children(TreeKind::Visual, node)
   }
 
   /// Device pixels per logical pixel.
@@ -242,7 +234,7 @@ impl<'a> LayoutCx<'a> {
     if !self.dirty.contains(&child) && slot.available == Some(available) {
       return slot.desired;
     }
-    let desired = match self.nodes.layoutable(self.arena, child) {
+    let desired = match self.nodes.layoutable(self.tree, child) {
       Some(layoutable) => {
         let parent = self.current.replace(child);
         let desired = layoutable.measure(self, available);
@@ -280,7 +272,7 @@ impl<'a> LayoutCx<'a> {
     }
     slot.rect = Some(rect);
     slot.arrange_dirty = false;
-    if let Some(layoutable) = self.nodes.layoutable(self.arena, child) {
+    if let Some(layoutable) = self.nodes.layoutable(self.tree, child) {
       let parent = self.current.replace(child);
       layoutable.arrange(self, rect);
       self.current = parent;

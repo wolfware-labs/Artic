@@ -4,16 +4,16 @@ use std::fmt::{Debug, Formatter, Result};
 /// The key of an attached property: a property kind one type declares and other nodes hold, such as
 /// `Grid.Row` on the children of a grid.
 ///
-/// A node doesn't have a field for it; [`TreeArena::attached_property`] creates the property on
+/// A node doesn't have a field for it; [`UiTree::attached_property`] creates the property on
 /// the node the first time it's needed, starting at the key's default, and
-/// [`TreeArena::attached`] reads the default without creating anything. Declare one `static` per
+/// [`UiTree::attached`] reads the default without creating anything. Declare one `static` per
 /// attached property, for the same reason as a [`PropertyKey`].
 ///
 /// Attached properties don't inherit: an inherited value could only reach a node that already holds
 /// the property.
 ///
-/// [`TreeArena::attached`]: crate::tree::TreeArena::attached
-/// [`TreeArena::attached_property`]: crate::tree::TreeArena::attached_property
+/// [`UiTree::attached`]: crate::tree::UiTree::attached
+/// [`UiTree::attached_property`]: crate::tree::UiTree::attached_property
 ///
 /// # Examples
 ///

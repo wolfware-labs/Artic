@@ -11,7 +11,7 @@ A cross-platform desktop and mobile UI framework where views are written in XAML
 ### Goals
 
 - XAML that a WPF/Avalonia developer can read and mostly write without retraining.
-- Rust-native, not .NET-on-Rust: composition and traits instead of class hierarchies, generics and concrete enums instead of \`dyn Any\`, std traits (\`FromStr\`, \`TryFrom\`, \`Result\`) instead of framework-specific converter and exception APIs, arena ids instead of shared mutable references. String-keyed lookup exists only where XAML markup needs it and only in the hot-reload loader.
+- Rust-native, not .NET-on-Rust: composition and traits instead of class hierarchies, generics and concrete enums instead of \`dyn Any\`, std traits (\`FromStr\`, \`TryFrom\`, \`Result\`) instead of framework-specific converter and exception APIs, tree ids instead of shared mutable references. String-keyed lookup exists only where XAML markup needs it and only in the hot-reload loader.
 - Same pixels on Windows, macOS, Linux, iOS, and Android via one GPU renderer; layouts adapt to screen class and input mode, not to OS.
 - Compiled XAML for release (type-checked, zero parse cost at startup) and interpreted XAML in development (hot reload).
 - Fine-grained reactivity underneath; MVVM ergonomics (observable view-models, `{Binding}`) on top.
@@ -64,7 +64,7 @@ Each layer builds on the ones below it. The exact dependency edges and the rules
 
 | Crate | Responsibility | Key public types |
 | --- | --- | --- |
-| `artic-core` | Signals, effects, `Property<T>`, styled-property metadata, visual/logical tree, `Object` trait, resources, dispatcher | `Signal`, `effect`, `Property`, `Node`, `TreeArena`, `Dispatcher` |
+| `artic-core` | Signals, effects, `Property<T>`, styled-property metadata, visual/logical tree, `Object` trait, resources, dispatcher | `Signal`, `effect`, `Property`, `Node`, `UiTree`, `Dispatcher` |
 | `artic-registry` | Generated type descriptors used by both XAML paths: type name → constructor, property name → setter/getter/type converter, content property, attached properties, events | `TypeInfo`, `PropertyInfo`, `TypeConverter`, `Registry` |
 | `artic-macros` | `#[derive(XamlType)]`, `#[derive(ViewModel)]`, `#[xaml_class]`, `xaml!` (inline) | proc macros |
 | `artic-xaml` | Parser: XML → XAML Infoset (MS-XAML §5), markup-extension grammar, diagnostics with spans | `XamlDocument`, `XamlNode`, `MarkupExtensionAst`, `Diagnostic` |
@@ -81,13 +81,13 @@ Each layer builds on the ones below it. The exact dependency edges and the rules
 | `artic` | Facade re-exporting the public API with feature flags (`hot-reload`, `runtime-xaml`) | `App`, `prelude`, `run` |
 | `artic-theme` | Default theme: token dictionaries (light, dark, touch density) and the default `ControlTemplate` for every v1 control (D18) | `ArticTheme` |
 | `artic-i18n` | Optional fluent-rs implementation of the `Localizer` trait (D6) | `FluentLocalizer` |
-| `artic-test` | Dev-dependency test utilities: `TestHost`, headless arena helpers, tree serializer (D14) | `TestHost` |
+| `artic-test` | Dev-dependency test utilities: `TestHost`, headless tree helpers, tree serializer (D14) | `TestHost` |
 | `artic-cli` | `cargo-artic` binary: `check`, `new`, `schema`, `inspect`, `ios`, `android`, `lsp` (D15) | CLI |
 | `artic-lsp` | Language server: source-based type index, diagnostics, completion, hover, navigation, formatting, rename (D21, D22) | `Server` |
 
 ### Object model in one paragraph
 
-Every UI element is a Rust struct stored in a generational arena (`TreeArena`) and referenced by a `NodeId`; there is no `Rc<RefCell<>>` in the tree. Element structs implement the `Object` trait (registry lookup, property bag access) and `Element` (layout, render, input). Properties are `Property<T>` fields (§6) whose values are signals, so a binding, a style setter, and a direct set all write through the same path and invalidate the same dependents.
+Every UI element is a Rust struct stored in a generational arena (`UiTree`) and referenced by a `NodeId`; there is no `Rc<RefCell<>>` in the tree. Element structs implement the `Object` trait (registry lookup, property bag access) and `Element` (layout, render, input). Properties are `Property<T>` fields (§6) whose values are signals, so a binding, a style setter, and a direct set all write through the same path and invalidate the same dependents.
 
 ### Frame pipeline
 
@@ -262,7 +262,7 @@ flowchart LR
 
 1. `build.rs` calls `artic_xaml_compiler::compile_dir("src/views")`; every `.xaml` becomes `$OUT_DIR/views/<name>.rs`, included via `include!` by the `#[xaml_class]` macro.
 2. Type and property names resolve against the registry of all dependency crates. Because the registry is link-time, the compiler runs in a build script that links `artic-controls` and the app's own control crates as build-dependencies.
-3. Output is plain Rust in the [builder shape](../design/builder-api.md): `let sign_in = Button::new().content("Sign in").build(arena);`, one statement per element, children before their parents. No string lookups survive to runtime.
+3. Output is plain Rust in the [builder shape](../design/builder-api.md): `let sign_in = Button::new().content("Sign in").build(tree);`, one statement per element, children before their parents. No string lookups survive to runtime.
 4. Bindings compile to typed closures (`|vm: &LoginVm| vm.email.get()`) over the `x:DataType` in scope, whether declared, inherited or inferred (§6, D2). A binding with no resolvable `x:DataType` is a compile error that names the attribute to add and where. Unknown property on a known `x:DataType` is a compile error. There is no reflective fallback (D1).
 5. Generated code is deterministic and gitignored; diagnostics point at the `.xaml` line/column via `#[track_caller]`-style span tables so `cargo build` errors read like `views/login.xaml:12:9: unknown property 'Foo' on Button`.
 
@@ -305,7 +305,7 @@ Signals are the only change-propagation mechanism; `Property<T>`, bindings, styl
 
 ### Signal core (`artic-core::reactive`)
 
-- `Signal<T>`: reactive cell; `get()` records a dependency when read inside an effect, `set()` marks dependents dirty. `Copy` handle into a runtime-owned arena; `!Send`, UI-thread only.
+- `Signal<T>`: reactive cell; `get()` records a dependency when read inside an effect, `set()` marks dependents dirty. `Copy` handle into a runtime-owned tree; `!Send`, UI-thread only.
 - `Memo<T>`: derived signal, recomputed lazily when a dependency changes and its value is read.
 - `effect`: a function that registers a closure re-run when its dependencies change. `set()` never runs effects directly; it marks dependents dirty and queues effects. Queued effects run in topological order (glitch-free) at a flush point: the end of the current dispatcher task, the end of the outermost `batch`, or an explicit `flush_effects()`. Memos are pull-based, so a read always sees current values.
 - `batch(|| …)` makes its closure one flush point: several `set`s inside it produce one flush when the outermost `batch` returns. Inside a dispatcher task every task is already a flush point (D26).
@@ -333,7 +333,7 @@ The stack lives in one signal, and each write decides whether readers can see it
 
 ```rust
 // generated for Text="{Binding Email, Mode=TwoWay}" with x:DataType="LoginVm"
-bind_two_way(&mut arena, tb, |vm: &LoginVm| vm.email, |tb| &tb.text);
+bind_two_way(&mut tree, tb, |vm: &LoginVm| vm.email, |tb| &tb.text);
 ```
 
 | Mode | Behavior |
@@ -347,7 +347,7 @@ bind_two_way(&mut arena, tb, |vm: &LoginVm| vm.email, |tb| &tb.text);
 - Wrong path, wrong type, or a `Mode=TwoWay` on a read-only field is a compile error in the compiled path.
 - Converters are plain generic types: `trait Convert<From, To> { fn convert(&self, v: &From) -> To; fn convert_back(&self, v: &To) -> Option<From>; }`; referenced via `{StaticResource}` or `{x:Static}`. No `dyn Any`.
 - Path grammar: `A.B.C`, indexers `Items[0]`, `.` for the context itself. No method calls.
-- `DataContext` is `Property<Option<NodeId>>` pointing at a view-model node in the arena, typed through `x:DataType`; downcast happens once at bind time, never per read.
+- `DataContext` is `Property<Option<NodeId>>` pointing at a view-model node in the tree, typed through `x:DataType`; downcast happens once at bind time, never per read.
 
 ### Hot-reload bindings
 
@@ -381,7 +381,7 @@ impl LoginVm {
 
 ## 7. Visual tree, layout, and controls
 
-Two trees, as in WPF/Avalonia: the **logical tree** (what the XAML declared; scope for `DataContext`, resources, names) and the **visual tree** (what is measured and drawn, including template expansions). Both live in the same arena; each node stores its logical parent and visual parent separately.
+Two trees, as in WPF/Avalonia: the **logical tree** (what the XAML declared; scope for `DataContext`, resources, names) and the **visual tree** (what is measured and drawn, including template expansions). Both live in the same tree; each node stores its logical parent and visual parent separately.
 
 ### Element traits and composition
 
@@ -427,7 +427,7 @@ WPF two-pass measure/arrange with these rules:
 5. Units are logical pixels (`f32`); the platform layer supplies the scale factor; rounding to device pixels happens in `arrange` (`SnapToPixels` on by default), edge by edge so neighbors never leave a pixel's gap.
 6. Layout is synchronous and single-threaded; a `LayoutManager` runs it once per frame after effects.
 
-`measure` and `arrange` take `&self`: an element's inputs are its properties, and what layout works out (each node's last available size, desired size and rectangle) lives in the `LayoutManager`, so a parent measures its children through `LayoutCx` while the arena is only shared. `LayoutManager` finds a node's `Layoutable` through a `LayoutNodes` lookup the frame pipeline provides, so `artic-layout` never names `Element`. A node is laid out again when it's marked `Affects::LAYOUT` (a layout property changed, or its visual children did) or offered a different size; rectangles are relative to the parent. In release builds, an invalid size or rectangle counts as zero instead of panicking.
+`measure` and `arrange` take `&self`: an element's inputs are its properties, and what layout works out (each node's last available size, desired size and rectangle) lives in the `LayoutManager`, so a parent measures its children through `LayoutCx` while the tree is only shared. `LayoutManager` finds a node's `Layoutable` through a `LayoutNodes` lookup the frame pipeline provides, so `artic-layout` never names `Element`. A node is laid out again when it's marked `Affects::LAYOUT` (a layout property changed, or its visual children did) or offered a different size; rectangles are relative to the parent. In release builds, an invalid size or rectangle counts as zero instead of panicking.
 
 ### Panels (v1)
 
@@ -570,7 +570,7 @@ impl LoginView {
 ```
 
 - The macro generates: the struct's element wrapper (a `UserControl` node owning `Self`), a `build(&mut Arena) -> NodeId` from the compiled XAML, typed `Handle<T>` handles for every `x:Name`, and a handler table `name → fn` used by both paths.
-- Handler signature is `fn(&mut self, &mut ViewCx, &Args)`; `ViewCx` gives arena access and the dispatcher. Handlers are `&mut self`, so no interior mutability in code-behind.
+- Handler signature is `fn(&mut self, &mut ViewCx, &Args)`; `ViewCx` gives tree access and the dispatcher. Handlers are `&mut self`, so no interior mutability in code-behind.
 - A handler name that does not exist is a compile error in the compiled path, a load error in the runtime path.
 - Code-behind and view-model are both available: `self.view_model::<LoginVm>()` returns the `DataContext` downcast.
 
@@ -668,7 +668,7 @@ The UI is single-threaded by construction: the tree, signals, and view-models ar
 
 | Thread | Owns | Notes |
 | --- | --- | --- |
-| UI thread (main) | event loop, arena, signals, layout, scene building, `accesskit` | must be the OS main thread on macOS/iOS/Android |
+| UI thread (main) | event loop, tree, signals, layout, scene building, `accesskit` | must be the OS main thread on macOS/iOS/Android |
 | Render thread (post-v1) | `wgpu` device/queue, surface present | v1 renders on the UI thread after layout (D6). The `Scene` is still handed over through a channel boundary so a render thread can be enabled later without an API change |
 | App threads | whatever the app runs (tokio, rayon, std) | talk back only via `Dispatcher` |
 
@@ -687,7 +687,7 @@ The UI is single-threaded by construction: the tree, signals, and view-models ar
 
 ### Rules for app code
 
-1. Touch the tree only from the UI thread; the arena's `NodeId` is `Send` but `Arena` methods require `&mut Arena` obtained from `ViewCx`/`Dispatcher`, which only exist there.
+1. Touch the tree only from the UI thread; the tree's `NodeId` is `Send` but `Arena` methods require `&mut Arena` obtained from `ViewCx`/`Dispatcher`, which only exist there.
 2. Signals are `!Send`; to publish from a worker, send the value and let the posted closure call `set()`.
 3. A long computation in an effect or handler blocks input; the debug build warns on any dispatcher task over 16 ms.
 
@@ -754,7 +754,7 @@ Build order follows the dependency graph in §2: nothing above a layer starts un
 | --- | --- |
 | Parser | fixture corpus of `.xaml` → infoset snapshots (`insta`), including MS-XAML whitespace and markup-extension edge cases |
 | Compiler vs runtime | every fixture loaded both ways; object trees serialized and diffed — must be identical |
-| Signals | property-based tests (`proptest`) for glitch-freedom and disposal; leak checks via arena counts |
+| Signals | property-based tests (`proptest`) for glitch-freedom and disposal; leak checks via tree counts |
 | Layout | headless `Arena` with no renderer: measure/arrange assertions per panel; fuzzed constraints |
 | Rendering | golden-image tests via `vello` to an offscreen `wgpu` texture; tolerance-based compare, per-platform goldens only where fonts differ |
 | Controls | headless input simulation (`TestHost` implements `Host`, with a test renderer drawing to `Pixels`): click, type, tab, touch gestures; asserts on tree state and `accesskit` tree |
@@ -764,7 +764,7 @@ Build order follows the dependency graph in §2: nothing above a layer starts un
 
 | # | Milestone | Exit criteria |
 | --- | --- | --- |
-| M0 | Foundations | Workspace, CI and repo policy; `artic-core` signals, arena, `Property<T>` and trees; registry derive verified on iOS, Android and with LTO; parser with full fixture corpus; builder API, loader value and value object designs |
+| M0 | Foundations | Workspace, CI and repo policy; `artic-core` signals, tree, `Property<T>` and trees; registry derive verified on iOS, Android and with LTO; parser with full fixture corpus; builder API, loader value and value object designs |
 | M1 | First pixels | `winit` + `vello` window on the three desktops; `Border`, `TextBlock`, `StackPanel`; compiled XAML; layout protocol, golden images, desktop `accesskit` adapter |
 | M2 | Both paths | runtime loader, tree-diff test green, hot reload on desktop, `runtime-xaml` with hardened input, remaining panels and `Image` |
 | M3 | Interaction | routed events, focus, dispatcher and async, code-behind, `ControlTemplate`, `ContentControl`, `Button`, `TextBox` with desktop IME, `ScrollViewer`; minimal MVVM: typed bindings, `ViewModel` derive, commands, key bindings, app services, exposed view-models (D4, D5) |

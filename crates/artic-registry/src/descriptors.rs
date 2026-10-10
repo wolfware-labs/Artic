@@ -1,5 +1,5 @@
 use artic_core::property::Affects;
-use artic_core::tree::{NodeId, TreeArena};
+use artic_core::tree::{NodeId, UiTree};
 
 /// What the registry knows about one Rust type that XAML can name.
 ///
@@ -15,7 +15,7 @@ pub struct TypeInfo {
   /// is resolved through it.
   pub rust_path: &'static str,
   /// Creates a node of this type with its default values and returns its id.
-  pub new: fn(&mut TreeArena) -> NodeId,
+  pub new: fn(&mut UiTree) -> NodeId,
   /// The field that receives content written directly inside the element, if any.
   pub content: Option<&'static str>,
   /// Whether the type is a collection that accepts child elements.
@@ -148,8 +148,8 @@ mod tests {
     fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
   }
 
-  fn new_border(arena: &mut TreeArena) -> NodeId {
-    arena.alloc(Box::new(Border {
+  fn new_border(tree: &mut UiTree) -> NodeId {
+    tree.alloc(Box::new(Border {
       _padding: Property::new(&PADDING, 0.0),
     }))
   }
@@ -181,13 +181,13 @@ mod tests {
   // compile time, and its constructor creates a node.
   #[test]
   fn static_descriptor_reads_metadata_from_the_key() {
-    let mut arena = TreeArena::new();
+    let mut tree = UiTree::new();
 
-    let node = (BORDER.new)(&mut arena);
+    let node = (BORDER.new)(&mut tree);
 
     assert_eq!(BORDER.properties[0].name, "Padding");
     assert_eq!(BORDER.properties[0].affects, Affects::LAYOUT);
     assert!(!BORDER.is_markup_extension());
-    assert!(arena.get_as::<Border>(node).is_some());
+    assert!(tree.get_as::<Border>(node).is_some());
   }
 }

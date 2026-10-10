@@ -1,6 +1,6 @@
 use artic_core::Object;
 use artic_core::property::AnyProperty;
-use artic_core::tree::TreeArena;
+use artic_core::tree::UiTree;
 
 #[test]
 fn allocate_control() {
@@ -10,7 +10,7 @@ fn allocate_control() {
     fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
   }
 
-  let mut arena = TreeArena::new();
-  let id = arena.alloc(Box::new(Control));
-  assert_eq!(arena.get_as::<Control>(id), Some(&Control));
+  let mut tree = UiTree::new();
+  let id = tree.alloc(Box::new(Control));
+  assert_eq!(tree.get_as::<Control>(id), Some(&Control));
 }

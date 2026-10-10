@@ -137,6 +137,61 @@ impl<TValue> Arena<TValue> {
   }
 }
 
+/// Values stored under ids an [`Arena`] issued, at most one per id.
+///
+/// It never issues ids: a value goes in under an id from an arena and is found only by that exact
+/// id. Once the arena reuses the slot, the new id finds nothing until a value is inserted for it,
+/// and the old id finds nothing after that. Whether an id is still live is the arena's to say: a
+/// value stays until it's removed or replaced.
+#[derive(Debug)]
+pub struct SlotMap<TValue> {
+  entries: Vec<Option<(SlotGeneration, TValue)>>,
+}
+
+impl<TValue> Default for SlotMap<TValue> {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
+impl<TValue> SlotMap<TValue> {
+  #[must_use]
+  pub const fn new() -> Self {
+    Self { entries: Vec::new() }
+  }
+
+  pub fn insert(&mut self, id: SlotId, value: TValue) {
+    let index = id.index as usize;
+    if index >= self.entries.len() {
+      self.entries.resize_with(index + 1, || None);
+    }
+    self.entries[index] = Some((id.generation, value));
+  }
+
+  pub fn get(&self, id: SlotId) -> Option<&TValue> {
+    match self.entries.get(id.index as usize)? {
+      Some((generation, value)) if *generation == id.generation => Some(value),
+      _ => None,
+    }
+  }
+
+  pub fn get_mut(&mut self, id: SlotId) -> Option<&mut TValue> {
+    match self.entries.get_mut(id.index as usize)? {
+      Some((generation, value)) if *generation == id.generation => Some(value),
+      _ => None,
+    }
+  }
+
+  pub fn remove(&mut self, id: SlotId) -> Option<TValue> {
+    let entry = self.entries.get_mut(id.index as usize)?;
+    if entry.as_ref().is_some_and(|(generation, _)| *generation == id.generation) {
+      entry.take().map(|(_, value)| value)
+    } else {
+      None
+    }
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -368,5 +423,56 @@ mod tests {
     assert_eq!(Rc::strong_count(&value), 2);
     drop(arena);
     assert_eq!(Rc::strong_count(&value), 1);
+  }
+
+  // A value is found by the id it was inserted under, and by nothing else: not the id of the node
+  // that reuses the slot, and not the old id once that node has its own value.
+  #[test]
+  fn slot_map_finds_values_by_exact_id() {
+    let mut arena = Arena::new();
+    let mut map = SlotMap::new();
+    let button = arena.alloc(Item);
+    map.insert(button, "button");
+    assert_eq!(map.get(button), Some(&"button"));
+
+    arena.free(button);
+    let label = arena.alloc(Item);
+    assert_eq!(label.index, button.index);
+    assert_eq!(map.get(label), None);
+
+    map.insert(label, "label");
+    assert_eq!(map.get(label), Some(&"label"));
+    assert_eq!(map.get(button), None);
+  }
+
+  // Removing takes the value out only for its own id.
+  #[test]
+  fn slot_map_removes_only_its_own_id() {
+    let mut arena = Arena::new();
+    let mut map = SlotMap::new();
+    let button = arena.alloc(Item);
+    map.insert(button, 1);
+    arena.free(button);
+    let label = arena.alloc(Item);
+
+    assert_eq!(map.remove(label), None);
+    assert_eq!(map.remove(button), Some(1));
+    assert_eq!(map.get(button), None);
+  }
+
+  // Ids can be inserted in any order: the map grows to fit the highest slot and leaves the gaps
+  // empty.
+  #[test]
+  fn slot_map_grows_to_fit_any_slot() {
+    let mut arena = Arena::new();
+    let mut map = SlotMap::new();
+    let ids = [(); 3].map(|()| arena.alloc(Item));
+    map.insert(ids[2], 'c');
+
+    *map.get_mut(ids[2]).unwrap() = 'C';
+
+    assert_eq!(map.get(ids[2]), Some(&'C'));
+    assert_eq!(map.get(ids[0]), None);
+    assert_eq!(map.get_mut(ids[1]), None);
   }
 }

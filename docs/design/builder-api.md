@@ -6,35 +6,35 @@ The XAML compiler and, in v2, hand-written Rust views both build trees through o
 
 ## Constraints
 
-- A node ends in the arena through `TreeArena::alloc(Box<dyn Object>) -> NodeId` (#7). There is no second allocator.
+- A node ends in the tree through `UiTree::alloc(Box<dyn Object>) -> NodeId` (#7). There is no second allocator.
 - A property's builder value is its `Local` level: `Property<T>::set` (#13). There is no separate "initial value" path.
 - Which fields are properties, events, content or collections comes from #18's field analysis; names come from the field names and the registry vocabulary (#17).
 - `Property<T>` values live in the reactive runtime, not in the arena, so a property can be set before its node is allocated.
-- Rust allows one mutable borrow at a time: a value holding `&mut TreeArena` can't also build its children in the same chain.
+- Rust allows one mutable borrow at a time: a value holding `&mut UiTree` can't also build its children in the same chain.
 
-## Where the arena enters
+## Where the tree enters
 
 The same `StackPanel` with two children, under each option:
 
 | Option | Shape | Verdict |
 | --- | --- | --- |
-| Arena at the start | `StackPanel::build(arena).spacing(8.0).child(\|arena\| Button::build(arena).content("Hi"))` | Rejected: the builder holds `&mut TreeArena`, so children must be built in closures, and generated code nests one closure per level |
-| Arena at the end, unbuilt children inside the builder | `StackPanel::new().child(Button::new().content("Hi")).build(arena)` | Rejected: unbuilt children must be stored as `Box<dyn …>`, and every node type needs a separate builder type |
-| **Arena at the end, children built first** | `let ok = Button::new().content("Hi").build(arena);` then `StackPanel::new().spacing(8.0).children([ok]).build(arena)` | **Chosen**: no closures, no `dyn`, no builder types |
+| Arena at the start | `StackPanel::build(tree).spacing(8.0).child(\|tree\| Button::build(tree).content("Hi"))` | Rejected: the builder holds `&mut UiTree`, so children must be built in closures, and generated code nests one closure per level |
+| Arena at the end, unbuilt children inside the builder | `StackPanel::new().child(Button::new().content("Hi")).build(tree)` | Rejected: unbuilt children must be stored as `Box<dyn …>`, and every node type needs a separate builder type |
+| **Arena at the end, children built first** | `let ok = Button::new().content("Hi").build(tree);` then `StackPanel::new().spacing(8.0).children([ok]).build(tree)` | **Chosen**: no closures, no `dyn`, no builder types |
 
 ## The builder is the node struct
 
 - `T::new()` is the `Default` that `#[derive(XamlType)]` generates: every property created with its key and default.
 - Every builder method takes `self` by value, writes one member, and returns `Self`.
-- `build(self, arena: &mut TreeArena) -> Handle<T>` allocates the struct, links its children (the content field and collection fields) in the **logical** tree, which resolves inherited values (#15), and returns a typed handle.
+- `build(self, tree: &mut UiTree) -> Handle<T>` allocates the struct, links its children (the content field and collection fields) in the **logical** tree, which resolves inherited values (#15), and returns a typed handle.
 
-Children are built before their parents. The compiler emits one `let` per element in post-order, so generated code stays flat. Hand-written code can still nest, because the inner `build(arena)` finishes its borrow before the outer call starts:
+Children are built before their parents. The compiler emits one `let` per element in post-order, so generated code stays flat. Hand-written code can still nest, because the inner `build(tree)` finishes its borrow before the outer call starts:
 
 ```rust
 let panel = StackPanel::new()
   .spacing(8.0)
-  .children([Button::new().content("Hi").build(arena)])
-  .build(arena);
+  .children([Button::new().content("Hi").build(tree)])
+  .build(tree);
 ```
 
 ## Typed handles and `x:Name`
@@ -51,17 +51,17 @@ impl<T: Object> Handle<T> {
   /// The untyped id.
   pub fn id(self) -> NodeId;
   /// The node. Panics if it was freed.
-  pub fn get(self, arena: &TreeArena) -> &T;
+  pub fn get(self, tree: &UiTree) -> &T;
   /// The node, mutably. Panics if it was freed.
-  pub fn get_mut(self, arena: &mut TreeArena) -> &mut T;
+  pub fn get_mut(self, tree: &mut UiTree) -> &mut T;
   /// The node, or `None` if it was freed.
-  pub fn try_get(self, arena: &TreeArena) -> Option<&T>;
+  pub fn try_get(self, tree: &UiTree) -> Option<&T>;
 }
 
 impl<T> From<Handle<T>> for NodeId { /* … */ }
 ```
 
-- `Handle<T>` is `Copy` and the size of `NodeId`. Like `NodeId` it is `Send` and `Sync`, but every method needs the arena, which isn't.
+- `Handle<T>` is `Copy` and the size of `NodeId`. Like `NodeId` it is `Send` and `Sync`, but every method needs the tree, which isn't.
 - Using a handle to a freed node is a bug and panics, as disposed signals do (#11); `try_get` is for code that expects nodes to go away.
 - `x:Name` gives the code-behind a `Handle<T>` field. Spec §9's `Named<T>` is this type.
 - Child parameters take `impl Into<NodeId>`, so a `Handle<Button>` or a raw `NodeId` both work.
@@ -98,15 +98,15 @@ An attached property is stored on its target node, so it can only be set once th
 ```rust
 impl Grid {
   pub const ROW: &'static AttachedKey<usize>;
-  pub fn set_row(arena: &mut TreeArena, node: impl Into<NodeId>, row: usize);
-  pub fn row(arena: &TreeArena, node: impl Into<NodeId>) -> usize;
+  pub fn set_row(tree: &mut UiTree, node: impl Into<NodeId>, row: usize);
+  pub fn row(tree: &UiTree, node: impl Into<NodeId>) -> usize;
 }
 
-let ok = Button::new().content("OK").build(arena);
-Grid::set_row(arena, ok, 1);
+let ok = Button::new().content("OK").build(tree);
+Grid::set_row(tree, ok, 1);
 ```
 
-There is no second setter in builder form; the builder doesn't wrap these helpers. `ROW` is the key styles use, and with it `TreeArena::attached_property` gives the node's `Property<usize>` to set at another precedence (#31).
+There is no second setter in builder form; the builder doesn't wrap these helpers. `ROW` is the key styles use, and with it `UiTree::attached_property` gives the node's `Property<usize>` to set at another precedence (#31).
 
 ### Naming collisions
 
@@ -123,7 +123,7 @@ There is no second setter in builder form; the builder doesn't wrap these helper
 | --- | --- |
 | `{StaticResource Key}` | A plain value: the compiler generates one function per resource ([value objects](value-objects.md#resources)) and passes its result, as in `.background(resource_accent())` |
 | `{DynamicResource Key}` | Designed with #113 |
-| `{Binding …}`, `Command="{Binding …}"` | **Compiler-only.** A binding needs `x:DataType` and the view-model, which a builder doesn't have. The compiler emits the typed binding calls from spec §6 after `build`, such as `bind_two_way(arena, email, \|vm: &LoginVm\| &vm.email, \|text_box: &TextBox\| &text_box.text)`. A builder-level binding is a v2 question |
+| `{Binding …}`, `Command="{Binding …}"` | **Compiler-only.** A binding needs `x:DataType` and the view-model, which a builder doesn't have. The compiler emits the typed binding calls from spec §6 after `build`, such as `bind_two_way(tree, email, \|vm: &LoginVm\| &vm.email, \|text_box: &TextBox\| &text_box.text)`. A builder-level binding is a v2 question |
 | `Classes="primary"` | `.classes(["primary"])`, delegated from `ElementBase` (#42, #108) |
 | `Style` (D6) | `Style::new(selector).setter(key, value)`, below |
 
@@ -149,7 +149,7 @@ For the spec §3 `Border`:
 
 | Kind | Items |
 | --- | --- |
-| Start and finish | `Border::new() -> Border`, `fn build(self, arena: &mut TreeArena) -> Handle<Border>` |
+| Start and finish | `Border::new() -> Border`, `fn build(self, tree: &mut UiTree) -> Handle<Border>` |
 | Properties | `.child(impl Into<NodeId>)`, `.padding(impl Into<Thickness>)`, `.background(impl Into<Brush>)`, `.corner_radius(impl Into<CornerRadius>)` |
 | Events | `.on_pointer_pressed(impl FnMut(&PointerEvent) + 'static)` |
 | Keys | `Border::CHILD`, `Border::PADDING`, `Border::BACKGROUND`, `Border::CORNER_RADIUS` |
@@ -183,29 +183,29 @@ fn resource_accent() -> SolidColorBrush {
 }
 
 impl LoginView {
-  fn build_view(&mut self, arena: &mut TreeArena) -> Handle<UserControl> {
+  fn build_view(&mut self, tree: &mut UiTree) -> Handle<UserControl> {
     let email = TextBox::new()
       .watermark("Email")
-      .build(arena);
+      .build(tree);
     self.email = email;                                            // x:Name="email"
-    bind_two_way(arena, email, |vm: &LoginVm| &vm.email, |text_box: &TextBox| &text_box.text);
+    bind_two_way(tree, email, |vm: &LoginVm| &vm.email, |text_box: &TextBox| &text_box.text);
 
     let sign_in = Button::new()
       .classes(["primary"])
       .content("Sign in")
       .on_click(/* LoginView::on_click, wired as spec §9 describes */)
-      .build(arena);
-    bind_command(arena, sign_in, |vm: &LoginVm| &vm.sign_in);
+      .build(tree);
+    bind_command(tree, sign_in, |vm: &LoginVm| &vm.sign_in);
 
     let panel = StackPanel::new()
       .spacing(8.0)
       .margin(Thickness::uniform(16.0))                           // "16", parsed at build time
       .children([email.id(), sign_in.id()])
-      .build(arena);
+      .build(tree);
 
     UserControl::new()
       .content(panel)
-      .build(arena)
+      .build(tree)
   }
 }
 ```
