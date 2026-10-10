@@ -11,7 +11,7 @@
 //! parent for layout (see `dirty`), since its children decide its size.
 
 use crate::property::Affects;
-use crate::tree::{NodeId, Tree, TreeArena, put};
+use crate::tree::{NodeId, Tree, TreeArena, inheritance, put};
 use std::collections::HashSet;
 use std::iter::{from_fn, successors};
 
@@ -191,7 +191,7 @@ impl TreeArena {
   pub fn detach(&mut self, tree: Tree, node: NodeId) -> Option<NodeId> {
     let parent = self.unlink(tree, node)?;
     if tree == Tree::Logical {
-      self.resolve_inheritance(node);
+      inheritance::resolve(&self.objects, &self.logical, node);
     }
     Some(parent)
   }
@@ -305,7 +305,7 @@ impl TreeArena {
     self.hierarchy_mut(tree).link(parent, index, child);
     self.children_changed(tree, parent);
     if tree == Tree::Logical {
-      self.resolve_inheritance(child);
+      inheritance::resolve(&self.objects, &self.logical, child);
     }
   }
 

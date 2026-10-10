@@ -5,38 +5,41 @@
 //! that ancestor for every inheritable property of a subtree, and is run again whenever a logical
 //! edit moves the subtree, so each property follows its new ancestor. Nodes without the property
 //! are skipped, and inheritance never follows the visual tree.
+//!
+//! It holds no state of its own: it reads the objects and the logical tree's links.
 
 use crate::property::AnyProperty;
-use crate::tree::{NodeId, Tree, TreeArena};
+use crate::tree::NodeId;
+use crate::tree::hierarchy::Hierarchy;
+use crate::tree::objects::Objects;
 use std::iter::once;
 
-impl TreeArena {
-  pub(super) fn resolve_inheritance(&self, root: NodeId) {
-    let subtree: Vec<NodeId> = once(root).chain(self.descendants(Tree::Logical, root)).collect();
-    for node in subtree {
-      self.objects.object(node).visit_properties(&mut |property| {
-        if property.inherits() {
-          self.inherit_from_nearest_ancestor(node, property);
-        }
-      });
-    }
-  }
-
-  fn inherit_from_nearest_ancestor(&self, node: NodeId, property: &dyn AnyProperty) {
-    for ancestor in self.ancestors(Tree::Logical, node) {
-      let mut found = false;
-      self.objects.object(ancestor).visit_properties(&mut |candidate| {
-        if !found && candidate.key_id() == property.key_id() {
-          property.inherit_from(Some(candidate));
-          found = true;
-        }
-      });
-      if found {
-        return;
+/// Makes each inheritable property of `root` and its logical descendants follow its nearest logical
+/// ancestor.
+pub(super) fn resolve(objects: &Objects, logical: &Hierarchy, root: NodeId) {
+  for node in once(root).chain(logical.descendants(root)) {
+    objects.object(node).visit_properties(&mut |property| {
+      if property.inherits() {
+        inherit_from_nearest_ancestor(objects, logical, node, property);
       }
-    }
-    property.inherit_from(None);
+    });
   }
+}
+
+fn inherit_from_nearest_ancestor(objects: &Objects, logical: &Hierarchy, node: NodeId, property: &dyn AnyProperty) {
+  for ancestor in logical.ancestors(node) {
+    let mut found = false;
+    objects.object(ancestor).visit_properties(&mut |candidate| {
+      if !found && candidate.key_id() == property.key_id() {
+        property.inherit_from(Some(candidate));
+        found = true;
+      }
+    });
+    if found {
+      return;
+    }
+  }
+  property.inherit_from(None);
 }
 
 #[cfg(test)]
