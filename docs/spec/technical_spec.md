@@ -389,8 +389,8 @@ There is no control class hierarchy. A control is a struct that embeds the state
 
 ```rust
 pub trait Element: XamlObject {
-    fn measure(&mut self, cx: &mut LayoutCx, available: Size) -> Size;
-    fn arrange(&mut self, cx: &mut LayoutCx, final_rect: Rect);
+    fn measure(&self, cx: &mut LayoutCx, available: Size) -> Size;
+    fn arrange(&self, cx: &mut LayoutCx, final_rect: Rect);
     fn render(&self, cx: &mut RenderCx, scene: &mut SceneBuilder);
     fn hit_test(&self, cx: &HitTestCx, point: Point) -> HitTestResult { cx.bounds_test(point) }
     fn on_event(&mut self, cx: &mut EventCx, event: &InputEvent) -> Handled { Handled::No }
@@ -424,8 +424,10 @@ WPF two-pass measure/arrange with these rules:
 2. `arrange(rect)` positions children; alignment and `Margin` are applied by `ElementBase` before the element's own `arrange_override`, so control authors only place children.
 3. Infinite constraints are legal (`ScrollViewer`, `StackPanel` on its axis). An element that returns an infinite desired size is a bug and panics in debug.
 4. Layout runs top-down from the highest dirty node; a dirty leaf whose desired size does not change stops propagation (`LayoutCx::desired_size_changed`).
-5. Units are logical pixels (`f32`); the platform layer supplies the scale factor; rounding to device pixels happens in `arrange` (`SnapToPixels` on by default).
+5. Units are logical pixels (`f32`); the platform layer supplies the scale factor; rounding to device pixels happens in `arrange` (`SnapToPixels` on by default), edge by edge so neighbors never leave a pixel's gap.
 6. Layout is synchronous and single-threaded; a `LayoutManager` runs it once per frame after effects.
+
+`measure` and `arrange` take `&self`: an element's inputs are its properties, and what layout works out (each node's last available size, desired size and rectangle) lives in the `LayoutManager`, so a parent measures its children through `LayoutCx` while the arena is only shared. `LayoutManager` finds a node's `Layoutable` through a `LayoutNodes` lookup the frame pipeline provides, so `artic-layout` never names `Element`. A node is laid out again when it's marked `Affects::LAYOUT` (a layout property changed, or its visual children did) or offered a different size; rectangles are relative to the parent. In release builds, an invalid size or rectangle counts as zero instead of panicking.
 
 ### Panels (v1)
 

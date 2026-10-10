@@ -99,6 +99,19 @@ impl Rect {
       (self.height - thickness.vertical()).max(0.0),
     )
   }
+
+  /// This rectangle with its edges on the device-pixel grid of a display at `scale` device pixels
+  /// per logical pixel.
+  ///
+  /// Each edge is rounded on its own and the size is what lies between them, so rectangles that
+  /// share an edge keep sharing it: three columns of `33.33` become `33`, `34` and `33` wide,
+  /// without a gap.
+  #[must_use]
+  pub fn snap(self, scale: f32) -> Rect {
+    let edge = |value: f32| (value * scale).round() / scale;
+    let (left, top) = (edge(self.x), edge(self.y));
+    Rect::new(left, top, edge(self.x + self.width) - left, edge(self.y + self.height) - top)
+  }
 }
 
 /// The width of space on each side of a box, such as a margin, a padding or a border.
@@ -255,6 +268,30 @@ impl Display for CornerRadius {
 mod tests {
   use super::*;
   use pretty_assertions::assert_eq;
+
+  // Snapped edges land on whole device pixels at any scale, and neighbors still share their edge.
+  #[test]
+  fn snap_rounds_edges_to_device_pixels() {
+    for scale in [1.0_f32, 1.25, 2.0] {
+      let columns: Vec<Rect> = (0..3)
+        .map(|index| Rect::new(index as f32 * 100.0 / 3.0, 0.3, 100.0 / 3.0, 10.4).snap(scale))
+        .collect();
+
+      for rect in &columns {
+        for edge in [rect.x, rect.y, rect.x + rect.width, rect.y + rect.height] {
+          let device = edge * scale;
+          assert!((device - device.round()).abs() < 1e-3, "{rect} at scale {scale}");
+        }
+      }
+      for pair in columns.windows(2) {
+        assert_eq!(pair[0].x + pair[0].width, pair[1].x, "no gap at scale {scale}");
+      }
+    }
+    let widths: Vec<f32> = (0..3)
+      .map(|index| Rect::new(index as f32 * 100.0 / 3.0, 0.0, 100.0 / 3.0, 1.0).snap(1.0).width)
+      .collect();
+    assert_eq!(widths, [33.0, 34.0, 33.0]);
+  }
 
   // Each type's zero constant is its default.
   #[test]

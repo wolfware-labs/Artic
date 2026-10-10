@@ -1,3 +1,9 @@
+//! The fields that receive an element's child elements.
+//!
+//! A `#[xaml]` field that is neither a `Property` nor an `Event` is a collection: when markup writes
+//! elements inside the type's element, each child's node is pushed into it, in order, through
+//! [`XamlCollection`].
+
 use crate::tree::NodeId;
 
 /// A field that receives the child elements written inside a XAML element, in order.

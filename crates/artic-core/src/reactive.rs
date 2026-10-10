@@ -1,7 +1,7 @@
 //! Fine-grained reactivity: values that know who reads them.
 //!
 //! A [`Signal`] holds a value and remembers which observers read it. An observer is something that
-//! reads signals and is marked dirty when they change; a [`Memo`] and an [`effect`] each use one to
+//! reads signals and is marked dirty when they change; a [`Memo`] and an [`effect`](fn@effect) each use one to
 //! know when their last run is out of date. Reading a signal while an observer runs subscribes that
 //! observer to the signal, and writing the signal marks every subscribed observer as dirty. Nothing
 //! subscribes explicitly: the reads themselves record the dependencies.
@@ -35,7 +35,7 @@
 //!
 //! # Effects
 //!
-//! An [`effect`] runs a closure once when created and again after something it read changes. It
+//! An [`effect`](fn@effect) runs a closure once when created and again after something it read changes. It
 //! doesn't run at the moment of the write: writes only mark it dirty, and it runs at the next flush
 //! point. A flush point is a call to [`flush_effects`], the end of the outermost [`batch`], and the
 //! end of each task run by [`Dispatcher::run_pending`](crate::dispatcher::Dispatcher::run_pending).
@@ -106,7 +106,7 @@
 //!
 //! A signal or memo that outlives an effect that read it forgets that effect when the effect is
 //! disposed. Using a signal or memo after its scope was disposed panics; in debug builds the message
-//! says where it was created. [`live_counts`] reports how many nodes are alive, for leak checks.
+//! says where it was created. [`live_counts`](fn@live_counts) reports how many nodes are alive, for leak checks.
 //!
 //! # Skipping writes that change nothing
 //!

@@ -1,6 +1,6 @@
 //! XAML parser producing the artic infoset, with spanned diagnostics.
 //!
-//! [`parse`] reads one file of a [`SourceMap`](diagnostics::SourceMap) into an
+//! [`parse`](fn@parse) reads one file of a [`SourceMap`](diagnostics::SourceMap) into an
 //! [`XamlDocument`](infoset::XamlDocument). XML is read with the `xmlparser` tokenizer, which keeps
 //! byte positions for every token, so each node of the infoset points at its source text and every
 //! error is reported with a span. Namespace prefixes are resolved with XML's scoping rules while

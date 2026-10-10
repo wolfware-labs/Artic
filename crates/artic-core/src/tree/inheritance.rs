@@ -1,3 +1,11 @@
+//! How inheritable properties take their value from the logical tree.
+//!
+//! A property whose key inherits, such as `FontSize`, follows the same property on its nearest
+//! logical ancestor that has one: that ancestor's value fills its `Inherited` level. This file finds
+//! that ancestor for every inheritable property of a subtree, and is run again whenever a logical
+//! edit moves the subtree, so each property follows its new ancestor. Nodes without the property
+//! are skipped, and inheritance never follows the visual tree.
+
 use crate::property::AnyProperty;
 use crate::tree::{NodeId, Tree, TreeArena};
 use std::iter::once;

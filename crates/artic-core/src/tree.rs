@@ -12,6 +12,17 @@
 //! Every node also has dirty flags saying which frame stages it needs redone. A new node starts with
 //! layout and rendering dirty, and a change to one of its properties adds the stages the property's key
 //! affects; see [`dirty`](TreeArena::dirty).
+//!
+//! # How this module is organized
+//!
+//! `TreeArena`'s methods are split by concern, one file each:
+//!
+//! - `node`: what a slot holds, the storage the others work on.
+//! - `links`: the structure of both trees, and the rules every edit follows.
+//! - `dirty`: which frame stages each node needs redone.
+//! - `inheritance`: how inheritable properties follow the logical tree.
+//! - `attached`: attached property values, stored on their target nodes.
+//! - `collection`: the fields that receive child elements.
 
 mod attached;
 mod collection;

@@ -1,3 +1,10 @@
+//! What one slot of the [`TreeArena`](crate::tree::TreeArena) holds.
+//!
+//! A [`TreeNode`] keeps a node's object, its dirty flags, its attached property values and one set of
+//! [`Links`] per tree. It's plain storage: the other files of `tree` give it its behavior, and
+//! creating one connects the object's properties to the dirty flags, so a property change marks its
+//! node from the start.
+
 use crate::Object;
 use crate::property::{Affects, AnyProperty};
 use crate::tree::{NodeId, Tree};
