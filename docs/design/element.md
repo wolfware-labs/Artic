@@ -123,11 +123,11 @@ The pipeline builds a `TypeId → ElementType` map once. `cast` answers `LayoutN
 | `HorizontalAlignment`, `VerticalAlignment` | the #41 enums | `Stretch` | layout | |
 | `Visibility` | `Visibility` | `Visible` | layout, render | |
 | `IsEnabled` | `bool` | `true` | render | yes |
-| `Opacity` | `f32` | `1` | render | |
+| `Opacity` | `f32`, clamped to 0–1 when read; NaN counts as 1 | `1` | render | |
 | `RenderTransform` | `Option<Transform>` | `None` | render | |
-| `ZIndex` | `i32` | `0` | render | |
-| `Classes` | `Classes` (space-separated names) | empty | | |
-| `Name` | `Option<String>` | `None` | | |
+| `ZIndex` | `i32`: draw and hit-test order among siblings | `0` | render | |
+| `Classes` | `Classes` (space-separated names) | empty | style, through its signal (#107) | |
+| `Name` | `Option<String>` | `None` | style, through its signal (#107) | |
 | `DataContext` | `Option<NodeId>` (a view-model node) | `None` | | yes |
 | `Cursor` | `Cursor` | `Arrow` | | |
 | `Focusable` | `bool` | `false` | render (clears cached hit tests: touch inflates focusable targets, §12) | |
@@ -201,6 +201,12 @@ Lookups search the type's own properties, then each group, and the compiler writ
 
 `Opacity`, `RenderTransform` and `Visibility` feed #33's per-node layers through the render `Nodes` answer, not each control's `render`: opacity becomes the node's opacity layer and the transform its transform layer. Visibility needs a layer of its own: today `Compositor::visit` always visits a node's visual children, so hiding only the node's own drawing would still draw its children. `Layers` gains `visible: bool`, default `true`, and `visit` skips a node with `visible: false` together with its whole subtree. `Hidden` and `Collapsed` answer `visible: false`.
 
+`Opacity` is a plain `f32`, so a Rust write can set any value, while `Layers.opacity` must be from 0 to 1. `ElementBase` clamps it when it builds the node's `Layers`, and a NaN counts as 1, so composition never sees an invalid value.
+
+`ZIndex` orders siblings. `Layers` gains `z_index: i32`, default `0`, and `visit` draws a node's children sorted by it, stably, so equal values keep tree order. The hit-test walk (#74) uses the same order, reversed, so what is hit is what is drawn on top.
+
+`Classes` and `Name` decide which style selectors match (§8) but affect neither layout nor rendering. Like every property, each is a signal, and the style index (#107) learns of changes by depending on them, so they need no `Affects` flag.
+
 Hit testing follows the same rule: the derive's `hit_test` misses when the element isn't `Visible` or its `IsHitTestVisible` is false, and the hit-test walk (#74) doesn't descend into such a node. `IsHitTestVisible` is the drawn-but-click-through case that `Visibility` can't express, for overlays and decorations; spec §12 relies on it.
 
 ## 8. Pull requests
@@ -210,7 +216,7 @@ Hit testing follows the same rule: the derive's `hit_test` misses when the eleme
 | A | `artic-element`: `Element`, `ElementImpl`, `HasState`, `ElementType` and `element_type!`, the placeholder contexts; `InputEvent` in `artic-core` | a hand-written element is laid out through `LayoutManager` by way of the cast table |
 | B | `ElementBase` with `#[derive(XamlProperties)]`, the enums, `#[xaml(flatten)]` in `derive(XamlType)` with `Flattened` and the per-owner `GroupOf` descriptors, `PropertyGroupInfo`, `Duplicate::Property`, the measure and arrange outline, `LayoutManager` forgetting unmeasured children | `element_base_properties_registered`, `margin_and_alignment_layout`, `min_max_clamp_desired_size`, `collapsed_takes_no_space` (including a child made dirty after its parent collapsed), a registry test where a control property clashes with a group's |
 | C | `#[derive(Element)]`: the outline from section 3, the missing-`base` error, `#[element(state)]` and its duplicate-state error | the trybuild cases: missing `base`, two fields of one state type, and a test-only state giving a test trait through a blanket impl |
-| D | the default accesskit node; opacity, transform and visibility in composition, with `Layers.visible` | `base_accessibility_node`; a pixel test where opacity changes the drawn color; a hidden parent's child isn't drawn and isn't in the accesskit tree |
+| D | the default accesskit node; opacity, transform and visibility in composition, with `Layers.visible` | `base_accessibility_node`; a pixel test where opacity changes the drawn color; a hidden parent's child isn't drawn and isn't in the accesskit tree; siblings drawn by `ZIndex`, ties in tree order; an out-of-range opacity clamped |
 
 ## 9. Spec changes
 
