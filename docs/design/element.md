@@ -25,6 +25,8 @@ pub trait Element: Object + Layoutable {
   fn hit_test(&self, cx: &HitTestCx<'_>, point: Point) -> HitTestResult { cx.bounds_test(point) }
   fn on_event(&mut self, cx: &mut EventCx<'_>, event: &InputEvent) -> Handled { Handled::No }
   fn accessibility(&self, cx: &AccessCx<'_>) -> accesskit::Node;
+  /// The node's layers in composition: transform, opacity, visibility, z-index.
+  fn layers(&self) -> Layers { Layers::default() }
 }
 
 pub trait ElementImpl {
@@ -59,6 +61,7 @@ pub trait ElementImpl {
 | `hit_test` | not `Visible`, or `IsHitTestVisible` false: a miss. Otherwise the trait default, `cx.bounds_test(point)` | |
 | `on_event` | | `ElementImpl::on_event` |
 | `accessibility` | builds the default node (section 7) | `ElementImpl::accessibility`, which adds to it |
+| `layers` | `Opacity` (clamped), `RenderTransform`, `Visibility` and `ZIndex` as a `Layers` (section 7) | |
 
 A struct without `base: ElementBase` fails to compile with an error that names the missing field.
 
@@ -199,7 +202,7 @@ Lookups search the type's own properties, then each group, and the compiler writ
 
 `ElementBase` builds the default accesskit node: the arranged bounds, and disabled when `IsEnabled` is false. Only `Visible` elements get a node at all: like composition and hit testing, the accesskit walk skips a node that isn't `Visible` together with its whole subtree, so a `Visible` child of a hidden parent is never exposed. Each control adds its role, name, value and actions in `ElementImpl::accessibility`, which the derive calls with that node (#161 adds the attached properties).
 
-`Opacity`, `RenderTransform` and `Visibility` feed #33's per-node layers through the render `Nodes` answer, not each control's `render`: opacity becomes the node's opacity layer and the transform its transform layer. Visibility needs a layer of its own: today `Compositor::visit` always visits a node's visual children, so hiding only the node's own drawing would still draw its children. `Layers` gains `visible: bool`, default `true`, and `visit` skips a node with `visible: false` together with its whole subtree. `Hidden` and `Collapsed` answer `visible: false`.
+`Opacity`, `RenderTransform`, `Visibility` and `ZIndex` feed #33's per-node layers, not each control's `render`. The derive writes `Element::layers` from `ElementBase`, and the pipeline's render `Nodes` answers `layers(tree, node)` by casting the node with `ElementType::cast` and calling it, so app-defined controls work the same way: opacity becomes the node's opacity layer and the transform its transform layer. Visibility needs a layer of its own: today `Compositor::visit` always visits a node's visual children, so hiding only the node's own drawing would still draw its children. `Layers` gains `visible: bool`, default `true`, and `visit` skips a node with `visible: false` together with its whole subtree. `Hidden` and `Collapsed` answer `visible: false`.
 
 `Opacity` is a plain `f32`, so a Rust write can set any value, while `Layers.opacity` must be from 0 to 1. The property itself keeps whatever was set, and reading it returns that value. Only `ElementBase`'s building of the node's `Layers` clamps it to 0–1, with NaN counting as 1, so composition never sees an invalid value.
 

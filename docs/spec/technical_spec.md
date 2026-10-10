@@ -39,7 +39,7 @@ A cross-platform desktop and mobile UI framework where views are written in XAML
 | Control set v1 | Panels, TextBlock, TextBox, Button, ToggleButton, CheckBox, RadioButton, Slider, ScrollViewer, ItemsControl, ListBox, ComboBox, TabControl, Border, Image, ContentControl, page-stack navigation (D7) |
 | Events | Both `x:Class` code-behind handlers and MVVM commands/bindings |
 | Async | Runtime-agnostic: framework owns a single-threaded UI executor; `spawn_blocking`/background work goes to whatever the app chooses |
-| Accessibility | `accesskit` from day one; every control exposes a node (desktop adapter in M1, mobile in M7, D10) |
+| Accessibility | `accesskit` from day one; every visible control exposes a node (desktop adapter in M1, mobile in M7, D10) |
 | Tooling | `cargo artic` CLI and the `artic-lsp` language server with a VS Code extension, both working from Rust source without a build (D21, D22) |
 | License | `MIT OR Apache-2.0` (D13) |
 | Minimum Rust | Stable, edition 2024 |
@@ -393,6 +393,7 @@ pub trait Element: Object + Layoutable {          // Layoutable (§7 Layout prot
     fn hit_test(&self, cx: &HitTestCx, point: Point) -> HitTestResult { cx.bounds_test(point) }
     fn on_event(&mut self, cx: &mut EventCx, event: &InputEvent) -> Handled { Handled::No }
     fn accessibility(&self, cx: &AccessCx) -> accesskit::Node;
+    fn layers(&self) -> Layers { Layers::default() }   // transform, opacity, visibility, z-index for composition
 }
 pub trait ElementImpl {                           // what a control writes; the derive calls it
     fn measure_override(&self, cx: &mut LayoutCx, available: Size) -> Size { Size::ZERO }
@@ -613,7 +614,7 @@ fn main() {
 ### Renderer
 
 - `Renderer` trait: `accepts(TargetKind)`, `render(&Scene, Surface)` and an optional `surface_lost`. A `Surface` is the host's id, its size in device pixels, its scale, and a `Target`: `Handles` (`raw-window-handle`: OS windows, DRM/GBM screens, canvases; valid until the surface is lost; the renderer presents), `Pixels` (a CPU buffer; the host presents) or `Custom` (a type one adapter's host and renderer agree on). A renderer that doesn't accept what the host offers is a startup error. Other renderers, such as skia or a CPU `tiny-skia`, are adapter crates, not features.
-- Retained `Scene`: each element owns a `SceneFragment` (a backend-neutral recording that each backend translates, D24) with a generation that increases when it changes, so a renderer may cache unchanged fragments; `render()` is called only for render-dirty nodes and the root composes fragments with transforms, clips, and opacity groups. Untouched subtrees cost nothing per frame.
+- Retained `Scene`: each element owns a `SceneFragment` (a backend-neutral recording that each backend translates, D24) with a generation that increases when it changes, so a renderer may cache unchanged fragments; `render()` is called only for render-dirty nodes and the root composes fragments with transforms, clips, and opacity groups. Siblings are drawn in `ZIndex` order (ties in tree order), and a node that isn't `Visible` is skipped together with its subtree ([elements design](../design/element.md#7-accessibility-and-composition)). Untouched subtrees cost nothing per frame.
 - Primitives, all required of every renderer and all drawable on a CPU: paths (fill/stroke), rounded rects, images, glyph runs, linear/radial gradients, box shadows (blurred rect), clip (rect, rounded rect, path), layers with opacity and blend mode `Normal` only. Images are shared data (`Arc<ImageData>`) that a renderer uploads once and caches.
 - Text: artic shapes and breaks lines with `parley` in `artic-render`, with system font discovery via `fontique`, so layout doesn't depend on the renderer. The scene carries positioned glyph runs; a renderer only draws glyphs (`skrifa` outlines for CPU renderers) and keeps its own glyph cache. Emoji: `COLRv1` via `vello` where supported, bitmap fallback.
 - `wgpu` backends (the `artic-vello` adapter): DX12 on Windows, Metal on macOS and iOS, Vulkan on Linux and Android. Android requires Vulkan 1.1; GLES-only devices are not supported in v1 and the app reports the missing capability instead of starting (D6, M6-03).
@@ -711,7 +712,7 @@ Accessibility, text editing, and input are cross-cutting: every control implemen
 
 ### Accessibility
 
-- `accesskit` on all five targets (Windows UIA, macOS/iOS NSAccessibility/UIAccessibility, Linux AT-SPI, Android via `accesskit_android`). Each element's `accessibility()` returns a node with role, name, value, state, bounds, and actions; the tree is rebuilt incrementally from render-dirty nodes and pushed once per frame.
+- `accesskit` on all five targets (Windows UIA, macOS/iOS NSAccessibility/UIAccessibility, Linux AT-SPI, Android via `accesskit_android`). Each visible element's `accessibility()` returns a node with role, name, value, state, bounds, and actions; an element that isn't `Visible` gets no node, and neither do its descendants; the tree is rebuilt incrementally from render-dirty nodes and pushed once per frame.
 - Attached properties: `Accessibility.Name`, `.HelpText`, `.LabeledBy`, `.LiveRegion`, `.Role` override (D20, renamed from the WPF `AutomationProperties`).
 - Actions (`Click`, `Focus`, `SetValue`, `ScrollIntoView`) arrive through the host's `accessibility` capability and are routed to the element like input.
 - Reduced-motion and high-contrast OS settings surface as root pseudo-classes (`:reduced-motion`, `:high-contrast`) so themes react through selectors.
