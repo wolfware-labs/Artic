@@ -34,10 +34,11 @@ pub trait ElementImpl {
   /// Places the children within `size`, in the element's own coordinates.
   fn arrange_override(&self, cx: &mut LayoutCx<'_>, size: Size) {}
   fn render(&self, cx: &mut RenderCx<'_>, scene: &mut SceneBuilder) {}
+  // #84 adds, with TemplateCx: fn on_apply_template(&mut self, cx: &mut TemplateCx<'_>) {}
 }
 ```
 
-`ElementImpl` is also where every per-control hook goes, each with a default: `on_apply_template` (#84) joins it rather than living on `Templated`, because state traits come from blanket impls (section 3), which a control can't override.
+`ElementImpl` is also where every per-control hook goes, each with a default: `on_apply_template` joins it rather than living on `Templated`, because state traits come from blanket impls (section 3), which a control can't override. #84 adds the hook together with `TemplateCx`, since nothing applies templates before it; PR A has no placeholder for either.
 
 - The supertrait is `Object`, the trait in `artic-core`; spec §7's `XamlObject` is renamed to match. Not every node comes from markup: builder-made and test nodes implement `Object` too.
 - `Layoutable` (#41) brings `measure` and `arrange`, so `Element` adds only what layout doesn't need.
@@ -52,7 +53,7 @@ pub trait ElementImpl {
 | `measure` | `Collapsed`: returns zero, children not measured. Otherwise #41's `measure_with`: margin off, limits on | `measure_override` |
 | `arrange` | #41's `arrange_with`: margin, limits, alignment | `arrange_override` with the content's size |
 | `render` | | `ElementImpl::render`; a hidden subtree is skipped by composition (section 7) |
-| `hit_test` | not `Visible`: a miss. Otherwise the trait default, `cx.bounds_test(point)` | |
+| `hit_test` | not `Visible`, or `IsHitTestVisible` false: a miss. Otherwise the trait default, `cx.bounds_test(point)` | |
 | `on_event` | the trait default | |
 | `accessibility` | the default node (section 7) | |
 
@@ -124,6 +125,7 @@ The pipeline builds a `TypeId → ElementType` map once. `cast` answers `LayoutN
 | `DataContext` | `Option<NodeId>` (a view-model node) | `None` | | yes |
 | `Cursor` | `Cursor` | `Arrow` | | |
 | `Focusable` | `bool` | `false` | | |
+| `IsHitTestVisible` | `bool` | `true` | | |
 | `ToolTip` | `Option<String>` | `None` | | |
 
 The size properties and the alignments are what #41's `Sizing` holds; `ElementBase` builds a `Sizing` from them for `measure_with` and `arrange_with`.
@@ -168,7 +170,7 @@ Lookups search the type's own properties, then each group, and the compiler writ
 
 `Opacity`, `RenderTransform` and `Visibility` feed #33's per-node layers through the render `Nodes` answer, not each control's `render`: opacity becomes the node's opacity layer and the transform its transform layer. Visibility needs a layer of its own: today `Compositor::visit` always visits a node's visual children, so hiding only the node's own drawing would still draw its children. `Layers` gains `visible: bool`, default `true`, and `visit` skips a node with `visible: false` together with its whole subtree. `Hidden` and `Collapsed` answer `visible: false`.
 
-Hit testing follows the same rule: the derive's `hit_test` misses when the element isn't `Visible`, and the hit-test walk (#74) doesn't descend into a node that isn't `Visible`.
+Hit testing follows the same rule: the derive's `hit_test` misses when the element isn't `Visible` or its `IsHitTestVisible` is false, and the hit-test walk (#74) doesn't descend into such a node. `IsHitTestVisible` is the drawn-but-click-through case that `Visibility` can't express, for overlays and decorations; spec §12 relies on it.
 
 ## 8. Pull requests
 

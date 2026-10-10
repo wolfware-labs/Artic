@@ -398,7 +398,7 @@ pub trait ElementImpl {                           // what a control writes; the 
     fn measure_override(&self, cx: &mut LayoutCx, available: Size) -> Size { Size::ZERO }
     fn arrange_override(&self, cx: &mut LayoutCx, size: Size) {}
     fn render(&self, cx: &mut RenderCx, scene: &mut SceneBuilder) {}
-    fn on_apply_template(&mut self, cx: &mut TemplateCx) {}   // per-control hooks live here, defaulted
+    fn on_apply_template(&mut self, cx: &mut TemplateCx) {}   // per-control hooks live here, defaulted; added with TemplateCx in #84
 }
 pub trait HasState<S> { fn state(&self) -> &S; fn state_mut(&mut self) -> &mut S; }
 // State traits: only methods the state determines, defaulted, given by blanket impls
@@ -417,7 +417,7 @@ pub struct Button {
 }
 ```
 
-- `ElementBase` holds the universal state: `Width/Height/Min*/Max*`, `Margin`, `HorizontalAlignment/VerticalAlignment`, `Visibility` (`Visible`, `Hidden` keeps its space, `Collapsed` takes none), `IsEnabled`, `Opacity`, `ZIndex`, `Classes`, `Name`, `DataContext`, `Cursor`, `Focusable`, `ToolTip` (v1: text), `RenderTransform` (translate/scale/rotate).
+- `ElementBase` holds the universal state: `Width/Height/Min*/Max*`, `Margin`, `HorizontalAlignment/VerticalAlignment`, `Visibility` (`Visible`, `Hidden` keeps its space, `Collapsed` takes none), `IsEnabled`, `Opacity`, `ZIndex`, `Classes`, `Name`, `DataContext`, `Cursor`, `Focusable`, `IsHitTestVisible`, `ToolTip` (v1: text), `RenderTransform` (translate/scale/rotate).
 - Reusable state structs (`ContentState`, `TemplateState`, `SelectionState`, `RangeState`) replace the WPF base classes `ContentControl`, `TemplatedControl`, `SelectingItemsControl`, `RangeBase`. The derive gives a struct `HasState<S>` for each `#[element(state)]` field, and each trait is implemented for every `HasState` of its state by a blanket impl. See [the elements design](../design/element.md).
 - Style selectors match on the Rust type name; "derived type" matching (`Button` matching a `ToggleButton`) does not exist. A style meant for several controls lists them or uses a class.
 - App-defined controls are the same derive on the same traits; nothing in the framework is special-cased.
