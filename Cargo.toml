@@ -68,7 +68,7 @@ thiserror = "2.0.21"
 trybuild = "1.0.122"
 # vello is pre-1.0 (spec §13 risks): pinned exactly. Its wgpu is used through `vello::wgpu`.
 vello = "=0.11.0"
-winit = "0.30.13"
+winit = { version = "0.30.13", default-features = false }
 xmlparser = "0.13.6"
 
 [workspace.lints.rust]
