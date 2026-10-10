@@ -143,7 +143,7 @@ The loader path needs a way to turn markup into typed property values. The origi
 1. XAML type names map 1:1 to Rust types; lookup is exact and case-sensitive (MS-XAML).
 2. Value types use std traits, not a custom converter API: `FromStr` for text (`Thickness`, `Brush`, `Color`, `GridLength`, `Duration`), `TryFrom` for typed conversions; `#[derive(XamlEnum)]` generates case-insensitive `FromStr` for enums.
 3. Property defaults live in `PropertyInfo` and in `Property::<T>::default()`, so a removed style setter reverts correctly.
-4. `inherits` marks properties (`FontSize`, `Foreground`, `IsEnabled`) that flow down the logical tree when unset.
+4. `inherits` marks properties (`FontSize`, `Foreground`, `IsEnabled`, `DataContext`) that flow down the logical tree when unset.
 5. Adding a type from any crate needs only the derive; no registration call.
 6. Nothing in the registry is required for a Rust-only view API (v2): the same structs and `Property<T>` fields are the API; XAML is one front end to them.
 7. Attached properties and markup extensions are declared with the same derive on their owner type (M0-30): `#[xaml(attached(name = "Row", ty = usize, target = children))]` on `Grid`, and `#[xaml(markup_extension(positional(key)))]` on an extension whose properties are its arguments. An attached value is a `Property<T>` the target node creates on first use, keyed by an `AttachedKey<T>` (`Grid::ROW`), so styles and local values compete as for any property. `const` and `static` items become visible to `x:Static` with `#[xaml_static]` (D23).

@@ -152,6 +152,8 @@ The three states are what web and mobile developers already know: CSS `visibilit
 
 Whether an element and all its ancestors are visible is computed when needed, for example by a future `is_visible(tree, node)`, never set.
 
+`LayoutManager` (#41) needs one change for `Collapsed` to hold for a whole subtree. Its upward pass measures dirty nodes on their own, and its waiting pass arranges nodes from their cached rectangles, so a child laid out before its parent collapsed would still be reached through its cached results. The manager therefore forgets what it knew about the children a node's `measure` didn't measure, together with their subtrees; a forgotten node has no cached size or rectangle, so both passes skip it until its parent measures it again. `artic-layout` still never names `Visibility`: "didn't measure this child" is all it sees.
+
 ## 6. Registry: flattened groups
 
 `#[derive(XamlType)]` skips fields without `#[xaml]`, so a plain `base: ElementBase` would be missing from the registry and from `visit_properties`: `Margin` couldn't be set from markup, changing it wouldn't mark the node dirty, and `IsEnabled` wouldn't inherit. A control marks the field:
@@ -170,7 +172,7 @@ For a flattened field, `derive(XamlType)`:
 - calls `self.base.visit_properties(visit)` from the struct's own `visit_properties`;
 - adds `PropertyGroupInfo { field: "base", properties: ElementBase::PROPERTIES }` to the type's `TypeInfo.groups`.
 
-Lookups search the type's own properties, then each group, and the compiler writes `node.base.margin.set(...)`. A slice of groups, not one merged list, because a `const` can't join two slices whose lengths come from different crates. Spec §3's `Border` gains the attribute.
+Lookups search the type's own properties, then each group, and the compiler writes `node.base.margin.set(...)`. A name must be unique across a type and all its groups: a control property named `Margin` would otherwise hide `ElementBase`'s, so markup would set a value that layout never reads. The derive can't see a group's names, which come from another crate, so the registry checks when it's built and reports a clash as a new `Duplicate::Property`, as it already does for duplicate type names. A slice of groups, not one merged list, because a `const` can't join two slices whose lengths come from different crates. Spec §3's `Border` gains the attribute.
 
 ## 7. Accessibility and composition
 
@@ -185,7 +187,7 @@ Hit testing follows the same rule: the derive's `hit_test` misses when the eleme
 | PR | Contents | Done when |
 | --- | --- | --- |
 | A | `artic-element`: `Element`, `ElementImpl`, `HasState`, `ElementType` and `element_type!`, the placeholder contexts; `InputEvent` in `artic-core` | a hand-written element is laid out through `LayoutManager` by way of the cast table |
-| B | `ElementBase` with `#[derive(XamlProperties)]`, the enums, `#[xaml(flatten)]` in `derive(XamlType)` and `PropertyGroupInfo`, the measure and arrange outline | `element_base_properties_registered`, `margin_and_alignment_layout`, `min_max_clamp_desired_size`, `collapsed_takes_no_space` |
+| B | `ElementBase` with `#[derive(XamlProperties)]`, the enums, `#[xaml(flatten)]` in `derive(XamlType)` and `PropertyGroupInfo`, `Duplicate::Property`, the measure and arrange outline, `LayoutManager` forgetting unmeasured children | `element_base_properties_registered`, `margin_and_alignment_layout`, `min_max_clamp_desired_size`, `collapsed_takes_no_space` (including a child made dirty after its parent collapsed), a registry test where a control property clashes with a group's |
 | C | `#[derive(Element)]`: the outline from section 3, the missing-`base` error, `#[element(state)]` | the two trybuild cases: missing `base`, and a test-only state giving a test trait through a blanket impl |
 | D | the default accesskit node; opacity, transform and visibility in composition, with `Layers.visible` | `base_accessibility_node`; a pixel test where opacity changes the drawn color; a hidden parent's child isn't drawn and isn't in the accesskit tree |
 
