@@ -139,7 +139,7 @@ The pipeline builds a `TypeId → ElementType` map once. `cast` answers `LayoutN
 
 The size properties and the alignments are what #41's `Sizing` holds; `ElementBase` builds a `Sizing` from them for `measure_with` and `arrange_with`.
 
-`Visibility`, `Cursor` and `Classes` live in `artic-controls`, with `#[derive(XamlEnum)]` for the enums. The alignment enums already live in `artic-layout`, below the registry; they get `FromStr` the way `Thickness` does.
+`Visibility`, `Cursor` and `Classes` live in `artic-controls`, with `#[derive(XamlEnum)]` for the enums. The alignment enums already live in `artic-layout`, which is on the registry's layer (1) and so can't depend on it, nor on `artic-macros`'s registry output; they get `FromStr` the way `Thickness` does.
 
 ### Visibility
 
@@ -202,7 +202,7 @@ Lookups search the type's own properties, then each group, and the compiler writ
 
 `ElementBase` builds the default accesskit node: the arranged bounds, and disabled when `IsEnabled` is false. Only `Visible` elements get a node at all: like composition and hit testing, the accesskit walk skips a node that isn't `Visible` together with its whole subtree, so a `Visible` child of a hidden parent is never exposed. Each control adds its role, name, value and actions in `ElementImpl::accessibility`, which the derive calls with that node (#161 adds the attached properties).
 
-`Opacity`, `RenderTransform`, `Visibility` and `ZIndex` feed #33's per-node layers, not each control's `render`. The derive writes `Element::layers` from `ElementBase`, and the pipeline's render `Nodes` answers `layers(tree, node)` by casting the node with `ElementType::cast` and calling it, so app-defined controls work the same way: opacity becomes the node's opacity layer and the transform its transform layer. Visibility needs a layer of its own: today `Compositor::visit` always visits a node's visual children, so hiding only the node's own drawing would still draw its children. `Layers` gains `visible: bool`, default `true`, and `visit` skips a node with `visible: false` together with its whole subtree. `Hidden` and `Collapsed` answer `visible: false`.
+`Opacity`, `RenderTransform`, `Visibility` and `ZIndex` feed #33's per-node layers, not each control's `render`. The derive writes `Element::layers` from `ElementBase`, and the pipeline's render `Nodes` answers `layers(tree, node)` by casting the node with `ElementType::cast` and calling it, so app-defined controls work the same way: opacity becomes the node's opacity layer and the transform its transform layer. Visibility needs a layer of its own: today the compositor's traversal, the private `Walk::visit` in `compose.rs`, always visits a node's visual children, so hiding only the node's own drawing would still draw its children. `Layers` gains `visible: bool`, default `true`, and `visit` skips a node with `visible: false` together with its whole subtree. `Hidden` and `Collapsed` answer `visible: false`.
 
 `Opacity` is a plain `f32`, so a Rust write can set any value, while `Layers.opacity` must be from 0 to 1. The property itself keeps whatever was set, and reading it returns that value. Only `ElementBase`'s building of the node's `Layers` clamps it to 0–1, with NaN counting as 1, so composition never sees an invalid value.
 
