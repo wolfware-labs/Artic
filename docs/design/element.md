@@ -34,6 +34,9 @@ pub trait ElementImpl {
   /// Places the children within `size`, in the element's own coordinates.
   fn arrange_override(&self, cx: &mut LayoutCx<'_>, size: Size) {}
   fn render(&self, cx: &mut RenderCx<'_>, scene: &mut SceneBuilder) {}
+  fn on_event(&mut self, cx: &mut EventCx<'_>, event: &InputEvent) -> Handled { Handled::No }
+  /// Adds the control's role, name, value and actions to the default node `ElementBase` built.
+  fn accessibility(&self, cx: &AccessCx<'_>, node: &mut accesskit::Node) {}
   // #84 adds, with TemplateCx: fn on_apply_template(&mut self, cx: &mut TemplateCx<'_>) {}
 }
 ```
@@ -54,8 +57,8 @@ pub trait ElementImpl {
 | `arrange` | #41's `arrange_with`: margin, limits, alignment | `arrange_override` with the content's size |
 | `render` | | `ElementImpl::render`; a hidden subtree is skipped by composition (section 7) |
 | `hit_test` | not `Visible`, or `IsHitTestVisible` false: a miss. Otherwise the trait default, `cx.bounds_test(point)` | |
-| `on_event` | the trait default | |
-| `accessibility` | the default node (section 7) | |
+| `on_event` | | `ElementImpl::on_event` |
+| `accessibility` | builds the default node (section 7) | `ElementImpl::accessibility`, which adds to it |
 
 A struct without `base: ElementBase` fails to compile with an error that names the missing field.
 
@@ -69,11 +72,13 @@ pub trait HasState<S> {
   fn state_mut(&mut self) -> &mut S;
 }
 
-#[derive(Element, XamlType)]
+#[derive(Debug, Element, XamlType)]
 pub struct Button {
   #[xaml(flatten)] pub base: ElementBase,
   #[element(state)] pub content: ContentState, // the derive emits impl HasState<ContentState> for Button
 }
+
+impl ElementImpl for Button { /* measure_override, render, on_event, … */ }
 
 // next to ContentState, in artic-controls (#84):
 pub trait HasContent: Element + HasState<ContentState> {
@@ -97,9 +102,10 @@ pub struct ElementType {
   pub cast_mut: fn(&mut dyn Object) -> Option<&mut dyn Element>,
 }
 
-// emitted for Border:
-cast: |object| object.downcast_ref::<Border>().map(|border| border as &dyn Element),
-cast_mut: |object| object.downcast_mut::<Border>().map(|border| border as &mut dyn Element),
+// emitted for Border; downcasting is defined on dyn Any, so the object is upcast first, as
+// UiTree::get_as does:
+cast: |object| (object as &dyn Any).downcast_ref::<Border>().map(|border| border as &dyn Element),
+cast_mut: |object| (object as &mut dyn Any).downcast_mut::<Border>().map(|border| border as &mut dyn Element),
 ```
 
 The pipeline builds a `TypeId → ElementType` map once. `cast` answers `LayoutNodes` and the render `Nodes`; `cast_mut` serves input dispatch, which calls `on_event(&mut self)`. A hand-written `Element` registers with `element_type!(TestElement)`, the line the derive emits. App controls need no registration call, as spec §7 requires. `linkme` doesn't support wasm yet; the registry has the same limit, and #241 fixes both.
@@ -125,7 +131,7 @@ The pipeline builds a `TypeId → ElementType` map once. `cast` answers `LayoutN
 | `DataContext` | `Option<NodeId>` (a view-model node) | `None` | | yes |
 | `Cursor` | `Cursor` | `Arrow` | | |
 | `Focusable` | `bool` | `false` | | |
-| `IsHitTestVisible` | `bool` | `true` | | |
+| `IsHitTestVisible` | `bool` | `true` | render (clears cached hit tests, §12) | |
 | `ToolTip` | `Option<String>` | `None` | | |
 
 The size properties and the alignments are what #41's `Sizing` holds; `ElementBase` builds a `Sizing` from them for `measure_with` and `arrange_with`.
@@ -149,7 +155,7 @@ Whether an element and all its ancestors are visible is computed when needed, fo
 `#[derive(XamlType)]` skips fields without `#[xaml]`, so a plain `base: ElementBase` would be missing from the registry and from `visit_properties`: `Margin` couldn't be set from markup, changing it wouldn't mark the node dirty, and `IsEnabled` wouldn't inherit. A control marks the field:
 
 ```rust
-#[derive(Element, XamlType)]
+#[derive(Debug, Element, XamlType)]
 #[xaml(namespace = "https://artic.rs/ui", content = child)]
 pub struct Border {
   #[xaml(flatten)] pub base: ElementBase,
@@ -166,7 +172,7 @@ Lookups search the type's own properties, then each group, and the compiler writ
 
 ## 7. Accessibility and composition
 
-`ElementBase` builds the default accesskit node: the arranged bounds, hidden unless `Visible`, disabled when `IsEnabled` is false. Controls add their role and name on top (#161 adds the attached properties).
+`ElementBase` builds the default accesskit node: the arranged bounds, hidden unless `Visible`, disabled when `IsEnabled` is false. Each control adds its role, name, value and actions in `ElementImpl::accessibility`, which the derive calls with that node (#161 adds the attached properties).
 
 `Opacity`, `RenderTransform` and `Visibility` feed #33's per-node layers through the render `Nodes` answer, not each control's `render`: opacity becomes the node's opacity layer and the transform its transform layer. Visibility needs a layer of its own: today `Compositor::visit` always visits a node's visual children, so hiding only the node's own drawing would still draw its children. `Layers` gains `visible: bool`, default `true`, and `visit` skips a node with `visible: false` together with its whole subtree. `Hidden` and `Collapsed` answer `visible: false`.
 
