@@ -1,6 +1,6 @@
-// Opens a window and draws a small scene with `VelloRenderer`, through the same `Compositor` and
-// `Renderer` seam artic's frame pipeline will use: a panel with a clipped header, a
-// half-transparent overlay, and a square spinning at the display's refresh rate.
+// Opens a window and draws a small scene with `artic_vello::Renderer`, through the same
+// `Compositor` and `Renderer` seam artic's frame pipeline will use: a panel with a clipped header,
+// a half-transparent overlay, and a square spinning at the display's refresh rate.
 //
 // Run with `cargo run -p artic-vello --example window`. Until the `artic-winit` host exists
 // (#39), this example drives `winit` itself.
@@ -9,8 +9,9 @@ use artic_core::Object;
 use artic_core::property::AnyProperty;
 use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_layout::geometry::{Rect, Transform};
-use artic_render::{Clip, Color, Compositor, Layers, Nodes, PhysicalSize, Renderer, SceneBuilder, Surface, SurfaceId, Target};
-use artic_vello::VelloRenderer;
+use artic_render::Renderer as _;
+use artic_render::{Clip, Color, Compositor, Layers, Nodes, PhysicalSize, SceneBuilder, Surface, SurfaceId, Target};
+use artic_vello::Renderer;
 use std::sync::Arc;
 use std::time::Instant;
 use winit::application::ApplicationHandler;
@@ -19,7 +20,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowId};
 
 fn main() {
-  let renderer = match VelloRenderer::new() {
+  let renderer = match Renderer::new() {
     Ok(renderer) => renderer,
     Err(error) => {
       eprintln!("can't start the renderer: {error}");
@@ -94,7 +95,7 @@ impl Nodes for Scene {
 }
 
 struct Demo {
-  renderer: VelloRenderer,
+  renderer: Renderer,
   compositor: Compositor,
   tree: UiTree,
   scene: Scene,
@@ -103,7 +104,7 @@ struct Demo {
 }
 
 impl Demo {
-  fn new(renderer: VelloRenderer) -> Demo {
+  fn new(renderer: Renderer) -> Demo {
     let mut tree = UiTree::new();
     let [background, panel, header, overlay, spinner] = [(); 5].map(|()| tree.alloc(Box::new(Node)));
     tree.add_child(TreeKind::Visual, background, panel);
