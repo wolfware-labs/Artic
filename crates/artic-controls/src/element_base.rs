@@ -2,14 +2,16 @@
 
 use crate::{Classes, Cursor, Visibility};
 use artic_core::property::Property;
-use artic_layout::geometry::{Thickness, Transform};
-use artic_layout::{HorizontalAlignment, VerticalAlignment};
+use artic_layout::geometry::{Rect, Size, Thickness, Transform};
+use artic_layout::{HorizontalAlignment, LayoutCx, Sizing, VerticalAlignment, arrange_with, measure_with};
 use artic_macros::XamlProperties;
 
 /// The properties every control has: size, margin, alignment, visibility and the rest.
 ///
 /// A control embeds it in a field named `base`, marked `#[xaml(flatten)]`, so its properties are
-/// the control's in markup: `<Border Margin="8"/>`.
+/// the control's in markup: `<Border Margin="8"/>`. Its layout helpers,
+/// [`measure`](ElementBase::measure) and [`arrange`](ElementBase::arrange), apply the margin, size
+/// limits, alignment and visibility around the control's own layout.
 #[derive(Debug, XamlProperties)]
 pub struct ElementBase {
   /// An explicit width, or `None` to size to the content.
@@ -72,4 +74,44 @@ pub struct ElementBase {
   /// Text shown when the pointer rests on the element.
   #[xaml]
   pub tool_tip: Property<Option<String>>,
+}
+
+impl ElementBase {
+  /// The size properties and alignments, for [`measure_with`] and [`arrange_with`].
+  #[must_use]
+  pub fn sizing(&self) -> Sizing {
+    Sizing {
+      margin: self.margin.get(),
+      width: self.width.get(),
+      height: self.height.get(),
+      min: Size::new(self.min_width.get(), self.min_height.get()),
+      max: Size::new(self.max_width.get(), self.max_height.get()),
+      horizontal: self.horizontal_alignment.get(),
+      vertical: self.vertical_alignment.get(),
+    }
+  }
+
+  /// Measures the element: zero when collapsed, without calling `content`; otherwise `content`
+  /// measures within `available` less the margin and held within the limits, and its result,
+  /// held within the limits, gets the margin back.
+  pub fn measure(&self, cx: &mut LayoutCx<'_>, available: Size, content: impl FnOnce(&mut LayoutCx<'_>, Size) -> Size) -> Size {
+    if self.visibility.get() == Visibility::Collapsed {
+      return Size::ZERO;
+    }
+    measure_with(&self.sizing(), available, |inner| content(cx, inner))
+  }
+
+  /// Arranges the element in `slot`: its bounds are the slot less the margin, sized and aligned,
+  /// and `content` arranges the children within their size. A collapsed element gets empty bounds
+  /// at the slot's corner, and `content` isn't called.
+  pub fn arrange(&self, cx: &mut LayoutCx<'_>, slot: Rect, content: impl FnOnce(&mut LayoutCx<'_>, Size)) {
+    if self.visibility.get() == Visibility::Collapsed {
+      cx.set_bounds(Rect::new(slot.x, slot.y, 0.0, 0.0));
+      return;
+    }
+    let desired = cx.desired(cx.node());
+    let bounds = arrange_with(&self.sizing(), slot, desired);
+    cx.set_bounds(bounds);
+    content(cx, bounds.size());
+  }
 }
