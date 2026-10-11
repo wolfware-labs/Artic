@@ -1,8 +1,8 @@
-use crate::VelloError;
+use crate::Error;
 use crate::backend::backends_for;
 use crate::translate::translate;
 use artic_render::{
-  PhysicalSize, PixelBuffer, PixelFormat, RawHandles, RenderError, Renderer, Scene, Surface, SurfaceId, Target, TargetKind,
+  PhysicalSize, PixelBuffer, PixelFormat, RawHandles, RenderError, Scene, Surface, SurfaceId, Target, TargetKind,
 };
 use std::collections::HashMap;
 use std::sync::mpsc;
@@ -18,7 +18,7 @@ use vello::{AaConfig, AaSupport, RenderParams, RendererOptions};
 ///
 /// It accepts [`Target::Handles`], keeping a swapchain per surface until the host reports the
 /// surface lost, and [`Target::Pixels`], rendering offscreen and copying the pixels back.
-pub struct VelloRenderer {
+pub struct Renderer {
   instance: Instance,
   adapter: wgpu::Adapter,
   device: Device,
@@ -37,14 +37,14 @@ struct Swapchain {
   blitter: TextureBlitter,
 }
 
-impl VelloRenderer {
+impl Renderer {
   /// Opens the GPU and prepares vello's pipelines. It blocks until they're ready.
   ///
   /// # Errors
   ///
-  /// Returns a [`VelloError`] when no adapter supports the platform's GPU API, the device can't be
+  /// Returns a [`Error`] when no adapter supports the platform's GPU API, the device can't be
   /// opened, or vello's pipelines can't be built.
-  pub fn new() -> Result<VelloRenderer, VelloError> {
+  pub fn new() -> Result<Renderer, Error> {
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::from_env().unwrap_or_else(|| backends_for(std::env::consts::OS));
     let instance = Instance::new(descriptor);
@@ -55,7 +55,7 @@ impl VelloRenderer {
       ..RendererOptions::default()
     };
     let vello = vello::Renderer::new(&device, options)?;
-    Ok(VelloRenderer {
+    Ok(Renderer {
       instance,
       adapter,
       device,
@@ -253,7 +253,7 @@ impl VelloRenderer {
   }
 }
 
-impl Renderer for VelloRenderer {
+impl artic_render::Renderer for Renderer {
   fn accepts(&self, kind: TargetKind) -> bool {
     matches!(kind, TargetKind::Handles | TargetKind::Pixels)
   }
@@ -272,10 +272,10 @@ impl Renderer for VelloRenderer {
   }
 }
 
-impl std::fmt::Debug for VelloRenderer {
+impl std::fmt::Debug for Renderer {
   fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     formatter
-      .debug_struct("VelloRenderer")
+      .debug_struct("Renderer")
       .field("adapter", &self.adapter.get_info().name)
       .field("surfaces", &self.swapchains.len())
       .finish_non_exhaustive()

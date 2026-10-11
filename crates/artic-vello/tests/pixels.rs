@@ -7,11 +7,12 @@ use artic_core::Object;
 use artic_core::property::AnyProperty;
 use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_layout::geometry::{Rect, Transform};
+use artic_render::Renderer as _;
 use artic_render::{
-  Clip, Color, Compositor, Layers, Nodes, PhysicalSize, PixelBuffer, PixelFormat, RenderError, Renderer, SceneBuilder, Surface,
+  Clip, Color, Compositor, Layers, Nodes, PhysicalSize, PixelBuffer, PixelFormat, RenderError, SceneBuilder, Surface,
   SurfaceId, Target, TargetKind,
 };
-use artic_vello::VelloRenderer;
+use artic_vello::Renderer;
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock, PoisonError};
@@ -48,9 +49,9 @@ impl Nodes for Fills {
 }
 
 /// Runs `test` with the shared renderer, or prints why the machine can't run GPU tests.
-fn with_renderer(test: impl FnOnce(&mut VelloRenderer)) {
-  static RENDERER: OnceLock<Mutex<Option<VelloRenderer>>> = OnceLock::new();
-  let shared = RENDERER.get_or_init(|| match VelloRenderer::new() {
+fn with_renderer(test: impl FnOnce(&mut Renderer)) {
+  static RENDERER: OnceLock<Mutex<Option<Renderer>>> = OnceLock::new();
+  let shared = RENDERER.get_or_init(|| match Renderer::new() {
     Ok(renderer) if is_warp(&renderer) => {
       eprintln!("skipped: vello crashes on WARP, the only adapter here ({renderer:?})");
       Mutex::new(None)
@@ -72,18 +73,12 @@ fn with_renderer(test: impl FnOnce(&mut VelloRenderer)) {
 }
 
 /// Whether the renderer runs on WARP: a software adapter on Windows.
-fn is_warp(renderer: &VelloRenderer) -> bool {
+fn is_warp(renderer: &Renderer) -> bool {
   cfg!(windows) && renderer.adapter_info().device_type == vello::wgpu::DeviceType::Cpu
 }
 
 /// Renders `root`'s tree into an `SIZE`×`SIZE` buffer of `format`, and returns its pixels.
-fn render(
-  renderer: &mut VelloRenderer,
-  tree: &mut UiTree,
-  root: NodeId,
-  nodes: &mut Fills,
-  format: PixelFormat,
-) -> Vec<[u8; 4]> {
+fn render(renderer: &mut Renderer, tree: &mut UiTree, root: NodeId, nodes: &mut Fills, format: PixelFormat) -> Vec<[u8; 4]> {
   let scene = Compositor::default().compose(tree, root, nodes);
   let mut data = vec![0; (SIZE * SIZE * 4) as usize];
   let surface = Surface {

@@ -1,8 +1,8 @@
 use vello::wgpu::{RequestAdapterError, RequestDeviceError};
 
-/// Why a [`VelloRenderer`](crate::VelloRenderer) couldn't start.
+/// Why a [`Renderer`](crate::Renderer) couldn't start.
 #[derive(Debug, thiserror::Error)]
-pub enum VelloError {
+pub enum Error {
   /// No GPU adapter supports the chosen API.
   #[error("no GPU adapter is available: {0}")]
   Adapter(#[from] RequestAdapterError),
