@@ -48,7 +48,7 @@ pub trait Host {
 }
 ```
 
-`AppHandler` is artic's side of the loop. The host calls its `started`, `woken`, `surface_changed`, `surface_lost`, `event` and `frame`, each with a `HostContext` through which artic asks for frames, exits and reaches the capabilities; other threads wake the loop through a `Waker`. The [host design](host.md) (#39) fixes these traits; it moved the capabilities from `Host` to `HostContext`, since `run` consumes the host.
+`AppHandler` is artic's side of the loop. The host calls its `started`, `woken`, `surface_changed`, `surface_lost`, `event` and `frame`, which carries the frame's time, each with a `HostContext` through which artic asks for frames, exits and reaches the capabilities; other threads wake the loop through a `Waker`. The [host design](host.md) (#39) fixes these traits; it moved the capabilities from `Host` to `HostContext`, since `run` consumes the host.
 
 ### Capabilities
 

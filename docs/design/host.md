@@ -35,7 +35,7 @@ pub trait AppHandler {
   fn surface_changed(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, info: SurfaceInfo);
   fn surface_lost(&mut self, cx: &mut dyn HostContext, surface: SurfaceId);
   fn event(&mut self, cx: &mut dyn HostContext, event: HostEvent);
-  fn frame(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, target: Target<'_>);
+  fn frame(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, target: Target<'_>, time: Duration);
 }
 
 pub trait HostContext {
@@ -56,6 +56,7 @@ pub trait Windows {
 - **A context on every call.** artic acts on the host only through the `cx` it's handed: asking for a frame, exiting, opening a window. This is winit's own rule (windows are created from `&ActiveEventLoop`, inside callbacks), and it needs no shared mutable state between artic and the host. `run` consumes the host, so the capabilities live on the context, not on `Host`.
 - **Capabilities default to `None`.** A host implements what its target has; artic decides the fallback at each use ([backends §2](backends.md#capabilities)). A new capability is a new default method on `HostContext`, so existing adapters keep compiling. #39 implements `windows`; clipboard (#91), IME (#90), color scheme (#118) and OS services (#172) arrive with their issues.
 - **The target is lent only in `frame`.** `surface_changed` reports facts; `frame` is the moment to draw, with the window's handles or a pixel buffer borrowed for that call. A renderer keys its swapchain on the `SurfaceId`, creates it the first time it sees the handles, and drops it on `surface_lost`, as `artic-vello` already does. A `Pixels` host hands a fresh buffer each frame and presents it after the call.
+- **Each frame carries its time.** `time` is monotonic, from an epoch the host picks (such as the loop's start), and is the host's best estimate of when the frame will be presented, or now when the platform doesn't say. Animations read it, so they follow the display rather than when the code happens to run. It's a `Duration` rather than an `Instant` because `Instant` panics on `wasm32-unknown-unknown`, and a browser's `requestAnimationFrame` timestamp converts to it directly, as do `CADisplayLink`'s and `Choreographer`'s.
 - **`open` doesn't fail synchronously.** It returns the new id at once; the surface follows through `surface_changed`, or `surface_lost` if the window couldn't be created. A browser host, whose canvas may appear later, works the same way.
 
 ## 3. The data
@@ -88,7 +89,7 @@ The desktop adapter, at layer 5, depending on `artic-platform`, `artic-render`, 
 | later `resumed`, `suspended` | (mobile) | `event(Resumed)`, `event(Suspended)` |
 | `WindowEvent::Resized`, `ScaleFactorChanged`, `Moved` | rebuilds the surface's `SurfaceInfo`, with the current monitor as its `DisplayId` and its refresh rate | `surface_changed` |
 | `WindowEvent::CloseRequested` | | `event(CloseRequested { surface })` |
-| `WindowEvent::RedrawRequested` | lends the window as `Target::Handles` | `frame(cx, surface, target)` |
+| `WindowEvent::RedrawRequested` | lends the window as `Target::Handles`, with the time since `run` started (winit doesn't expose present times) | `frame(cx, surface, target, time)` |
 | `user_event` (a `Waker` fired) | | `woken` |
 | `about_to_wait` | `ControlFlow::Wait`: sleep until the next event or wake-up | |
 

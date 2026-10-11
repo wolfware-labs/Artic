@@ -635,7 +635,7 @@ pub trait AppHandler {                                                // artic's
     fn surface_changed(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, info: SurfaceInfo);
     fn surface_lost(&mut self, cx: &mut dyn HostContext, surface: SurfaceId);
     fn event(&mut self, cx: &mut dyn HostContext, event: HostEvent);
-    fn frame(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, target: Target<'_>);
+    fn frame(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, target: Target<'_>, time: Duration);
 }
 pub trait HostContext {                                               // handed to every call
     fn request_frame(&mut self, surface: SurfaceId);
