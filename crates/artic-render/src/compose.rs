@@ -5,15 +5,21 @@ use artic_layout::geometry::Transform;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// A node's transform, clip and opacity, which apply to it and to its visual descendants.
+/// How composition treats a node: its transform, clip and opacity, which wrap it and its visual
+/// descendants, whether they're drawn at all, and its drawing order among its siblings.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Layers {
-  /// Maps the node's coordinates to its parent's, if they differ.
+  /// Maps the node's coordinates to its parent's, if they differ. An element's own layers hold
+  /// only its render transform; the frame pipeline adds its layout offset.
   pub transform: Option<Transform>,
   /// Keeps the node and its descendants inside this shape, in the node's coordinates.
   pub clip: Option<Clip>,
   /// Blends the node and its descendants as one group, from 0 to 1.
   pub opacity: f32,
+  /// Whether the node and its descendants are drawn at all.
+  pub visible: bool,
+  /// The node's drawing order among its siblings: lower first, ties in tree order.
+  pub z_index: i32,
 }
 
 impl Default for Layers {
@@ -22,6 +28,8 @@ impl Default for Layers {
       transform: None,
       clip: None,
       opacity: 1.0,
+      visible: true,
+      z_index: 0,
     }
   }
 }
@@ -48,9 +56,11 @@ impl Compositor {
   /// Builds the frame for `root`'s visual subtree.
   ///
   /// Each node is wrapped in its layers (transform, then clip, then opacity, each only if set),
-  /// which also wrap its visual descendants; it draws before them. A node is recorded again only if
-  /// it's render-dirty or has no fragment yet, and its render flag is cleared. Fragments of nodes
-  /// no longer in the subtree are dropped.
+  /// which also wrap its visual descendants; it draws before them, and they draw in `z_index`
+  /// order, ties in tree order. A node that isn't visible is skipped with its whole subtree, which
+  /// keeps its fragments and its render flags, so it comes back without recording what didn't
+  /// change. A node is recorded again only if it's render-dirty or has no fragment yet, and its
+  /// render flag is cleared. Fragments of nodes no longer in the subtree are dropped.
   pub fn compose(&mut self, tree: &mut UiTree, root: NodeId, nodes: &mut impl Nodes) -> Scene {
     let mut previous = std::mem::take(&mut self.fragments);
     let mut walk = Walk {
@@ -60,7 +70,8 @@ impl Compositor {
       builder: SceneBuilder::default(),
       items: Vec::new(),
     };
-    walk.visit(tree, root);
+    let layers = walk.nodes.layers(tree, root);
+    walk.visit(tree, root, layers);
     Scene { items: walk.items }
   }
 }
@@ -75,8 +86,11 @@ struct Walk<'a, N> {
 }
 
 impl<N: Nodes> Walk<'_, N> {
-  fn visit(&mut self, tree: &mut UiTree, node: NodeId) {
-    let layers = self.nodes.layers(tree, node);
+  fn visit(&mut self, tree: &mut UiTree, node: NodeId, layers: Layers) {
+    if !layers.visible {
+      self.keep_hidden(tree, node);
+      return;
+    }
     let set = [
       layers.transform.map(Layer::Transform),
       layers.clip.map(Layer::Clip),
@@ -96,11 +110,23 @@ impl<N: Nodes> Walk<'_, N> {
     self.compositor.fragments.insert(node, Arc::clone(&fragment));
     self.items.push(SceneItem::Fragment(fragment));
 
-    let children: Vec<NodeId> = tree.children(TreeKind::Visual, node).collect();
-    for child in children {
-      self.visit(tree, child);
+    let mut children: Vec<(NodeId, Layers)> = tree
+      .children(TreeKind::Visual, node)
+      .map(|child| (child, self.nodes.layers(tree, child)))
+      .collect();
+    children.sort_by_key(|(_, layers)| layers.z_index);
+    for (child, layers) in children {
+      self.visit(tree, child, layers);
     }
     self.items.extend((0..pushed).map(|_| SceneItem::Pop));
+  }
+
+  fn keep_hidden(&mut self, tree: &UiTree, node: NodeId) {
+    for hidden in std::iter::once(node).chain(tree.descendants(TreeKind::Visual, node)) {
+      if let Some(fragment) = self.previous.remove(&hidden) {
+        self.compositor.fragments.insert(hidden, fragment);
+      }
+    }
   }
 
   fn record(&mut self, tree: &UiTree, node: NodeId) -> Arc<SceneFragment> {
@@ -165,6 +191,132 @@ mod tests {
       .collect()
   }
 
+  // A node that isn't visible is skipped together with its whole subtree, visible descendants
+  // included.
+  #[test]
+  fn hidden_node_skips_its_subtree() {
+    let mut tree = UiTree::new();
+    let [root, a, b, _c] = sample(&mut tree);
+    let mut nodes = Table::default();
+    nodes.layers.insert(
+      a,
+      Layers {
+        visible: false,
+        ..Layers::default()
+      },
+    );
+
+    let scene = Compositor::default().compose(&mut tree, root, &mut nodes);
+
+    assert_eq!(fragment_nodes(&scene), [root, b]);
+  }
+
+  // A subtree hidden for a frame comes back whole once it's visible again, from the fragments it
+  // kept rather than recorded again.
+  #[test]
+  fn subtree_returns_when_visible_again() {
+    let mut tree = UiTree::new();
+    let [root, a, b, c] = sample(&mut tree);
+    let mut compositor = Compositor::default();
+    let mut nodes = Table::default();
+    nodes.layers.insert(
+      a,
+      Layers {
+        visible: false,
+        ..Layers::default()
+      },
+    );
+    compositor.compose(&mut tree, root, &mut nodes);
+
+    nodes.layers.remove(&a);
+    let scene = compositor.compose(&mut tree, root, &mut nodes);
+
+    assert_eq!(fragment_nodes(&scene), [root, a, c, b]);
+    assert_eq!((nodes.recorded[&a], nodes.recorded[&c]), (1, 1));
+  }
+
+  // A node changed while hidden is recorded again when it shows, since its flag stayed set.
+  #[test]
+  fn node_changed_while_hidden_is_recorded_on_show() {
+    let mut tree = UiTree::new();
+    let [root, a, _b, c] = sample(&mut tree);
+    let mut compositor = Compositor::default();
+    let mut nodes = Table::default();
+    compositor.compose(&mut tree, root, &mut nodes);
+    nodes.layers.insert(
+      a,
+      Layers {
+        visible: false,
+        ..Layers::default()
+      },
+    );
+    compositor.compose(&mut tree, root, &mut nodes);
+
+    tree.mark_dirty(c, Affects::RENDER);
+    nodes.layers.remove(&a);
+    compositor.compose(&mut tree, root, &mut nodes);
+
+    assert_eq!((nodes.recorded[&a], nodes.recorded[&c]), (1, 2));
+  }
+
+  // A hidden node's own layers aren't pushed: the scene has nothing of it.
+  #[test]
+  fn hidden_node_pushes_no_layers() {
+    let mut tree = UiTree::new();
+    let root = tree.alloc(Box::new(Node));
+    let mut nodes = Table::default();
+    nodes.layers.insert(
+      root,
+      Layers {
+        visible: false,
+        opacity: 0.5,
+        transform: Some(Transform::translate(1.0, 0.0)),
+        ..Layers::default()
+      },
+    );
+
+    let scene = Compositor::default().compose(&mut tree, root, &mut nodes);
+
+    assert!(scene.items().is_empty());
+  }
+
+  // Siblings draw by ZIndex, lowest first; equal values keep tree order.
+  #[test]
+  fn children_draw_by_z_index() {
+    let mut tree = UiTree::new();
+    let root = tree.alloc(Box::new(Node));
+    let [first, second, third, fourth] = [(); 4].map(|()| tree.alloc(Box::new(Node)));
+    for child in [first, second, third, fourth] {
+      tree.add_child(TreeKind::Visual, root, child);
+    }
+    let mut nodes = Table::default();
+    nodes.layers.insert(
+      first,
+      Layers {
+        z_index: 1,
+        ..Layers::default()
+      },
+    );
+    nodes.layers.insert(
+      third,
+      Layers {
+        z_index: -1,
+        ..Layers::default()
+      },
+    );
+    nodes.layers.insert(
+      fourth,
+      Layers {
+        z_index: 1,
+        ..Layers::default()
+      },
+    );
+
+    let scene = Compositor::default().compose(&mut tree, root, &mut nodes);
+
+    assert_eq!(fragment_nodes(&scene), [root, third, second, first, fourth]);
+  }
+
   // Fragments follow the visual tree depth first, each node before its descendants.
   #[test]
   fn scene_composes_fragments_in_visual_order() {
@@ -213,6 +365,7 @@ mod tests {
       transform: Some(transform),
       clip: Some(clip),
       opacity: 0.5,
+      ..Layers::default()
     };
     nodes.layers.insert(a, layers);
 

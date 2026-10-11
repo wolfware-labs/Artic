@@ -8,7 +8,7 @@ use artic_element::{
   AccessCx, AppearanceProperties, Classes, HitTestCx, HitTestResult, IdentityProperties, InteractionProperties,
   LayoutProperties, Visibility,
 };
-use artic_layout::geometry::{Point, Rect, Size, Thickness};
+use artic_layout::geometry::{Point, Rect, Size, Thickness, Transform};
 use artic_layout::{HorizontalAlignment, LayoutCx, LayoutManager, LayoutNodes, Layoutable, VerticalAlignment};
 use artic_macros::XamlType;
 use artic_registry::{PropertyGroup, Registry};
@@ -308,7 +308,7 @@ fn accessibility_node_has_bounds() {
   let node = tree.alloc(Box::new(Probe::default()));
   let cx = AccessCx::new(&tree, node, Rect::new(10.0, 20.0, 30.0, 40.0));
 
-  let built = InteractionProperties::default().accessibility(&cx, Visibility::Visible);
+  let built = InteractionProperties::default().accessibility(&cx);
 
   assert_eq!(built.role(), accesskit::Role::GenericContainer);
   assert_eq!(built.bounds(), Some(accesskit::Rect::new(10.0, 20.0, 40.0, 60.0)));
@@ -327,5 +327,107 @@ fn layers_carry_the_clip() {
       clip,
       ..Layers::default()
     }
+  );
+}
+
+// Opacity outside 0–1 is clamped, and NaN counts as opaque; the property keeps what was set.
+#[test]
+fn layers_clamp_opacity() {
+  let appearance = AppearanceProperties::default();
+  let opacity = |value: f32| {
+    appearance.opacity.set(value);
+    appearance.layers(Size::new(10.0, 10.0), None).opacity
+  };
+
+  assert_eq!(
+    (opacity(0.25), opacity(-1.0), opacity(2.0), opacity(f32::NAN)),
+    (0.25, 0.0, 1.0, 1.0)
+  );
+  assert!(appearance.opacity.get().is_nan());
+}
+
+// A rotation pivots on the element's centre, which stays where it was.
+#[test]
+fn transform_pivots_on_the_centre() {
+  let appearance = AppearanceProperties::default();
+  appearance
+    .render_transform
+    .set(Some(Transform::rotate(std::f32::consts::FRAC_PI_2)));
+
+  let transform = appearance
+    .layers(Size::new(100.0, 40.0), None)
+    .transform
+    .expect("a transform");
+
+  let centre = transform.apply(Point::new(50.0, 20.0));
+  assert!((centre.x - 50.0).abs() < 1e-4 && (centre.y - 20.0).abs() < 1e-4, "{centre:?}");
+}
+
+// A scale grows the element away from its centre, so its top-left corner moves up and left.
+#[test]
+fn scale_grows_from_the_centre() {
+  let appearance = AppearanceProperties::default();
+  appearance.render_transform.set(Some(Transform::scale(2.0, 2.0)));
+
+  let transform = appearance
+    .layers(Size::new(100.0, 40.0), None)
+    .transform
+    .expect("a transform");
+
+  assert_eq!(transform.apply(Point::new(0.0, 0.0)), Point::new(-50.0, -20.0));
+}
+
+// Hidden and collapsed elements aren't visible in composition, and ZIndex reaches the layers.
+#[test]
+fn layers_carry_visibility_and_z_index() {
+  let appearance = AppearanceProperties::default();
+  appearance.z_index.set(3);
+  let visible = |visibility| {
+    appearance.visibility.set(visibility);
+    appearance.layers(Size::new(1.0, 1.0), None).visible
+  };
+
+  assert_eq!(
+    (
+      visible(Visibility::Visible),
+      visible(Visibility::Hidden),
+      visible(Visibility::Collapsed)
+    ),
+    (true, false, false)
+  );
+  assert_eq!(appearance.layers(Size::new(1.0, 1.0), None).z_index, 3);
+}
+
+// A disabled element's accessibility node says so.
+#[test]
+fn accessibility_node_is_disabled_with_the_element() {
+  let mut tree = UiTree::new();
+  let node = tree.alloc(Box::new(Probe::default()));
+  let cx = AccessCx::new(&tree, node, Rect::new(0.0, 0.0, 1.0, 1.0));
+  let interaction = InteractionProperties::default();
+
+  assert!(!interaction.accessibility(&cx).is_disabled());
+  interaction.is_enabled.set(false);
+  assert!(interaction.accessibility(&cx).is_disabled());
+}
+
+// An element under a disabled ancestor gets a disabled node, even with its own IsEnabled true.
+#[test]
+fn accessibility_node_is_disabled_under_a_disabled_ancestor() {
+  let mut tree = UiTree::new();
+  let parent = tree.alloc(Box::new(Probe::default()));
+  let child = tree.alloc(Box::new(Probe::default()));
+  tree.add_child(TreeKind::Logical, parent, child);
+  tree.get_as::<Probe>(child).unwrap().interaction.is_enabled.set(true);
+  tree.get_as::<Probe>(parent).unwrap().interaction.is_enabled.set(false);
+  let cx = AccessCx::new(&tree, child, Rect::new(0.0, 0.0, 1.0, 1.0));
+
+  assert!(
+    tree
+      .get_as::<Probe>(child)
+      .unwrap()
+      .interaction
+      .accessibility(&cx)
+      .is_disabled()
   );
 }
