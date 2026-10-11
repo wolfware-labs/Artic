@@ -1,5 +1,5 @@
 use crate::crate_root::{REGISTRY, crate_root};
-use crate::xaml_type::attributes::{Affects, Attached, Target, Whitespace};
+use crate::xaml_type::attributes::{Affects, Attached, Inherits, Target, Whitespace};
 use crate::xaml_type::fields::{Analysis, Role, XamlField, generic_argument, snake_case, xaml_name};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, quote_spanned};
@@ -321,10 +321,13 @@ pub fn key_static(field: &XamlField) -> TokenStream {
   let key = generated_key(field.ident);
   let name = xaml_name(field);
   let affects = affects_tokens(field.attributes.affects.unwrap_or_default());
-  let inherits = if field.attributes.inherits.is_some() {
-    quote!(__artic::Inheritance::Replace)
-  } else {
-    quote!(__artic::Inheritance::None)
+  let inherits = match &field.attributes.inherits {
+    None => quote!(__artic::Inheritance::None),
+    Some(Inherits::Replace) => quote!(__artic::Inheritance::Replace),
+    Some(Inherits::Combine(path)) => match path.get_ident() {
+      Some(name) => quote!(__artic::Inheritance::Combine(__artic::inherit::#name)),
+      None => quote!(__artic::Inheritance::Combine(#path)),
+    },
   };
   quote! {
     static #key: __artic::PropertyKey<#inner> = __artic::PropertyKey::new(#name, #affects, #inherits);

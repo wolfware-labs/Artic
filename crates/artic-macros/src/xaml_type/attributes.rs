@@ -45,9 +45,16 @@ pub struct FieldAttributes {
   pub default: Option<Expr>,
   pub key: Option<Path>,
   pub affects: Option<Affects>,
-  pub inherits: Option<Span>,
+  pub inherits: Option<Inherits>,
   pub name: Option<LitStr>,
   pub flatten: Option<Span>,
+}
+
+/// How a property inherits, from a bare `inherits` or `inherits = path`.
+#[cfg_attr(test, derive(Debug))]
+pub enum Inherits {
+  Replace,
+  Combine(Path),
 }
 
 /// The stages listed in `affects = layout | render`.
@@ -184,7 +191,11 @@ pub fn parse_field_attributes(field: &Field) -> syn::Result<Option<FieldAttribut
       } else if meta.path.is_ident("affects") {
         attributes.affects = Some(parse_affects(meta.value()?)?);
       } else if meta.path.is_ident("inherits") {
-        attributes.inherits = Some(meta.path.get_ident().map_or_else(Span::call_site, Ident::span));
+        attributes.inherits = Some(if meta.input.peek(Token![=]) {
+          Inherits::Combine(meta.value()?.parse::<Path>()?)
+        } else {
+          Inherits::Replace
+        });
       } else if meta.path.is_ident("name") {
         attributes.name = Some(meta.value()?.parse::<LitStr>()?);
       } else if meta.path.is_ident("flatten") {
@@ -404,6 +415,23 @@ mod tests {
       })
     );
     assert!(attributes.inherits.is_some() && attributes.default.is_some());
+  }
+
+  // A bare `inherits` replaces what the field inherits, and `inherits = path` combines with it.
+  #[test]
+  fn inherits_takes_a_combining_function() {
+    let replace: DeriveInput = parse_quote! { struct A { #[xaml(inherits)] size: u8 } };
+    let combine: DeriveInput = parse_quote! { struct A { #[xaml(inherits = and)] enabled: bool } };
+
+    let replace = parse_field_attributes(first_field(&replace))
+      .expect("valid")
+      .expect("has #[xaml]");
+    let combine = parse_field_attributes(first_field(&combine))
+      .expect("valid")
+      .expect("has #[xaml]");
+
+    assert!(matches!(replace.inherits, Some(Inherits::Replace)));
+    assert!(matches!(combine.inherits, Some(Inherits::Combine(path)) if path.is_ident("and")));
   }
 
   // A bare `#[xaml]` marks the field with no settings, and no attribute means not a XAML field.

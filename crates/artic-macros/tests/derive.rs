@@ -341,3 +341,28 @@ fn group_property_inherits_across_types() {
 
   assert!(!tree.get_as::<Gadget>(gadget).unwrap().common.enabled.get());
 }
+
+/// A node whose enabled flag every ancestor must allow.
+#[derive(Debug, XamlType)]
+#[xaml(namespace = "https://artic.rs/test")]
+struct Switch {
+  #[xaml(default = true, inherits = and)]
+  enabled: Property<bool>,
+}
+
+// A combining property ANDs with its ancestor's: a disabled Switch disables a child Switch that
+// enables itself, until the parent is enabled again.
+#[test]
+fn combining_property_ands_with_its_ancestor() {
+  let mut tree = UiTree::new();
+  let parent = tree.alloc(Box::new(Switch::default()));
+  let child = tree.alloc(Box::new(Switch::default()));
+  tree.add_child(TreeKind::Logical, parent, child);
+  tree.get_as::<Switch>(child).unwrap().enabled.set(true);
+  let enabled = |tree: &UiTree| tree.get_as::<Switch>(child).unwrap().enabled.get();
+
+  tree.get_as::<Switch>(parent).unwrap().enabled.set(false);
+  assert!(!enabled(&tree));
+  tree.get_as::<Switch>(parent).unwrap().enabled.set(true);
+  assert!(enabled(&tree));
+}
