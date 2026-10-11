@@ -125,6 +125,7 @@ dependencies = [
  "artic-registry",
  "artic-render",
  "artic-style",
+ "pretty_assertions",
 ]
 
 [[package]]
