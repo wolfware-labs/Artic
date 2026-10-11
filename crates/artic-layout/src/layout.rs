@@ -313,15 +313,17 @@ impl<'a> LayoutCx<'a> {
 
   /// Sets the bounds of the node being arranged, in its parent's coordinates, when they aren't the
   /// rectangle its parent offered: after a margin and alignment, for instance. Its children are
-  /// placed relative to these bounds. They're snapped like [`arrange`](LayoutCx::arrange)'s.
+  /// placed relative to these bounds. They're snapped like [`arrange`](LayoutCx::arrange)'s, and
+  /// returned as recorded, so the node arranges its children in the box layout reports.
   ///
   /// # Panics
   ///
   /// Panics outside a node's `arrange`.
-  pub fn set_bounds(&mut self, bounds: Rect) {
+  pub fn set_bounds(&mut self, bounds: Rect) -> Rect {
     let node = self.arranging.expect("called from a node's arrange");
     let bounds = self.snap(self.checked_rect(node, bounds));
     self.slots.entry(node).or_default().rect = Some(bounds);
+    bounds
   }
 
   /// Forgets what layout knew about `node`'s visual children that its measure didn't measure, and

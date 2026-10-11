@@ -110,8 +110,7 @@ impl ElementBase {
       return;
     }
     let desired = cx.desired(cx.node());
-    let bounds = arrange_with(&self.sizing(), slot, desired);
-    cx.set_bounds(bounds);
+    let bounds = cx.set_bounds(arrange_with(&self.sizing(), slot, desired));
     content(cx, bounds.size());
   }
 }

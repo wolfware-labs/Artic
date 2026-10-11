@@ -229,3 +229,21 @@ fn is_enabled_inherits_across_control_types() {
 
   assert!(!tree.get_as::<Other>(other).unwrap().base.is_enabled.get());
 }
+
+// With snapping, the content is arranged in the element's snapped box, so a stretched child is
+// exactly as wide as its parent's recorded bounds.
+#[test]
+fn content_is_arranged_in_the_snapped_bounds() {
+  let mut tree = UiTree::new();
+  let parent = Boxed::new(40.8, 10.0);
+  parent.base.horizontal_alignment.set(HorizontalAlignment::Center);
+  let parent = tree.alloc(Box::new(parent));
+  let child = tree.alloc(Box::new(Boxed::new(0.0, 0.0)));
+  tree.add_child(TreeKind::Visual, parent, child);
+  let mut layout = LayoutManager::default();
+
+  layout.run(&mut tree, &Boxes, parent, Size::new(100.0, 10.0), 1.0, true);
+
+  let width = |node| layout.rect(node).expect("arranged").width;
+  assert_eq!(width(child), width(parent));
+}
