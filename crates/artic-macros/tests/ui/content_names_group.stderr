@@ -1,0 +1,5 @@
+error: `content` names `common`, a flattened property group, which can't receive content
+  --> tests/ui/content_names_group.rs:11:55
+   |
+11 | #[xaml(namespace = "https://artic.rs/test", content = common)]
+   |                                                       ^^^^^^

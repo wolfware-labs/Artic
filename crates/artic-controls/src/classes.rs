@@ -1,0 +1,26 @@
+//! The style classes an element has.
+
+use std::convert::Infallible;
+use std::str::FromStr;
+
+/// The style classes of an element, such as `primary` in `Classes="primary large"`, which style
+/// selectors like `Button.primary` match.
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct Classes(Vec<String>);
+
+impl Classes {
+  /// Whether `class` is among them.
+  #[must_use]
+  pub fn contains(&self, class: &str) -> bool {
+    self.0.iter().any(|name| name == class)
+  }
+}
+
+impl FromStr for Classes {
+  type Err = Infallible;
+
+  /// Splits `text` at whitespace; any text is valid.
+  fn from_str(text: &str) -> Result<Self, Self::Err> {
+    Ok(Self(text.split_whitespace().map(str::to_owned).collect()))
+  }
+}

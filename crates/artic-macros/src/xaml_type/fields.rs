@@ -26,6 +26,8 @@ pub enum Role<'a> {
   Event { args: &'a Type },
   /// Any other type, which must be a collection of child elements.
   Collection,
+  /// `#[xaml(flatten)]`: a property group whose properties are listed as the type's.
+  Group,
 }
 
 /// Reads the struct's attributes and sorts its fields by role.
@@ -73,6 +75,16 @@ pub fn analyze(input: &DeriveInput) -> syn::Result<Analysis<'_>> {
     return Err(Error::new_spanned(
       content,
       format_args!("`content` names `{content}`, which is not a `#[xaml]` field of this struct"),
+    ));
+  }
+  if let Some(content) = &attributes.content
+    && xaml_fields
+      .iter()
+      .any(|field| field.ident == content && matches!(field.role, Role::Group))
+  {
+    return Err(Error::new_spanned(
+      content,
+      format_args!("`content` names `{content}`, a flattened property group, which can't receive content"),
     ));
   }
   Ok(Analysis {
@@ -149,8 +161,11 @@ pub fn xaml_name(field: &XamlField) -> String {
   }
 }
 
-fn classify<'a>(field: &'a Field, ident: &'a Ident, attributes: FieldAttributes) -> syn::Result<XamlField<'a>> {
-  let role = if let Some(value) = generic_argument(&field.ty, "Property") {
+/// Decides a `#[xaml]` field's role from its attributes and how its type is written.
+pub fn classify<'a>(field: &'a Field, ident: &'a Ident, attributes: FieldAttributes) -> syn::Result<XamlField<'a>> {
+  let role = if attributes.flatten.is_some() {
+    Role::Group
+  } else if let Some(value) = generic_argument(&field.ty, "Property") {
     Role::Property {
       inner: value,
       value: generic_argument(value, "Option").unwrap_or(value),
@@ -160,7 +175,7 @@ fn classify<'a>(field: &'a Field, ident: &'a Ident, attributes: FieldAttributes)
   } else {
     Role::Collection
   };
-  if !matches!(role, Role::Property { .. }) {
+  if matches!(role, Role::Event { .. } | Role::Collection) {
     let property_only =
       attributes.default.is_some() || attributes.key.is_some() || attributes.affects.is_some() || attributes.inherits.is_some();
     if property_only {
@@ -180,7 +195,7 @@ fn classify<'a>(field: &'a Field, ident: &'a Ident, attributes: FieldAttributes)
 
 /// A `Property` or `Event` field must be marked `#[xaml]`: the derive builds properties with their
 /// keys, and an unmarked one would have none.
-fn reject_unmarked_member(field: &Field) -> syn::Result<()> {
+pub fn reject_unmarked_member(field: &Field) -> syn::Result<()> {
   for wrapper in ["Property", "Event"] {
     if generic_argument(&field.ty, wrapper).is_some() {
       return Err(Error::new_spanned(
@@ -273,6 +288,7 @@ mod tests {
         Role::Property { value, .. } => format!("property {}", text(value)),
         Role::Event { args } => format!("event {}", text(args)),
         Role::Collection => "collection".to_owned(),
+        Role::Group => "group".to_owned(),
       })
       .collect();
     assert_eq!(
@@ -280,6 +296,19 @@ mod tests {
       ["property NodeId", "property Thickness", "event PointerEvent", "collection"]
     );
     assert_eq!(analysis.other_fields, ["base"]);
+  }
+
+  // `#[xaml(flatten)]` makes a field a group, whatever its type looks like.
+  #[test]
+  fn flatten_makes_a_group() {
+    let input: DeriveInput = parse_quote! {
+      #[xaml(namespace = "https://artic.rs/ui")]
+      struct Border { #[xaml(flatten)] base: ElementBase }
+    };
+
+    let analysis = analyze(&input).expect("valid struct");
+
+    assert!(matches!(analysis.xaml_fields[0].role, Role::Group));
   }
 
   // A field's markup name is its name in PascalCase unless `name` overrides it.

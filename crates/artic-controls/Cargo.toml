@@ -16,5 +16,8 @@ artic-render.workspace = true
 artic-style.workspace = true
 artic-macros.workspace = true
 
+[dev-dependencies]
+pretty_assertions.workspace = true
+
 [lints]
 workspace = true

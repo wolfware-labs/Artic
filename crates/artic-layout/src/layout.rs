@@ -15,7 +15,8 @@ pub trait Layoutable {
   /// Returns the size the element wants within `available`, its margin included.
   ///
   /// An axis of `available` may be infinite: the parent offers as much as the element wants. The
-  /// returned size must be finite. Children are measured through [`LayoutCx::measure`].
+  /// returned size must be finite. Children are measured through [`LayoutCx::measure`]; a child it
+  /// doesn't measure is forgotten, with its subtree, until a later measure measures it.
   fn measure(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size;
 
   /// Places the element in `rect`, in its parent's coordinates, and its children through
@@ -39,9 +40,12 @@ struct Slot {
   available: Option<Size>,
   /// What the last measure returned.
   desired: Size,
-  /// The last rectangle the node was arranged in, in its parent's coordinates.
+  /// The rectangle the parent last offered, in its coordinates.
+  offered: Option<Rect>,
+  /// The node's bounds in its parent's coordinates: the offered rectangle, unless the node set its
+  /// own with [`LayoutCx::set_bounds`].
   rect: Option<Rect>,
-  /// Whether the node must be arranged again even in the same rectangle.
+  /// Whether the node must be arranged again even when offered the same rectangle.
   arrange_dirty: bool,
 }
 
@@ -77,10 +81,27 @@ impl LayoutManager {
     }
     self.slots.retain(|node, _| depths.contains_key(node));
 
-    let mut by_depth: BTreeMap<usize, Vec<NodeId>> = BTreeMap::new();
+    let mut nested = HashSet::new();
+    let mut between = Vec::new();
     for node in &dirty {
+      let mut path = Vec::new();
+      for ancestor in tree
+        .ancestors(TreeKind::Visual, *node)
+        .take_while(|ancestor| depths.contains_key(ancestor))
+      {
+        if dirty.contains(&ancestor) {
+          nested.insert(*node);
+          between.append(&mut path);
+          break;
+        }
+        path.push(ancestor);
+      }
+    }
+    let mut by_depth: BTreeMap<usize, Vec<NodeId>> = BTreeMap::new();
+    for node in dirty.iter().filter(|node| !nested.contains(*node)) {
       by_depth.entry(depths[node]).or_default().push(*node);
     }
+    dirty.extend(between);
     let mut cx = LayoutCx {
       tree,
       nodes,
@@ -89,6 +110,8 @@ impl LayoutManager {
       scale,
       snap,
       current: None,
+      measured: Vec::new(),
+      arranging: None,
     };
 
     // Upward: a dirty node measures again in the size it had. If its desired size is unchanged,
@@ -130,14 +153,14 @@ impl LayoutManager {
     let mut waiting: Vec<(usize, NodeId)> = cx
       .slots
       .iter()
-      .filter(|(_, slot)| slot.arrange_dirty && slot.rect.is_some())
+      .filter(|(_, slot)| slot.arrange_dirty && slot.offered.is_some())
       .map(|(node, _)| (depths[node], *node))
       .collect();
     waiting.sort_by_key(|(depth, _)| *depth);
     for (_, node) in waiting {
       let slot = cx.slots[&node];
       if slot.arrange_dirty
-        && let Some(rect) = slot.rect
+        && let Some(rect) = slot.offered
       {
         cx.arrange(node, rect);
       }
@@ -165,7 +188,7 @@ impl LayoutManager {
       .map(|slot| slot.desired)
   }
 
-  /// The rectangle `node` was last arranged in, in its parent's coordinates.
+  /// The bounds `node` was last arranged in, in its parent's coordinates.
   #[must_use]
   pub fn rect(&self, node: NodeId) -> Option<Rect> {
     self.slots.get(&node).and_then(|slot| slot.rect)
@@ -184,6 +207,10 @@ pub struct LayoutCx<'a> {
   snap: bool,
   /// The node being measured or arranged.
   current: Option<NodeId>,
+  /// The children measured so far by each node being measured, innermost last.
+  measured: Vec<HashSet<NodeId>>,
+  /// The node being arranged, which only [`set_bounds`](LayoutCx::set_bounds) needs.
+  arranging: Option<NodeId>,
 }
 
 impl<'a> LayoutCx<'a> {
@@ -226,10 +253,21 @@ impl<'a> LayoutCx<'a> {
   ///
   /// # Panics
   ///
-  /// In debug builds, panics if `available` has a negative or NaN axis, or if the child returns
-  /// an infinite, NaN or negative size; release builds treat such an axis as zero.
+  /// In debug builds, panics if `child` isn't a visual child of the node being measured (its
+  /// results would be forgotten right after), if `available` has a negative or NaN axis, or if the
+  /// child returns an infinite, NaN or negative size; release builds treat such an axis as zero.
   pub fn measure(&mut self, child: NodeId, available: Size) -> Size {
+    debug_assert!(
+      self
+        .current
+        .is_none_or(|parent| self.tree.parent(TreeKind::Visual, child) == Some(parent)),
+      "{} measured node {child:?}, which isn't a visual child of it; measure only visual children",
+      self.describe_parent(),
+    );
     let available = self.checked_available(child, available);
+    if let Some(siblings) = self.measured.last_mut() {
+      siblings.insert(child);
+    }
     let slot = self.slots.entry(child).or_default();
     if !self.dirty.contains(&child) && slot.available == Some(available) {
       return slot.desired;
@@ -237,11 +275,19 @@ impl<'a> LayoutCx<'a> {
     let desired = match self.nodes.layoutable(self.tree, child) {
       Some(layoutable) => {
         let parent = self.current.replace(child);
+        let arranging = self.arranging.take();
+        self.measured.push(HashSet::new());
         let desired = layoutable.measure(self, available);
+        self.arranging = arranging;
+        let measured = self.measured.pop().expect("pushed above");
         self.current = parent;
+        self.forget_unmeasured(child, &measured);
         desired
       }
-      None => Size::ZERO,
+      None => {
+        self.forget_unmeasured(child, &HashSet::new());
+        Size::ZERO
+      }
     };
     let desired = checked_desired(child, desired, available);
     self.dirty.remove(&child);
@@ -259,7 +305,7 @@ impl<'a> LayoutCx<'a> {
   }
 
   /// Arranges `child` in `rect`, in the coordinates of the node being laid out, snapped to the
-  /// device-pixel grid. A child already in that rectangle with nothing changed is skipped.
+  /// device-pixel grid. A child already offered that rectangle, with nothing changed, is skipped.
   ///
   /// # Panics
   ///
@@ -267,15 +313,49 @@ impl<'a> LayoutCx<'a> {
   pub fn arrange(&mut self, child: NodeId, rect: Rect) {
     let rect = self.snap(self.checked_rect(child, rect));
     let slot = self.slots.entry(child).or_default();
-    if slot.rect == Some(rect) && !slot.arrange_dirty {
+    if slot.offered == Some(rect) && !slot.arrange_dirty {
       return;
     }
+    slot.offered = Some(rect);
     slot.rect = Some(rect);
     slot.arrange_dirty = false;
     if let Some(layoutable) = self.nodes.layoutable(self.tree, child) {
       let parent = self.current.replace(child);
+      let arranging = self.arranging.replace(child);
       layoutable.arrange(self, rect);
+      self.arranging = arranging;
       self.current = parent;
+    }
+  }
+
+  /// Sets the bounds of the node being arranged, in its parent's coordinates, when they aren't the
+  /// rectangle its parent offered: after a margin and alignment, for instance. Its children are
+  /// placed relative to these bounds. They're snapped like [`arrange`](LayoutCx::arrange)'s, and
+  /// returned as recorded, so the node arranges its children in the box layout reports.
+  ///
+  /// # Panics
+  ///
+  /// Panics outside a node's `arrange`.
+  pub fn set_bounds(&mut self, bounds: Rect) -> Rect {
+    let node = self.arranging.expect("called from a node's arrange");
+    let bounds = self.snap(self.checked_rect(node, bounds));
+    self.slots.entry(node).or_default().rect = Some(bounds);
+    bounds
+  }
+
+  /// Forgets what layout knew about `node`'s visual children that its measure didn't measure, and
+  /// about their subtrees, so neither the upward nor the waiting pass lays them out.
+  fn forget_unmeasured(&mut self, node: NodeId, measured: &HashSet<NodeId>) {
+    let skipped: Vec<NodeId> = self
+      .tree
+      .children(TreeKind::Visual, node)
+      .filter(|child| !measured.contains(child))
+      .collect();
+    for child in skipped {
+      self.slots.remove(&child);
+      for descendant in self.tree.descendants(TreeKind::Visual, child) {
+        self.slots.remove(&descendant);
+      }
     }
   }
 

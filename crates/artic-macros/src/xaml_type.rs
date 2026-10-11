@@ -1,6 +1,6 @@
-mod attributes;
-mod fields;
-mod generate;
+pub(crate) mod attributes;
+pub(crate) mod fields;
+pub(crate) mod generate;
 
 use fields::analyze;
 use generate::generate;

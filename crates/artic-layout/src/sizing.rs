@@ -1,4 +1,6 @@
 use crate::geometry::{Rect, Size, Thickness};
+use artic_core::property::ParseEnumError;
+use std::str::FromStr;
 
 /// Where an element sits across its slot when it's narrower than the slot.
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash)]
@@ -26,6 +28,46 @@ pub enum VerticalAlignment {
   /// As tall as the slot, unless an explicit or maximum height stops it, then centered.
   #[default]
   Stretch,
+}
+
+/// `HorizontalAlignment`'s names, in declaration order.
+const HORIZONTAL: [&str; 4] = ["Left", "Center", "Right", "Stretch"];
+
+/// `VerticalAlignment`'s names, in declaration order.
+const VERTICAL: [&str; 4] = ["Top", "Center", "Bottom", "Stretch"];
+
+impl FromStr for HorizontalAlignment {
+  type Err = ParseEnumError;
+
+  /// Parses `Left`, `Center`, `Right` or `Stretch`, ignoring ASCII case, as
+  /// `#[derive(XamlEnum)]` parses.
+  fn from_str(text: &str) -> Result<Self, Self::Err> {
+    let index = position(text, "HorizontalAlignment", &HORIZONTAL)?;
+    Ok([Self::Left, Self::Center, Self::Right, Self::Stretch][index])
+  }
+}
+
+impl FromStr for VerticalAlignment {
+  type Err = ParseEnumError;
+
+  /// Parses `Top`, `Center`, `Bottom` or `Stretch`, ignoring ASCII case, as
+  /// `#[derive(XamlEnum)]` parses.
+  fn from_str(text: &str) -> Result<Self, Self::Err> {
+    let index = position(text, "VerticalAlignment", &VERTICAL)?;
+    Ok([Self::Top, Self::Center, Self::Bottom, Self::Stretch][index])
+  }
+}
+
+/// The position of the name `text` matches in `names`, ignoring ASCII case.
+fn position(text: &str, type_name: &'static str, names: &'static [&'static str]) -> Result<usize, ParseEnumError> {
+  names
+    .iter()
+    .position(|name| name.eq_ignore_ascii_case(text))
+    .ok_or_else(|| ParseEnumError {
+      value: text.to_owned(),
+      type_name,
+      expected: names,
+    })
 }
 
 /// Everything about an element's size and position that isn't its own measuring and arranging:
@@ -178,6 +220,17 @@ mod tests {
   use std::cell::Cell;
 
   const SLOT: Rect = Rect::new(0.0, 0.0, 400.0, 300.0);
+
+  // Alignments parse from their names in any case, and an unknown name lists the valid ones.
+  #[test]
+  fn alignments_parse_case_insensitively() {
+    assert_eq!("left".parse::<HorizontalAlignment>(), Ok(HorizontalAlignment::Left));
+    assert_eq!("Stretch".parse::<HorizontalAlignment>(), Ok(HorizontalAlignment::Stretch));
+    assert_eq!("BOTTOM".parse::<VerticalAlignment>(), Ok(VerticalAlignment::Bottom));
+
+    let error = "middle".parse::<VerticalAlignment>().unwrap_err();
+    assert_eq!(error.expected, ["Top", "Center", "Bottom", "Stretch"]);
+  }
 
   /// Arranges content of 60 × 20 plus `margin` with `sizing`.
   fn arranged(sizing: Sizing) -> Rect {
