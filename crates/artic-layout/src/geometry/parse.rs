@@ -4,7 +4,7 @@
 //! the same. Whitespace around the text is ignored. An empty value, such as two commas in a row or
 //! a leading or trailing comma, is an error, and so are NaN and infinity.
 
-use crate::geometry::{CornerRadius, Point, Rect, Size, Thickness};
+use crate::geometry::{CornerRadius, Point, Rect, Size, Thickness, Transform};
 use std::str::FromStr;
 
 /// The error returned when text isn't a valid geometry value.
@@ -41,6 +41,9 @@ pub enum GeometryProblem {
   /// The text has a number of values the type doesn't accept.
   #[error("it has {0} values")]
   Count(usize),
+  /// A transform function artic doesn't know, or text that isn't a function.
+  #[error("'{0}' is not translate(x, y), rotate(degrees) or scale(x, y)")]
+  UnknownFunction(String),
 }
 
 impl FromStr for Thickness {
@@ -136,6 +139,43 @@ impl FromStr for Rect {
 }
 
 /// Whether the values may be negative.
+impl FromStr for Transform {
+  type Err = ParseGeometryError;
+
+  /// Parses CSS transform functions separated by whitespace: `translate(x, y)` or `translate(x)`,
+  /// `rotate(degrees)`, `scale(s)` or `scale(x, y)`, such as `"translate(10, 20) rotate(45)"`. As
+  /// in CSS, the rightmost function applies to the element first.
+  fn from_str(text: &str) -> Result<Self, Self::Err> {
+    const FORMS: &str = r#""translate(10, 20)", "rotate(45)", "scale(2)" or several, such as "translate(10, 0) rotate(45)""#;
+    let fail = |problem| error(text, "Transform", FORMS, problem);
+    let mut rest = text.trim();
+    if rest.is_empty() {
+      return Err(fail(GeometryProblem::Empty));
+    }
+    let mut functions = Vec::new();
+    while !rest.is_empty() {
+      let unknown = || fail(GeometryProblem::UnknownFunction(rest.to_owned()));
+      let open = rest.find('(').ok_or_else(unknown)?;
+      let close = rest.find(')').filter(|close| *close > open).ok_or_else(unknown)?;
+      let name = rest[..open].trim();
+      let numbers = read_numbers(&rest[open + 1..close], Sign::Any).map_err(fail)?;
+      let function = match (name, numbers.as_slice()) {
+        ("translate", [x]) => Transform::translate(*x, 0.0),
+        ("translate", [x, y]) => Transform::translate(*x, *y),
+        ("rotate", [degrees]) => Transform::rotate(degrees.to_radians()),
+        ("scale", [both]) => Transform::scale(*both, *both),
+        ("scale", [x, y]) => Transform::scale(*x, *y),
+        ("translate" | "rotate" | "scale", numbers) => return Err(fail(GeometryProblem::Count(numbers.len()))),
+        (other, _) => return Err(fail(GeometryProblem::UnknownFunction(other.to_owned()))),
+      };
+      functions.push(function);
+      rest = rest[close + 1..].trim_start();
+    }
+    let rightmost_first = functions.into_iter().rev().reduce(Transform::then);
+    Ok(rightmost_first.expect("the text isn't empty, so it has a function"))
+  }
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Sign {
   Any,
@@ -268,5 +308,44 @@ mod tests {
       error.to_string(),
       r#"invalid Thickness '1,2,3': it has 3 values; expected "4", "4,8" or "1,2,3,4""#
     );
+  }
+
+  /// Where `transform` sends `point`, rounded to hundredths to absorb `f32` error.
+  fn at(transform: Transform, x: f32, y: f32) -> (f32, f32) {
+    let point = transform.apply(Point::new(x, y));
+    ((point.x * 100.0).round() / 100.0, (point.y * 100.0).round() / 100.0)
+  }
+
+  // Each function parses, with one or two numbers where CSS allows.
+  #[test]
+  fn transform_functions_parse() {
+    assert_eq!(at("translate(10, 20)".parse().unwrap(), 1.0, 1.0), (11.0, 21.0));
+    assert_eq!(at("translate(10)".parse().unwrap(), 1.0, 1.0), (11.0, 1.0));
+    assert_eq!(at("scale(2)".parse().unwrap(), 3.0, 4.0), (6.0, 8.0));
+    assert_eq!(at("scale(2 3)".parse().unwrap(), 3.0, 4.0), (6.0, 12.0));
+    assert_eq!(at("rotate(90)".parse().unwrap(), 1.0, 0.0), (0.0, 1.0));
+  }
+
+  // As in CSS, the rightmost function applies to the element first: this rotates, then moves.
+  #[test]
+  fn transform_functions_compose_like_css() {
+    let transform: Transform = "translate(100, 0) rotate(90)".parse().unwrap();
+
+    assert_eq!(at(transform, 1.0, 0.0), (100.0, 1.0));
+  }
+
+  // Unknown functions, wrong argument counts, bad numbers and empty text are errors.
+  #[test]
+  fn invalid_transforms_are_errors() {
+    let problem = |text: &str| text.parse::<Transform>().unwrap_err().problem;
+
+    assert_eq!(problem("skew(10)"), GeometryProblem::UnknownFunction("skew".to_owned()));
+    assert_eq!(problem("rotate(1, 2)"), GeometryProblem::Count(2));
+    assert_eq!(problem("translate(a, 2)"), GeometryProblem::NotANumber("a".to_owned()));
+    assert_eq!(
+      problem("translate(1, 2"),
+      GeometryProblem::UnknownFunction("translate(1, 2".to_owned())
+    );
+    assert_eq!(problem("  "), GeometryProblem::Empty);
   }
 }
