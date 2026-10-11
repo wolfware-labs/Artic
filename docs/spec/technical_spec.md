@@ -75,7 +75,7 @@ Each layer builds on the ones below it. The exact dependency edges and the rules
 | `artic-controls` | Templated controls, primitives, default `ControlTemplate`s | `Button`, `TextBox`, `ItemsControl`, … |
 | `artic-style` | Selector parser and matcher, `Style`, `Setter`, pseudo-classes, resource dictionaries, theme switching | `Selector`, `Style`, `ResourceDictionary` |
 | `artic-render` | `Renderer` trait, scene graph (display list), `Target`; text shaping via `parley`. No backend dependencies | `Renderer`, `Scene`, `Target`, `DrawingContext` |
-| `artic-platform` | `Host` trait and its capabilities, `artic::run`, frame pipeline (with facade-registered hooks). No backend dependencies | `Host`, `App`, `SurfaceInfo` |
+| `artic-platform` | `Host`, `AppHandler` and `HostContext` with its capabilities, `artic::run`, frame pipeline (with facade-registered hooks). No backend dependencies | `Host`, `AppHandler`, `HostContext`, `SurfaceInfo` |
 | `artic-winit` | Adapter: the desktop and mobile `Host` on `winit`, with `muda`, `rfd`, `arboard`, `accesskit_winit` | `Host` |
 | `artic-vello` | Adapter: the default `Renderer`, `vello` on `wgpu` | `Renderer` |
 | `artic` | Facade re-exporting the public API with feature flags (`hot-reload`, `runtime-xaml`) | `App`, `prelude`, `run` |
@@ -645,7 +645,7 @@ pub trait HostContext {                                               // handed 
 }
 ```
 
-- Core, required of every host: surfaces, each reporting `SurfaceInfo { size, scale, display, refresh_rate }` when it appears or changes and when it's lost; raw events (§9, plus gamepads); frames per surface; waking the loop when another thread posts to the `Dispatcher`.
+- Core, required of every host: surfaces, each reporting `SurfaceInfo { size, scale, display, refresh_rate }` when it appears or changes and when it's lost; raw events (§9, plus gamepads), delivered as `HostEvent` variants that #73 adds; frames per surface; waking the loop when another thread posts to the `Dispatcher`.
 - Everything else is a capability whose default is `None`; artic decides the fallback at each use (no `clipboard`: Copy does nothing; no `windows`: each `Window` takes one whole surface). A new capability is a new default method, so existing adapters keep compiling.
 - Several displays: a windowed host reports one surface per window, moving between displays with its scale and refresh rate; a host without `windows` reports one full-screen surface per display. The app's `Window`s are assigned to OS windows (on the display their `Display` property names) or to display surfaces in order, so a multi-screen app runs unchanged on both.
 - The [host design](../design/host.md) (#39) fixes these traits: artic acts on the host only through the context it's handed, the target is lent only in `frame`, and a `Waker` lets other threads wake the loop, after which artic drains the `Dispatcher`.

@@ -60,7 +60,7 @@ Everything beyond the core is optional. Each capability is a `HostContext` metho
 
 | Capability | What it does | Without it |
 | --- | --- | --- |
-| `windows` | open, close, title, size, full screen, on a chosen display | each `Window` takes one whole surface (below) |
+| `windows` | open and close (#39); title, size, full screen and the display a window opens on grow with the `Window` element (#48) | each `Window` takes one whole surface (below) |
 | `displays` | list displays (id, bounds, scale, refresh rate, primary); connect and disconnect | everything goes on the host's surfaces in order |
 | `clipboard` | read (async) and write text | Copy does nothing; Paste is disabled |
 | `text_input` | IME composition, soft keyboard, input mode (`InputMode`) | text comes only from `Key` and `Text` events |
@@ -191,7 +191,7 @@ The seams live in crates with no backend dependencies, and each backend is an ad
 | Crate | Holds | Doesn't depend on |
 | --- | --- | --- |
 | `artic-render` | `Renderer`, `Scene`, `Target`, `PixelBuffer`, text shaping (`parley`) | `vello`, `wgpu`, skia |
-| `artic-platform` | `Host`, its capabilities, `App`'s host-facing side, `artic::run`'s pairing check, the frame pipeline | `winit`, `muda`, `rfd`, `arboard` |
+| `artic-platform` | `Host`, `AppHandler` and `HostContext` with its capabilities, `artic::run`'s pairing check, the frame pipeline | `winit`, `muda`, `rfd`, `arboard` |
 | `artic-core` | raw input event types (controls see them without the platform, as today) | |
 | `artic-element` | the action mapping and directional focus, next to focus navigation | |
 | **`artic-winit`** (adapter) | the desktop `Host`: `winit`, `muda`, `rfd`, `arboard`, `accesskit_winit` | |

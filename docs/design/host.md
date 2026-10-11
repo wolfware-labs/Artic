@@ -62,7 +62,7 @@ pub trait Windows {
 
 | Type | Crate | Holds |
 | --- | --- | --- |
-| `WindowDesc` | `artic-core` | `title: String`, `width: f32`, `height: f32` in logical units. Plain data, so the `Window` element (#48) describes itself without naming the platform; `artic-core` sits below `artic-layout`, so it uses plain fields rather than `Size`. #48 adds placement and the rest. |
+| `WindowDesc` | `artic-core` | `title: String`, `width: f32`, `height: f32` in logical units. Plain data, so the `Window` element (#48) describes itself without naming the platform; `artic-core` sits below `artic-layout`, so it uses plain fields rather than `Size`. #48 adds the display a window opens on, full screen, and `Windows` methods to change a window after it opens. |
 | `SurfaceInfo` | `artic-platform` | `size: PhysicalSize`, `scale: f32` (device pixels per logical unit), `display: DisplayId`, `refresh_rate: Option<f32>` (some platforms don't report it) |
 | `DisplayId` | `artic-platform` | an opaque id the host assigns per display |
 | `HostEvent` | `artic-platform` | `#[non_exhaustive]`: `CloseRequested { surface }`, `Suspended`, `Resumed` |
@@ -70,7 +70,7 @@ pub trait Windows {
 
 `SurfaceId`, `PhysicalSize`, `Target` and `TargetKind` are `artic-render`'s, shared with the renderer seam.
 
-`HostEvent` holds only what a desktop host reports today. Raw input arrives with #73 (its payload types in `artic-core`, so controls see them without the platform), `ColorSchemeChanged` with #118, `Back` and `MemoryWarning` with the mobile hosts. `#[non_exhaustive]` lets each land without breaking an adapter or a handler. Surface facts (size, scale, display, refresh rate) aren't events: they arrive through `surface_changed`.
+`HostEvent` holds only what a desktop host reports today. Raw input takes the same path: #73 adds its variants to `HostEvent`, so `event` carries pointer, key and gamepad input too, with payload types in `artic-core` so controls see them without the platform; until then a host reports none. `ColorSchemeChanged` arrives with #118, and `Back` and `MemoryWarning` with the mobile hosts. `#[non_exhaustive]` lets each land without breaking an adapter or a handler. Surface facts (size, scale, display, refresh rate) aren't events: they arrive through `surface_changed`.
 
 `CloseRequested` asks; it doesn't close. artic decides, by closing the window through `Windows::close` (then `surface_lost` follows) or by exiting.
 
@@ -92,7 +92,7 @@ The desktop adapter, at layer 5, depending on `artic-platform`, `artic-render`, 
 | `user_event` (a `Waker` fired) | | `woken` |
 | `about_to_wait` | `ControlFlow::Wait`: sleep until the next event or wake-up | |
 
-- `cx.request_frame(id)` calls the window's `request_redraw()`. winit merges requests and delivers one `RedrawRequested` per window at the platform's pace (`DwmFlush`, the display link on macOS, Wayland frame callbacks), so each surface is paced by its own display (§10).
+- `cx.request_frame(id)` calls the window's `request_redraw()`, which schedules one `RedrawRequested` for that window; winit merges repeated requests. Scheduling isn't pacing: a handler that asks for the next frame from inside `frame` runs as fast as rendering allows unless something waits for the display. Pacing each surface to its display's refresh (§10) is #40's, through the renderer's vsync'd presentation and the platform's frame callbacks.
 - `cx.exit()` exits the loop; windows still open are reported through `surface_lost` before `run` returns.
 - `targets()` is `TargetKind::Handles`.
 
