@@ -8,7 +8,6 @@ pub struct Analysis<'a> {
   pub attributes: TypeAttributes,
   pub xaml_fields: Vec<XamlField<'a>>,
   pub other_fields: Vec<&'a Ident>,
-  /// Code `Default` runs on the built `__artic_value` before returning it; `#[element]` sets it.
   pub after_default: Option<TokenStream>,
 }
 
