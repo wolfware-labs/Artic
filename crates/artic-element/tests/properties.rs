@@ -1,10 +1,10 @@
-// CommonProperties: its properties, registered through a control that flattens it, and its layout
-// helpers.
+// The property groups: their properties, registered through a control that flattens them, and
+// the layout helpers.
 
 use artic_core::Object;
 use artic_core::property::{Affects, AnyProperty};
 use artic_core::tree::{NodeId, TreeKind, UiTree};
-use artic_element::{Classes, CommonProperties, Visibility};
+use artic_element::{AppearanceProperties, Classes, IdentityProperties, InteractionProperties, LayoutProperties, Visibility};
 use artic_layout::geometry::{Rect, Size, Thickness};
 use artic_layout::{HorizontalAlignment, LayoutCx, LayoutManager, LayoutNodes, Layoutable, VerticalAlignment};
 use artic_macros::XamlType;
@@ -12,12 +12,18 @@ use artic_registry::{PropertyGroup, Registry};
 use pretty_assertions::assert_eq;
 use std::cell::Cell;
 
-/// A control with nothing but the common properties.
+/// A control with the four groups and nothing else.
 #[derive(Debug, XamlType)]
 #[xaml(namespace = "https://artic.rs/test")]
 struct Probe {
   #[xaml(flatten)]
-  common: CommonProperties,
+  layout: LayoutProperties,
+  #[xaml(flatten)]
+  appearance: AppearanceProperties,
+  #[xaml(flatten)]
+  interaction: InteractionProperties,
+  #[xaml(flatten)]
+  identity: IdentityProperties,
 }
 
 /// A second control type, to check inheritance across types.
@@ -25,59 +31,61 @@ struct Probe {
 #[xaml(namespace = "https://artic.rs/test")]
 struct Other {
   #[xaml(flatten)]
-  common: CommonProperties,
+  interaction: InteractionProperties,
 }
 
-/// The markup names of `CommonProperties`'s properties.
-const NAMES: [&str; 20] = [
-  "Width",
-  "Height",
-  "MinWidth",
-  "MinHeight",
-  "MaxWidth",
-  "MaxHeight",
-  "Margin",
-  "HorizontalAlignment",
-  "VerticalAlignment",
-  "Visibility",
-  "IsEnabled",
-  "Opacity",
-  "RenderTransform",
-  "ZIndex",
-  "Classes",
-  "Name",
-  "Cursor",
-  "Focusable",
-  "IsHitTestVisible",
-  "ToolTip",
+/// The markup name of each property, and the field of the group that holds it.
+const NAMES: [(&str, &str); 20] = [
+  ("Width", "layout"),
+  ("Height", "layout"),
+  ("MinWidth", "layout"),
+  ("MinHeight", "layout"),
+  ("MaxWidth", "layout"),
+  ("MaxHeight", "layout"),
+  ("Margin", "layout"),
+  ("HorizontalAlignment", "layout"),
+  ("VerticalAlignment", "layout"),
+  ("Visibility", "appearance"),
+  ("Opacity", "appearance"),
+  ("RenderTransform", "appearance"),
+  ("ZIndex", "appearance"),
+  ("IsEnabled", "interaction"),
+  ("IsHitTestVisible", "interaction"),
+  ("Focusable", "interaction"),
+  ("Cursor", "interaction"),
+  ("ToolTip", "interaction"),
+  ("Name", "identity"),
+  ("Classes", "identity"),
 ];
 
-// Every common property is found on a control that flattens it, under the `common` field.
+// Every property is found on a control that flattens the groups, under its group's field.
 #[test]
-fn common_properties_registered() {
+fn groups_registered() {
   let registry = Registry::from_link_time().expect("no duplicates");
   let info = registry
     .type_by_name("https://artic.rs/test", "Probe")
     .expect("Probe is registered");
 
-  for name in NAMES {
+  for (name, group) in NAMES {
     let found = info.property(name).unwrap_or_else(|| panic!("{name} is a property of Probe"));
-    assert_eq!(found.group, Some("common"), "{name}");
+    assert_eq!(found.group, Some(group), "{name}");
   }
   assert_eq!(info.property("Margin").unwrap().info.affects, Affects::LAYOUT);
   assert!(info.property("IsEnabled").unwrap().info.inherits);
-  assert_eq!(info.groups[0].properties.len(), NAMES.len());
+  let count: usize = info.groups.iter().map(|group| group.properties.len()).sum();
+  assert_eq!(count, NAMES.len());
 }
 
 // Defaults: no explicit size, unbounded maximum, enabled, opaque, hit-testable, no classes.
 #[test]
-fn common_properties_defaults() {
-  let common = CommonProperties::default();
+fn group_defaults() {
+  let layout = LayoutProperties::default();
+  let interaction = InteractionProperties::default();
 
-  assert_eq!((common.width.get(), common.max_width.get()), (None, f32::INFINITY));
-  assert!(common.is_enabled.get() && common.is_hit_test_visible.get());
-  assert_eq!(common.opacity.get(), 1.0);
-  assert_eq!(common.classes.get(), Classes::default());
+  assert_eq!((layout.width.get(), layout.max_width.get()), (None, f32::INFINITY));
+  assert!(interaction.is_enabled.get() && interaction.is_hit_test_visible.get());
+  assert_eq!(AppearanceProperties::default().opacity.get(), 1.0);
+  assert_eq!(IdentityProperties::default().classes.get(), Classes::default());
 }
 
 // Classes parse from space-separated names.
@@ -88,11 +96,12 @@ fn classes_parse_from_names() {
   assert!(classes.contains("large") && !classes.contains("small"));
 }
 
-/// An element with the common properties and a fixed content size, which measures its children
-/// and counts its own measures.
+/// An element with the layout and appearance groups and a fixed content size, which measures its
+/// children and counts its own measures.
 #[derive(Debug)]
 struct Boxed {
-  common: CommonProperties,
+  layout: LayoutProperties,
+  appearance: AppearanceProperties,
   content: Size,
   measured: Cell<u32>,
 }
@@ -101,7 +110,8 @@ impl Boxed {
   /// A box whose content is `width` × `height`.
   fn new(width: f32, height: f32) -> Self {
     Self {
-      common: CommonProperties::default(),
+      layout: LayoutProperties::default(),
+      appearance: AppearanceProperties::default(),
       content: Size::new(width, height),
       measured: Cell::new(0),
     }
@@ -110,24 +120,27 @@ impl Boxed {
 
 impl Object for Boxed {
   fn visit_properties(&self, visit: &mut dyn FnMut(&dyn AnyProperty)) {
-    self.common.visit_properties(visit);
+    self.layout.visit_properties(visit);
+    self.appearance.visit_properties(visit);
   }
 }
 
 impl Layoutable for Boxed {
   fn measure(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size {
     self.measured.set(self.measured.get() + 1);
-    self.common.measure(cx, available, |cx, inner| {
-      let children: Vec<NodeId> = cx.children().collect();
-      for child in children {
-        cx.measure(child, inner);
-      }
-      self.content
-    })
+    self
+      .layout
+      .measure(cx, self.appearance.visibility.get(), available, |cx, inner| {
+        let children: Vec<NodeId> = cx.children().collect();
+        for child in children {
+          cx.measure(child, inner);
+        }
+        self.content
+      })
   }
 
   fn arrange(&self, cx: &mut LayoutCx<'_>, slot: Rect) {
-    self.common.arrange(cx, slot, |cx, size| {
+    self.layout.arrange(cx, self.appearance.visibility.get(), slot, |cx, size| {
       let children: Vec<NodeId> = cx.children().collect();
       for child in children {
         cx.arrange(child, Rect::new(0.0, 0.0, size.width, size.height));
@@ -162,9 +175,9 @@ fn margin_and_alignment_layout() {
   use VerticalAlignment as V;
   let at = |horizontal, vertical| {
     let boxed = Boxed::new(40.0, 20.0);
-    boxed.common.margin.set(Thickness::uniform(10.0));
-    boxed.common.horizontal_alignment.set(horizontal);
-    boxed.common.vertical_alignment.set(vertical);
+    boxed.layout.margin.set(Thickness::uniform(10.0));
+    boxed.layout.horizontal_alignment.set(horizontal);
+    boxed.layout.vertical_alignment.set(vertical);
     bounds_of(boxed)
   };
 
@@ -179,8 +192,8 @@ fn margin_and_alignment_layout() {
 fn min_max_clamp_desired_size() {
   let mut tree = UiTree::new();
   let boxed = Boxed::new(10.0, 50.0);
-  boxed.common.min_width.set(60.0);
-  boxed.common.max_height.set(30.0);
+  boxed.layout.min_width.set(60.0);
+  boxed.layout.max_height.set(30.0);
   let node = tree.alloc(Box::new(boxed));
   let mut layout = LayoutManager::default();
 
@@ -204,7 +217,7 @@ fn collapsed_takes_no_space() {
   tree
     .get_as::<Boxed>(parent)
     .unwrap()
-    .common
+    .appearance
     .visibility
     .set(Visibility::Collapsed);
   layout.run(&mut tree, &Boxes, parent, available, 1.0, false);
@@ -217,7 +230,8 @@ fn collapsed_takes_no_space() {
   assert_eq!(tree.get_as::<Boxed>(child).unwrap().measured.get(), 1);
 }
 
-// IsEnabled inherits across control types, since every control flattens CommonProperties's one key.
+// IsEnabled inherits across control types, since every control flattens the interaction group's
+// one key.
 #[test]
 fn is_enabled_inherits_across_control_types() {
   let mut tree = UiTree::new();
@@ -225,9 +239,9 @@ fn is_enabled_inherits_across_control_types() {
   let other = tree.alloc(Box::new(Other::default()));
   tree.add_child(TreeKind::Logical, probe, other);
 
-  tree.get_as::<Probe>(probe).unwrap().common.is_enabled.set(false);
+  tree.get_as::<Probe>(probe).unwrap().interaction.is_enabled.set(false);
 
-  assert!(!tree.get_as::<Other>(other).unwrap().common.is_enabled.get());
+  assert!(!tree.get_as::<Other>(other).unwrap().interaction.is_enabled.get());
 }
 
 // With snapping, the content is arranged in the element's snapped box, so a stretched child is
@@ -236,7 +250,7 @@ fn is_enabled_inherits_across_control_types() {
 fn content_is_arranged_in_the_snapped_bounds() {
   let mut tree = UiTree::new();
   let parent = Boxed::new(40.8, 10.0);
-  parent.common.horizontal_alignment.set(HorizontalAlignment::Center);
+  parent.layout.horizontal_alignment.set(HorizontalAlignment::Center);
   let parent = tree.alloc(Box::new(parent));
   let child = tree.alloc(Box::new(Boxed::new(0.0, 0.0)));
   tree.add_child(TreeKind::Visual, parent, child);

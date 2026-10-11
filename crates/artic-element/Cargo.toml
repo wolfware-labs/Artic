@@ -1,6 +1,6 @@
 [package]
 name = "artic-element"
-description = "The Element trait, its contexts, the properties every control has, and the table that finds a node's element, for artic."
+description = "The Element trait, its contexts, the property groups every control has, and the table that finds a node's element, for artic."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

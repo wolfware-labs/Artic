@@ -1,5 +1,5 @@
-//! The `Element` trait, its contexts, the properties every control has, and the table that finds a
-//! node's element.
+//! The `Element` trait, its contexts, the property groups every control has, and the table that
+//! finds a node's element.
 //!
 //! - [`Element`] is what the frame pipeline drives: layout (through
 //!   [`Layoutable`](artic_layout::Layoutable)), drawing, hit testing, input and accessibility.
@@ -7,23 +7,24 @@
 //! - [`HasState`] gives a control's state structs to the traits built on them.
 //! - [`ElementTypes`] finds a node's `Element` from its `Box<dyn Object>`; each element type adds
 //!   itself with [`element_type!`].
-//! - [`CommonProperties`] holds the properties every control has; a control flattens it into its
-//!   own properties. [`Visibility`], [`Cursor`] and [`Classes`] are the value types of some of
+//! - [`LayoutProperties`], [`AppearanceProperties`], [`InteractionProperties`] and
+//!   [`IdentityProperties`] hold the properties every control has; a control flattens each into
+//!   its own properties. [`Visibility`], [`Cursor`] and [`Classes`] are the value types of some of
 //!   them.
 //!
 //! The design is `docs/design/element.md`.
 
 mod classes;
-mod common_properties;
 mod context;
 mod element;
+mod properties;
 mod types;
 mod visibility;
 
 pub use classes::Classes;
-pub use common_properties::CommonProperties;
 pub use context::{AccessCx, EventCx, Handled, HitTestCx, HitTestResult, RenderCx};
 pub use element::{Element, ElementImpl, HasState};
+pub use properties::{AppearanceProperties, IdentityProperties, InteractionProperties, LayoutProperties};
 pub use types::{ELEMENT_TYPES, ElementType, ElementTypes};
 pub use visibility::{Cursor, Visibility};
 
