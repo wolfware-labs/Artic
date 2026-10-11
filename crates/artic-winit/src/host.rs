@@ -184,11 +184,17 @@ impl<A: AppHandler> ApplicationHandler for Driver<A> {
       return;
     }
     self.suspended = false;
-    self.surfaces.clear_lost_marks();
     self.surfaces.forget_facts();
     self.call(event_loop, |app, cx| app.event(cx, HostEvent::Resumed));
     let surfaces: Vec<SurfaceId> = self.surfaces.windows().map(|(surface, _)| surface).collect();
     for surface in surfaces {
+      if self.exiting {
+        return;
+      }
+      if self.surfaces.window(surface).is_none() {
+        continue;
+      }
+      self.surfaces.clear_reported(surface);
       self.refresh(event_loop, surface, None);
     }
   }

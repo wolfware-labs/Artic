@@ -80,9 +80,9 @@ impl<K: PartialEq + Copy, W> Surfaces<K, W> {
     }
   }
 
-  /// Clears the marks, on resume, when every surface is reported again.
-  pub(crate) fn clear_lost_marks(&mut self) {
-    for entry in &mut self.entries {
+  /// Clears surface `id`'s mark, on resume, as it's reported again.
+  pub(crate) fn clear_reported(&mut self, id: SurfaceId) {
+    if let Some(entry) = self.entries.iter_mut().find(|entry| entry.id == id) {
       entry.reported_lost = false;
     }
   }
@@ -284,23 +284,27 @@ mod tests {
     );
   }
 
-  // Resuming clears the marks, so a later close is reported again.
+  // Resuming a surface clears its mark, so a later close is reported again, while a surface not yet
+  // resumed keeps its mark.
   #[test]
   fn resumed_surfaces_report_their_loss() {
     let mut surfaces = Surfaces::<u32, ()>::default();
-    let id = surfaces.insert(10, ());
-    surfaces.mark_reported(id);
+    let resumed = surfaces.insert(10, ());
+    let pending = surfaces.insert(20, ());
+    surfaces.mark_reported(resumed);
+    surfaces.mark_reported(pending);
 
-    surfaces.clear_lost_marks();
-    surfaces.close(id);
+    surfaces.clear_reported(resumed);
+    surfaces.close(resumed);
+    surfaces.close(pending);
 
     assert_eq!(
       surfaces
         .take_lost()
         .into_iter()
-        .map(|(_, _, report)| report)
+        .map(|(id, _, report)| (id, report))
         .collect::<Vec<_>>(),
-      [true]
+      [(resumed, true), (pending, false)]
     );
   }
 
