@@ -1,4 +1,4 @@
-use crate::property::{Precedence, Property};
+use crate::property::{Inheritance, Precedence, Property};
 use crate::reactive::Change;
 
 const VALUE_LEVELS: usize = 4;
@@ -11,21 +11,26 @@ where
   values: [Option<T>; VALUE_LEVELS],
   inherited: Option<Property<T>>,
   default: T,
+  inheritance: Inheritance<T>,
 }
 
 impl<T> Levels<T>
 where
   T: PartialEq,
 {
-  pub fn new(default: T) -> Self {
+  pub fn new(default: T, inheritance: Inheritance<T>) -> Self {
     Self {
       values: [const { None }; VALUE_LEVELS],
       inherited: None,
       default,
+      inheritance,
     }
   }
 
   pub fn with_effective<TResult>(&self, function: impl FnOnce(&T) -> TResult) -> TResult {
+    if let (Inheritance::Combine(combine), Some(source)) = (self.inheritance, self.inherited) {
+      return function(&self.combined(combine, source));
+    }
     if let Some(value) = self.values.iter().rev().find_map(Option::as_ref) {
       return function(value);
     }
@@ -35,12 +40,24 @@ where
     }
   }
 
+  fn combined(&self, combine: fn(&T, &T) -> T, source: Property<T>) -> T {
+    self.with_own(|own| source.with(|inherited| combine(own, inherited)))
+  }
+
+  pub fn with_own<TResult>(&self, function: impl FnOnce(&T) -> TResult) -> TResult {
+    function(self.values.iter().rev().find_map(Option::as_ref).unwrap_or(&self.default))
+  }
+
   pub fn effective_source(&self) -> Precedence {
     match self.values.iter().rposition(Option::is_some) {
       Some(index) => Self::level_at(index),
-      None if self.inherited.is_some() => Precedence::Inherited,
+      None if self.inherited.is_some() && !self.combines() => Precedence::Inherited,
       None => Precedence::Default,
     }
+  }
+
+  pub fn combines(&self) -> bool {
+    matches!(self.inheritance, Inheritance::Combine(_))
   }
 
   pub fn set(&mut self, level: Precedence, value: T) -> Change {
@@ -82,7 +99,7 @@ where
     }
     let winner = self.effective_source();
     self.inherited = source;
-    if winner <= Precedence::Inherited {
+    if self.combines() || winner <= Precedence::Inherited {
       Change::Visible
     } else {
       Change::Hidden
@@ -132,7 +149,7 @@ mod tests {
   // Writing the winning level or a level above it is visible; writing below it is hidden.
   #[test]
   fn set_is_visible_only_at_or_above_the_winner() {
-    let mut levels = Levels::new(0);
+    let mut levels = Levels::new(0, Inheritance::None);
     assert_eq!(levels.set(Precedence::Binding, 1), Change::Visible);
 
     assert_eq!(levels.set(Precedence::StyleSetter, 2), Change::Hidden);
@@ -145,7 +162,7 @@ mod tests {
   // Writing the value a level already holds stores nothing and is hidden.
   #[test]
   fn set_with_the_same_value_is_hidden() {
-    let mut levels = Levels::new(0);
+    let mut levels = Levels::new(0, Inheritance::None);
     levels.set(Precedence::Local, 1);
 
     assert_eq!(levels.set(Precedence::Local, 1), Change::Hidden);
@@ -155,7 +172,7 @@ mod tests {
   // Writing the default is visible only while no level above it is set.
   #[test]
   fn set_default_is_visible_only_when_nothing_overrides_it() {
-    let mut levels = Levels::new(0);
+    let mut levels = Levels::new(0, Inheritance::None);
     assert_eq!(levels.set(Precedence::Default, 1), Change::Visible);
 
     levels.set(Precedence::StyleSetter, 2);
@@ -168,7 +185,7 @@ mod tests {
   // hidden.
   #[test]
   fn clear_is_visible_only_for_the_winner() {
-    let mut levels = Levels::new(0);
+    let mut levels = Levels::new(0, Inheritance::None);
     levels.set(Precedence::StyleSetter, 1);
     levels.set(Precedence::Local, 2);
 

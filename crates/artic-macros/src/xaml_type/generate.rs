@@ -321,7 +321,11 @@ pub fn key_static(field: &XamlField) -> TokenStream {
   let key = generated_key(field.ident);
   let name = xaml_name(field);
   let affects = affects_tokens(field.attributes.affects.unwrap_or_default());
-  let inherits = field.attributes.inherits.is_some();
+  let inherits = if field.attributes.inherits.is_some() {
+    quote!(__artic::Inheritance::Replace)
+  } else {
+    quote!(__artic::Inheritance::None)
+  };
   quote! {
     static #key: __artic::PropertyKey<#inner> = __artic::PropertyKey::new(#name, #affects, #inherits);
   }

@@ -183,13 +183,13 @@ mod tests {
   use super::*;
   use artic_core::Object;
   use artic_core::property::AnyProperty;
-  use artic_core::property::{Property, PropertyKey};
+  use artic_core::property::{Inheritance, Property, PropertyKey};
   use pretty_assertions::assert_eq;
   use static_assertions::assert_impl_all;
 
   assert_impl_all!(TypeInfo: Sync);
 
-  static PADDING: PropertyKey<f32> = PropertyKey::new("Padding", Affects::LAYOUT, false);
+  static PADDING: PropertyKey<f32> = PropertyKey::new("Padding", Affects::LAYOUT, Inheritance::None);
 
   #[derive(Debug)]
   struct Border {

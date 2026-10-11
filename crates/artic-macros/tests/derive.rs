@@ -2,7 +2,7 @@
 // descriptors their fields describe, and their generated `Default` and `Object` impls work.
 
 use artic_core::event::Event;
-use artic_core::property::{Affects, Precedence, Property, PropertyKey};
+use artic_core::property::{Affects, Inheritance, Precedence, Property, PropertyKey};
 use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_macros::XamlType;
 use artic_registry::{AttachedTarget, Registry, TypeInfo, Whitespace, XamlType};
@@ -88,7 +88,7 @@ struct Run {
   text: Property<String>,
 }
 
-static FONT_SIZE: PropertyKey<f32> = PropertyKey::new("FontSize", Affects::LAYOUT, true);
+static FONT_SIZE: PropertyKey<f32> = PropertyKey::new("FontSize", Affects::LAYOUT, Inheritance::Replace);
 
 #[derive(Debug, XamlType)]
 #[xaml(namespace = "https://artic.rs/ui")]

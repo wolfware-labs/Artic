@@ -1,4 +1,4 @@
-use crate::property::{Affects, PropertyKey};
+use crate::property::{Affects, Inheritance, PropertyKey};
 use std::fmt::{Debug, Formatter, Result};
 
 /// The key of an attached property: a property kind one type declares and other nodes hold, such as
@@ -36,7 +36,7 @@ impl<T> AttachedKey<T> {
   #[must_use]
   pub const fn new(name: &'static str, affects: Affects, default: fn() -> T) -> Self {
     Self {
-      key: PropertyKey::new(name, affects, false),
+      key: PropertyKey::new(name, affects, Inheritance::None),
       default,
     }
   }
