@@ -81,6 +81,11 @@ jobs:
         run: cargo build --workspace --all-targets
       - name: Test
         run: cargo test --workspace
+      - name: Smoke
+        run: cargo run -p artic-winit --example smoke
+        timeout-minutes: 5
+        env:
+          ARTIC_SMOKE_FRAMES: "60"
 
   test-macos:
     name: Test (macos-latest)
@@ -94,6 +99,11 @@ jobs:
         run: cargo build --workspace --all-targets
       - name: Test
         run: cargo test --workspace
+      - name: Smoke
+        run: cargo run -p artic-winit --example smoke
+        timeout-minutes: 5
+        env:
+          ARTIC_SMOKE_FRAMES: "60"
 
   lint:
     name: Lint

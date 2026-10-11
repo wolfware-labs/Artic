@@ -608,8 +608,9 @@ impl LoginView {
 Backends are adapters. A **`Host`** drives the screen (surfaces, input, the event loop) and a **`Renderer`** turns the `Scene` into pixels; an adapter crate implements one or both, and anyone can add one without changing app or artic code. The [backend design](../design/backends.md) (#240) fixes the seams. v1 ships two adapters, `artic-winit` (the host on all five targets) and `artic-vello` (the renderer). Each target has a launcher of a few lines naming a host, a renderer and the app:
 
 ```rust
-fn main() {
-    artic::run(artic_winit::Host::new(), artic_vello::Renderer::new(), my_app::app());
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    artic::run(artic_winit::Host::new()?, artic_vello::Renderer::new()?, my_app::app());
+    Ok(())
 }
 ```
 

@@ -202,6 +202,8 @@ dependencies = [
  "artic-core",
  "artic-layout",
  "artic-render",
+ "pretty_assertions",
+ "static_assertions",
 ]
 
 [[package]]
@@ -289,6 +291,17 @@ dependencies = [
  "pretty_assertions",
  "thiserror 2.0.21",
  "vello",
+ "winit",
+]
+
+[[package]]
+name = "artic-winit"
+version = "0.1.0"
+dependencies = [
+ "artic-core",
+ "artic-platform",
+ "artic-render",
+ "pretty_assertions",
  "winit",
 ]
 

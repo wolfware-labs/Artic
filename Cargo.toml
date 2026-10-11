@@ -21,6 +21,7 @@ members = [
     "crates/artic-test",
     "crates/artic-theme",
     "crates/artic-vello",
+    "crates/artic-winit",
     "crates/artic-xaml",
     "crates/artic-xaml-compiler",
     "crates/artic-xaml-runtime",
@@ -51,6 +52,7 @@ artic-style = { path = "crates/artic-style", version = "0.1.0" }
 artic-test = { path = "crates/artic-test", version = "0.1.0" }
 artic-theme = { path = "crates/artic-theme", version = "0.1.0" }
 artic-vello = { path = "crates/artic-vello", version = "0.1.0" }
+artic-winit = { path = "crates/artic-winit", version = "0.1.0" }
 artic-xaml = { path = "crates/artic-xaml", version = "0.1.0" }
 artic-xaml-compiler = { path = "crates/artic-xaml-compiler", version = "0.1.0" }
 artic-xaml-runtime = { path = "crates/artic-xaml-runtime", version = "0.1.0" }
