@@ -105,12 +105,12 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
 
       impl ::core::default::Default for #ident {
         fn default() -> Self {
-          let value = Self {
+          let __artic_value = Self {
             #(#default_fields,)*
             #(#other_fields: ::core::default::Default::default(),)*
           };
           #after_default
-          value
+          __artic_value
         }
       }
 

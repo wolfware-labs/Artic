@@ -3,7 +3,7 @@
 // registration call.
 
 use artic_core::input::InputEvent;
-use artic_core::property::Precedence;
+use artic_core::property::{Precedence, Property};
 use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_element::{
   AccessCx, Cursor, Element, ElementImpl, ElementTypes, EventCx, Handled, HasState, HitTestCx, HitTestResult, RenderCx,
@@ -287,4 +287,51 @@ fn unit_struct_gets_the_groups() {
     .collect();
 
   assert_eq!(fields, ["layout", "appearance", "interaction", "identity"]);
+}
+
+/// A control with a property of its own, whose default its `defaults` hook changes.
+#[element]
+#[derive(Debug)]
+#[xaml(namespace = "https://artic.rs/test")]
+struct Dial {
+  #[xaml]
+  turns: Property<i32>,
+}
+
+impl ElementImpl for Dial {
+  fn defaults(&self) {
+    self.turns.set_default(3);
+  }
+}
+
+// A control's own property is registered beside the groups' and built before `defaults` runs.
+#[test]
+fn own_properties_register_beside_the_groups() {
+  let info = <Dial as XamlType>::TYPE_INFO;
+
+  assert_eq!(info.property("Turns").map(|found| found.group), Some(None));
+  assert_eq!(info.property("Margin").map(|found| found.group), Some(Some("layout")));
+  assert_eq!(Dial::default().turns.get(), 3);
+}
+
+/// A module where a constant named `value` is in scope, as a user's item might be.
+mod shadowed {
+  use super::{ElementImpl, element};
+
+  #[allow(non_upper_case_globals, dead_code)]
+  const value: u8 = 0;
+
+  /// A control declared beside that constant.
+  #[element]
+  #[derive(Debug)]
+  #[xaml(namespace = "https://artic.rs/test")]
+  pub struct Lamp;
+
+  impl ElementImpl for Lamp {}
+}
+
+// The generated Default doesn't collide with an item named `value` in the control's module.
+#[test]
+fn default_ignores_a_user_item_named_value() {
+  assert!(shadowed::Lamp::default().interaction.is_enabled.get());
 }

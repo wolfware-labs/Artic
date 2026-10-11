@@ -51,7 +51,7 @@ pub trait Element: Object + Layoutable {
 pub trait ElementImpl {
   /// Changes the control's defaults, with `Property::set_default`, such as
   /// `self.interaction.focusable.set_default(true)`. `#[element]` calls it once, when the control
-  /// is created; a style, a binding or markup still wins over these values.
+  /// is created; an inherited value, a style, a binding or markup still wins over these values.
   fn defaults(&self) {}
 
   /// The content's size within `available`, which already excludes the margin and is held within

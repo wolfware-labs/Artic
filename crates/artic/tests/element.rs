@@ -1,4 +1,4 @@
-// A crate that depends on the artic facade marks a control #[element] through
+// With the artic facade among its dependencies, a crate's #[element] code reaches artic through
 // `artic::__private`, and its type reaches the cast table.
 
 use artic_core::tree::UiTree;

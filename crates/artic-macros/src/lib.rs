@@ -117,9 +117,9 @@ pub fn derive_xaml_enum(input: TokenStream) -> TokenStream {
 /// and takes no settings. It adds four fields before the struct's own, each flattened into the
 /// struct's properties: `layout: LayoutProperties`, `appearance: AppearanceProperties`,
 /// `interaction: InteractionProperties` and `identity: IdentityProperties`. A field of the
-/// struct with one of those names is an error, as is `XamlType` in its derives, since
-/// `#[element]` writes it. A unit struct gets the four fields; a tuple struct or a generic one is
-/// an error.
+/// struct with one of those names is an error, as are `XamlType` and `Default` in its derives,
+/// since `#[element]` writes both. A unit struct gets the four fields; a tuple struct or a generic
+/// one is an error.
 ///
 /// The struct's `Default` calls `ElementImpl::defaults` once, after building the fields, so a
 /// control can change its defaults there with `Property::set_default`.

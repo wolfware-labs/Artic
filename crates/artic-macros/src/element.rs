@@ -7,12 +7,16 @@ use quote::quote;
 use syn::punctuated::Punctuated;
 use syn::{Attribute, DeriveInput, Error, Field, Fields, FieldsNamed, Ident, ItemStruct, Path, Token, Type, parse_quote};
 
-/// The fields `#[element]` adds, with their group types, in the order it adds them.
-const GROUPS: [(&str, &str); 4] = [
-  ("layout", "LayoutProperties"),
-  ("appearance", "AppearanceProperties"),
-  ("interaction", "InteractionProperties"),
-  ("identity", "IdentityProperties"),
+/// The fields `#[element]` adds, with their group types and docs, in the order it adds them.
+const GROUPS: [(&str, &str, &str); 4] = [
+  ("layout", "LayoutProperties", "Where the element sits and how big it is."),
+  ("appearance", "AppearanceProperties", "How the element is drawn."),
+  ("interaction", "InteractionProperties", "How the element takes input."),
+  (
+    "identity",
+    "IdentityProperties",
+    "What style selectors and code find the element by.",
+  ),
 ];
 
 /// Makes the struct an element: adds the four property groups, writes what `derive(XamlType)`
@@ -30,7 +34,7 @@ pub fn expand(attribute: TokenStream, item: TokenStream) -> syn::Result<TokenStr
       "`#[element]` can't be used on a generic struct",
     ));
   }
-  reject_xaml_type_derive(&item.attrs)?;
+  reject_written_derives(&item.attrs)?;
   let mut fields = match &item.fields {
     Fields::Named(fields) => fields.clone(),
     Fields::Unit => parse_quote!({}),
@@ -43,7 +47,7 @@ pub fn expand(attribute: TokenStream, item: TokenStream) -> syn::Result<TokenStr
   };
   for field in &fields.named {
     let name = field.ident.as_ref().expect("named fields have names");
-    if GROUPS.iter().any(|(group, _)| name == group) {
+    if GROUPS.iter().any(|(group, _, _)| name == group) {
       return Err(Error::new_spanned(
         name,
         format!("`{name}` is added by `#[element]`; remove this field"),
@@ -58,10 +62,10 @@ pub fn expand(attribute: TokenStream, item: TokenStream) -> syn::Result<TokenStr
   let root_path: Path = syn::parse2(root.clone())?;
 
   let added: FieldsNamed = {
-    let groups = GROUPS.iter().map(|(name, ty)| {
+    let groups = GROUPS.iter().map(|(name, ty, doc)| {
       let name = Ident::new(name, ident.span());
       let ty = Ident::new(ty, ident.span());
-      quote!(#[xaml(flatten)] pub #name: #root::__private::#ty)
+      quote!(#[doc = #doc] #[xaml(flatten)] pub #name: #root::__private::#ty)
     });
     parse_quote!({ #(#groups,)* })
   };
@@ -73,7 +77,7 @@ pub fn expand(attribute: TokenStream, item: TokenStream) -> syn::Result<TokenStr
   let input: DeriveInput = syn::parse2(quote!(#item))?;
   let mut analysis = analyze(&input)?;
   analysis.attributes.crate_path = Some(root_path);
-  analysis.after_default = Some(quote!(<Self as __artic::ElementImpl>::defaults(&value);));
+  analysis.after_default = Some(quote!(<Self as __artic::ElementImpl>::defaults(&__artic_value);));
   let xaml_type = generate(&analysis)?;
 
   strip_helpers(&mut item);
@@ -146,18 +150,20 @@ pub fn expand(attribute: TokenStream, item: TokenStream) -> syn::Result<TokenStr
   })
 }
 
-/// Rejects `XamlType` in the struct's derives, since `#[element]` writes it.
-fn reject_xaml_type_derive(attributes: &[Attribute]) -> syn::Result<()> {
+/// Rejects `XamlType` and `Default` in the struct's derives, since `#[element]` writes both.
+fn reject_written_derives(attributes: &[Attribute]) -> syn::Result<()> {
   for attribute in attributes.iter().filter(|attribute| attribute.path().is_ident("derive")) {
     let derives = attribute.parse_args_with(Punctuated::<Path, Token![,]>::parse_terminated)?;
-    if let Some(derive) = derives
-      .iter()
-      .find(|derive| derive.segments.last().is_some_and(|segment| segment.ident == "XamlType"))
-    {
-      return Err(Error::new_spanned(
-        derive,
-        "`#[element]` writes `XamlType`; remove `XamlType` from this derive",
-      ));
+    for derive in &derives {
+      let Some(name) = derive.segments.last().map(|segment| segment.ident.to_string()) else {
+        continue;
+      };
+      let message = match name.as_str() {
+        "XamlType" => "`#[element]` writes `XamlType`; remove `XamlType` from this derive",
+        "Default" => "`#[element]` writes `Default`; remove it, and change defaults in `ElementImpl::defaults`",
+        _ => continue,
+      };
+      return Err(Error::new_spanned(derive, message));
     }
   }
   Ok(())
