@@ -110,9 +110,12 @@ pub struct ElementType {
 
 // emitted for Border; downcasting is defined on dyn Any, so the object is upcast first, as
 // UiTree::get_as does. Generated code names every item by its full path, since `Any` isn't in the
-// prelude:
-cast: |object| (object as &dyn ::core::any::Any).downcast_ref::<Border>().map(|border| border as &dyn Element),
-cast_mut: |object| (object as &mut dyn ::core::any::Any).downcast_mut::<Border>().map(|border| border as &mut dyn Element),
+// prelude and the caller may not import `Element`. `__artic` is `<root>::__private`, where the root is
+// whichever of `artic` and `artic-element` the calling crate depends on. `XamlType` resolves
+// `artic` or `artic-registry` instead, since the registry can't re-export `Element`, so PR C
+// extends `crate_root` to take each derive's candidates:
+cast: |object| (object as &dyn ::core::any::Any).downcast_ref::<Border>().map(|border| border as &dyn __artic::Element),
+cast_mut: |object| (object as &mut dyn ::core::any::Any).downcast_mut::<Border>().map(|border| border as &mut dyn __artic::Element),
 ```
 
 The pipeline builds a `TypeId → ElementType` map once. `cast` answers `LayoutNodes` and the render `Nodes`; `cast_mut` serves input dispatch, which calls `on_event(&mut self)`. A hand-written `Element` registers with `element_type!(TestElement)`, the line the derive emits. App controls need no registration call, as spec §7 requires. `linkme` doesn't support wasm yet; the registry has the same limit, and #241 fixes both.
@@ -224,7 +227,7 @@ A disabled element is different: it gets no input, but it still blocks it. Hit t
 | --- | --- | --- |
 | A | `artic-element`: `Element`, `ElementImpl`, `HasState`, `ElementType` and `element_type!`, the placeholder contexts; `InputEvent` in `artic-core` | a hand-written element is laid out through `LayoutManager` by way of the cast table |
 | B | `ElementBase` with `#[derive(XamlProperties)]`, the enums, `#[xaml(flatten)]` in `derive(XamlType)` with `Flattened` and the per-owner `GroupOf` descriptors, `PropertyGroupInfo`, `Duplicate::Property`, the measure and arrange outline, `LayoutManager` forgetting unmeasured children | `element_base_properties_registered`, `margin_and_alignment_layout`, `min_max_clamp_desired_size`, `collapsed_takes_no_space` (including a child made dirty after its parent collapsed), a registry test where a control property clashes with a group's |
-| C | `#[derive(Element)]`: the outline from section 3, the missing-`base` error, `#[element(state)]` and its duplicate-state error | the trybuild cases: missing `base`, two fields of one state type, and a test-only state giving a test trait through a blanket impl; a unit test that a disabled element's hook isn't called |
+| C | `#[derive(Element)]`: the outline from section 3, the missing-`base` error, `#[element(state)]` and its duplicate-state error, `crate_root` taking each derive's candidate crates | the trybuild cases: missing `base`, two fields of one state type, and a test-only state giving a test trait through a blanket impl; a unit test that a disabled element's hook isn't called |
 | D | the default accesskit node; opacity, transform and visibility in composition, with `Layers.visible` | `base_accessibility_node`; a pixel test where opacity changes the drawn color; a hidden parent's child isn't drawn and isn't in the accesskit tree, and is back in both once the parent is `Visible` again; a layout-only change, such as a new `Margin`, updates the node's accesskit bounds; siblings drawn by `ZIndex`, ties in tree order; an out-of-range opacity clamped |
 
 ## 9. Spec changes
