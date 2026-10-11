@@ -81,9 +81,6 @@ impl LayoutManager {
     }
     self.slots.retain(|node, _| depths.contains_key(node));
 
-    // A dirty node under a dirty ancestor waits for that ancestor's measure, which may skip it as
-    // a collapsed element does. The nodes between them are marked, so a clean one there doesn't
-    // answer from its cache and the measure still reaches the node.
     let mut nested = HashSet::new();
     let mut between = Vec::new();
     for node in &dirty {
