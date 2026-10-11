@@ -49,6 +49,7 @@ impl LoginVm {
 ├── crates/               One directory per crate (see below)
 └── docs/
     ├── architecture.md   Crate layers and the dependency graph
+    ├── design/           Design notes per feature, such as elements and the builder API
     └── spec/
         └── technical_spec.md
 ```
@@ -60,7 +61,7 @@ The workspace is layered. A crate depends only on crates in lower layers, so the
 | Layer | Crate | Responsibility |
 | --- | --- | --- |
 | 0 | `artic-core` | Signals, effects, `Property<T>`, the node tree and trees, the UI dispatcher |
-| 0 | `artic-macros` | `#[derive(XamlType)]`, `#[derive(ViewModel)]`, `#[xaml_class]` and related macros |
+| 0 | `artic-macros` | `#[element]`, `#[derive(XamlType)]`, `#[derive(XamlProperties)]`, `#[derive(XamlEnum)]`, and the planned `#[derive(ViewModel)]` and `#[xaml_class]` |
 | 0 | `artic-xaml` | XAML parser, markup extension grammar and spanned diagnostics |
 | 1 | `artic-registry` | Type metadata that maps XAML names to Rust types and properties |
 | 1 | `artic-layout` | Measure and arrange protocol, geometry types, panels |
@@ -69,25 +70,27 @@ The workspace is layered. A crate depends only on crates in lower layers, so the
 | 2 | `artic-style` | Selectors, styles, setters, resource dictionaries |
 | 2 | `artic-xaml-compiler` | Build-time compiler from XAML to Rust |
 | 2 | `artic-xaml-runtime` | Runtime loader for hot reload and `runtime-xaml` |
-| 3 | `artic-controls` | Templated controls such as `Button`, `TextBox` and `ListBox` |
-| 3 | `artic-platform` | The `Host` seam, `artic::run` and the frame pipeline (hosts are adapter crates) |
-| 3 | `artic-cli` | The `cargo artic` command |
+| 3 | `artic-element` | The `Element` trait and its contexts, the property groups every control has (`layout`, `appearance`, `interaction`, `identity`), and the table that finds a node's element |
 | 3 | `artic-lsp` | Language server for `.xaml` files |
-| 4 | `artic-theme` | Default token-based theme and control templates |
-| 4 | `artic-test` | Headless host and test helpers |
-| 4 | `artic-winit` | Default host adapter: windows, input and OS services through `winit` |
-| 4 | `artic-vello` | Default renderer adapter: `vello` on `wgpu` |
-| 5 | `artic` | Facade crate that apps depend on |
+| 4 | `artic-controls` | Templated controls such as `Button`, `TextBox` and `ListBox` |
+| 4 | `artic-platform` | The `Host` seam, `artic::run` and the frame pipeline (hosts are adapter crates) |
+| 4 | `artic-cli` | The `cargo artic` command |
+| 5 | `artic-theme` | Default token-based theme and control templates |
+| 5 | `artic-test` | Headless host and test helpers |
+| 5 | `artic-winit` | Default host adapter: windows, input and OS services through `winit` |
+| 5 | `artic-vello` | Default renderer adapter: `vello` on `wgpu` |
+| 6 | `artic` | Facade crate that apps depend on |
 
 ```mermaid
 flowchart BT
   L0["Layer 0: artic-core, artic-macros, artic-xaml"]
   L1["Layer 1: artic-registry, artic-layout, artic-i18n"]
   L2["Layer 2: artic-render, artic-style, artic-xaml-compiler, artic-xaml-runtime"]
-  L3["Layer 3: artic-controls, artic-platform, artic-cli, artic-lsp"]
-  L4["Layer 4: artic-theme, artic-test"]
-  L5["Layer 5: artic"]
-  L0 --> L1 --> L2 --> L3 --> L4 --> L5
+  L3["Layer 3: artic-element, artic-lsp"]
+  L4["Layer 4: artic-controls, artic-platform, artic-cli"]
+  L5["Layer 5: artic-theme, artic-test, artic-winit, artic-vello"]
+  L6["Layer 6: artic"]
+  L0 --> L1 --> L2 --> L3 --> L4 --> L5 --> L6
 ```
 
 [docs/architecture.md](docs/architecture.md) has the exact dependency edges and the rules behind them.
@@ -125,6 +128,7 @@ cargo clippy --workspace --all-targets
 
 - [Technical spec](docs/spec/technical_spec.md): the design of the framework.
 - [Architecture](docs/architecture.md): crate layers and dependency rules.
+- [Design notes](docs/design/): one per feature, such as [elements](docs/design/element.md), the [builder API](docs/design/builder-api.md) and [backends](docs/design/backends.md).
 
 ## Contributing
 

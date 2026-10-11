@@ -11,7 +11,7 @@ A crate depends only on crates in lower layers. Crates in the same layer never d
 | 0 | `artic-core`, `artic-macros`, `artic-xaml` | Foundations with no artic dependencies: the reactive core and tree, the proc macros, and the XAML parser |
 | 1 | `artic-registry`, `artic-layout`, `artic-i18n` | Type metadata, geometry and layout, localization |
 | 2 | `artic-render`, `artic-style`, `artic-xaml-compiler`, `artic-xaml-runtime` | The `Renderer` seam, scene and text shaping; styling; the two XAML back ends |
-| 3 | `artic-element`, `artic-lsp` | The `Element` trait and its contexts; the language server |
+| 3 | `artic-element`, `artic-lsp` | The `Element` trait, its contexts and the property groups every control has; the language server |
 | 4 | `artic-controls`, `artic-platform`, `artic-cli` | Controls, the `Host` seam and frame pipeline, and the CLI |
 | 5 | `artic-theme`, `artic-test`, `artic-winit`, `artic-vello` | The default theme, test utilities, and the default backend adapters |
 | 6 | `artic` | The facade that apps depend on |
