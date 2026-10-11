@@ -1,0 +1,14 @@
+//! The `Element` trait, its contexts, and the table that finds a node's element.
+//!
+//! - [`Element`] is what the frame pipeline drives: layout (through
+//!   [`Layoutable`](artic_layout::Layoutable)), drawing, hit testing, input and accessibility.
+//! - [`ElementImpl`] is what a control author writes; `#[derive(Element)]` connects the two.
+//! - [`HasState`] gives a control's state structs to the traits built on them.
+//!
+//! The design is `docs/design/element.md`.
+
+mod context;
+mod element;
+
+pub use context::{AccessCx, EventCx, Handled, HitTestCx, HitTestResult, RenderCx};
+pub use element::{Element, ElementImpl, HasState};

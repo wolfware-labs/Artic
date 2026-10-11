@@ -6,6 +6,7 @@ members = [
     "crates/artic-cli",
     "crates/artic-controls",
     "crates/artic-core",
+    "crates/artic-element",
     "crates/artic-i18n",
     "crates/artic-layout",
     "crates/artic-lsp",
@@ -38,6 +39,7 @@ artic = { path = "crates/artic", version = "0.1.0" }
 artic-cli = { path = "crates/artic-cli", version = "0.1.0" }
 artic-controls = { path = "crates/artic-controls", version = "0.1.0" }
 artic-core = { path = "crates/artic-core", version = "0.1.0" }
+artic-element = { path = "crates/artic-element", version = "0.1.0" }
 artic-i18n = { path = "crates/artic-i18n", version = "0.1.0" }
 artic-layout = { path = "crates/artic-layout", version = "0.1.0" }
 artic-lsp = { path = "crates/artic-lsp", version = "0.1.0" }
@@ -53,6 +55,7 @@ artic-xaml = { path = "crates/artic-xaml", version = "0.1.0" }
 artic-xaml-compiler = { path = "crates/artic-xaml-compiler", version = "0.1.0" }
 artic-xaml-runtime = { path = "crates/artic-xaml-runtime", version = "0.1.0" }
 
+accesskit = "0.25.1"
 insta = "1.49.0"
 linkme = "0.3.37"
 pollster = "1.0.1"
