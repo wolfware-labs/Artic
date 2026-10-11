@@ -118,8 +118,10 @@ impl<A: AppHandler> Driver<A> {
       for surface in opened {
         self.refresh(event_loop, surface, None);
       }
-      for (surface, window) in lost {
-        self.call(event_loop, |app, cx| app.surface_lost(cx, surface));
+      for (surface, window, report) in lost {
+        if report {
+          self.call(event_loop, |app, cx| app.surface_lost(cx, surface));
+        }
         drop(window);
       }
     }
@@ -197,8 +199,11 @@ impl<A: AppHandler> ApplicationHandler for Driver<A> {
     }
     self.suspended = true;
     let surfaces: Vec<SurfaceId> = self.surfaces.windows().map(|(surface, _)| surface).collect();
-    self.surfaces.mark_lost();
     for surface in surfaces {
+      if self.surfaces.window(surface).is_none() {
+        continue;
+      }
+      self.surfaces.mark_reported(surface);
       self.call(event_loop, |app, cx| app.surface_lost(cx, surface));
     }
     self.call(event_loop, |app, cx| app.event(cx, HostEvent::Suspended));
@@ -247,8 +252,10 @@ impl<A: AppHandler> ApplicationHandler for Driver<A> {
       if open.is_empty() {
         return;
       }
-      for (surface, window) in open {
-        self.call(event_loop, |app, cx| app.surface_lost(cx, surface));
+      for (surface, window, report) in open {
+        if report {
+          self.call(event_loop, |app, cx| app.surface_lost(cx, surface));
+        }
         drop(window);
       }
     }
