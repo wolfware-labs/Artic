@@ -66,7 +66,7 @@ Each layer builds on the ones below it. The exact dependency edges and the rules
 | --- | --- | --- |
 | `artic-core` | Signals, effects, `Property<T>`, styled-property metadata, visual/logical tree, `Object` trait, resources, dispatcher | `Signal`, `effect`, `Property`, `Node`, `UiTree`, `Dispatcher` |
 | `artic-registry` | Generated type descriptors used by both XAML paths: type name → constructor, property name → setter/getter/type converter, content property, attached properties, events | `TypeInfo`, `PropertyInfo`, `TypeConverter`, `Registry` |
-| `artic-macros` | `#[derive(XamlType)]`, `#[derive(ViewModel)]`, `#[xaml_class]`, `xaml!` (inline) | proc macros |
+| `artic-macros` | `#[derive(XamlType)]`, `#[element]`, `#[derive(XamlProperties)]`, `#[derive(ViewModel)]`, `#[xaml_class]`, `xaml!` (inline) | proc macros |
 | `artic-xaml` | Parser: XML → XAML Infoset (MS-XAML §5), markup-extension grammar, diagnostics with spans | `XamlDocument`, `XamlNode`, `MarkupExtensionAst`, `Diagnostic` |
 | `artic-xaml-compiler` | Infoset → Rust source (`build.rs` API and `cargo artic` CLI) | `compile_dir()`, `CompileOptions` |
 | `artic-xaml-runtime` | Infoset → live object tree using the registry; file watcher and hot-swap | `XamlLoader`, `HotReload` |

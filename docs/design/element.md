@@ -57,17 +57,16 @@ pub trait ElementImpl {
 
 ## 3. What `#[element]` writes
 
-`#[element]` is an attribute on the control's struct, not a derive, because it adds fields: a derive can only add items next to a struct. It:
+`#[element]` is an attribute on the control's struct, not a derive, because it adds fields: a derive can only add items next to a struct. It goes first, above the struct's `#[derive(...)]` and `#[xaml(...)]` attributes, since an attribute above it is applied before the fields exist. It takes no settings of its own. It:
 
-- adds four fields, `#[xaml(flatten)] pub layout: LayoutProperties`, `appearance: AppearanceProperties`, `interaction: InteractionProperties` and `identity: IdentityProperties`. The names are reserved: a field of the struct with one of them is an error that says `#[element]` adds it;
-- adds `#[derive(XamlType)]`, so the derive sees the added fields whatever order the attributes are written in; the struct's own `#[xaml(...)]` attributes are kept;
-- makes the type's `Default` call `ElementImpl::defaults` once, after building the fields (section 5);
+- adds four fields, `#[xaml(flatten)] pub layout: LayoutProperties`, `appearance: AppearanceProperties`, `interaction: InteractionProperties` and `identity: IdentityProperties`, before the struct's own fields, so `TypeInfo.groups` lists them first, in that order. The names are reserved: a field of the struct with one of them is an error that says `#[element]` adds it. A unit struct, such as `#[element] struct Spacer;`, gets the four fields; a tuple struct is an error;
+- writes what `#[derive(XamlType)]` writes, by calling the same code in `artic-macros`, except that its `Default` calls `ElementImpl::defaults` once, after building the fields (section 5). The struct's own `#[xaml(...)]` attributes are read as the derive reads them. A struct that also derives `XamlType` is an error that says `#[element]` writes it, since the two would each write `Default`;
 - writes `Layoutable` and `Element` for the struct:
 
 | Method | Shared work, from the groups | Then calls |
 | --- | --- | --- |
 | `measure` | `layout`, with `appearance.visibility`. `Collapsed`: returns zero, children not measured. Otherwise #41's `measure_with`: margin off, limits on | `measure_override` |
-| `arrange` | `Collapsed`: returns, children not arranged, since `arrange_with` would stretch a zero size to the slot. Otherwise #41's `arrange_with`: margin, limits, alignment | `arrange_override` with the content's size |
+| `arrange` | `layout`, with `appearance.visibility`. `Collapsed`: returns, children not arranged, since `arrange_with` would stretch a zero size to the slot. Otherwise #41's `arrange_with`: margin, limits, alignment | `arrange_override` with the content's size |
 | `render` | | `ElementImpl::render`; a hidden subtree is skipped by composition (section 7) |
 | `hit_test` | `appearance.visibility` not `Visible`, or `interaction.is_hit_test_visible` false: a miss. Otherwise the trait default, `cx.bounds_test(point)` | |
 | `on_event` | `interaction.is_enabled` false (the inherited value): `Handled::No`, the control isn't called | `ElementImpl::on_event` |
@@ -121,9 +120,10 @@ pub struct ElementType {
 // emitted for Border; downcasting is defined on dyn Any, so the object is upcast first, as
 // UiTree::get_as does. Generated code names every item by its full path, since `Any` isn't in the
 // prelude and the caller may not import `Element`. `__artic` is `<root>::__private`, where the root is
-// whichever of `artic` and `artic-element` the calling crate depends on. `XamlType` resolves
-// `artic` or `artic-registry` instead, since the registry can't re-export `Element`, so PR C
-// extends `crate_root` to take each derive's candidates:
+// whichever of `artic` and `artic-element` the calling crate depends on. `artic-element` depends
+// on `artic-registry`, so its `__private` also re-exports what the XamlType output names, and
+// `#[element]` needs that one root. `derive(XamlType)` alone still resolves `artic` or
+// `artic-registry`, so PR C extends `crate_root` to take each macro's candidates:
 cast: |object| (object as &dyn ::core::any::Any).downcast_ref::<Border>().map(|border| border as &dyn __artic::Element),
 cast_mut: |object| (object as &mut dyn ::core::any::Any).downcast_mut::<Border>().map(|border| border as &mut dyn __artic::Element),
 ```
@@ -142,16 +142,16 @@ The properties every control has come in four groups, each in the field `#[eleme
 | `layout` | `Margin` | `Thickness` | zero | layout | |
 | `layout` | `HorizontalAlignment`, `VerticalAlignment` | the #41 enums | `Stretch` | layout | |
 | `appearance` | `Visibility` | `Visibility` | `Visible` | layout, render | |
-| `interaction` | `IsEnabled` | `bool` | `true` | render | yes |
 | `appearance` | `Opacity` | `f32`; the property keeps any value, and composition clamps it (section 7) | `1` | render | |
 | `appearance` | `RenderTransform` | `Option<Transform>` | `None` | render | |
 | `appearance` | `ZIndex` | `i32`: draw and hit-test order among siblings | `0` | render | |
-| `identity` | `Classes` | `Classes` (space-separated names) | empty | style, through its signal (#107) | |
-| `identity` | `Name` | `Option<String>` | `None` | style, through its signal (#107) | |
+| `interaction` | `IsEnabled` | `bool` | `true` | render | yes |
 | `interaction` | `Cursor` | `Cursor` | `Arrow` | | |
 | `interaction` | `Focusable` | `bool` | `false` | render (clears cached hit tests: touch inflates focusable targets, §12) | |
 | `interaction` | `IsHitTestVisible` | `bool` | `true` | render (clears cached hit tests, §12) | |
 | `interaction` | `ToolTip` | `Option<String>` | `None` | | |
+| `identity` | `Classes` | `Classes` (space-separated names) | empty | style, through its signal (#107) | |
+| `identity` | `Name` | `Option<String>` | `None` | style, through its signal (#107) | |
 
 `DataContext` arrives with data binding (M5), whose `DataRef` is its type and which makes it inherit. An `Option<NodeId>` now would make it a child-element slot, since that's what a `NodeId` property means to the registry.
 
@@ -240,7 +240,7 @@ A disabled element is different: it gets no input, but it still blocks it. Hit t
 | A | `artic-element`: `Element`, `ElementImpl`, `HasState`, `ElementType` and `element_type!`, the placeholder contexts; `InputEvent` in `artic-core` | a hand-written element is laid out through `LayoutManager` by way of the cast table |
 | B | `ElementBase` (now the property groups) with its 20 properties and `#[derive(XamlProperties)]`, the enums, `FromStr` for the alignments and `Transform`, `#[xaml(flatten)]` in `derive(XamlType)`, `PropertyGroupInfo`, `LayoutCx::set_bounds`, `Duplicate::Property`, the measure and arrange outline, `LayoutManager` forgetting unmeasured children | `element_base_properties_registered` (now `groups_registered`), `margin_and_alignment_layout`, `min_max_clamp_desired_size`, `collapsed_takes_no_space` (including a child made dirty after its parent collapsed), a registry test where a control property clashes with a group's |
 | B2 | the four property groups in `artic-element`, replacing `CommonProperties`; `Property::set_default` | `groups_registered`, `set_default_loses_to_every_other_level` |
-| C | `#[element]`: the four fields and their reserved names, `#[derive(XamlType)]` added, `ElementImpl::defaults` called from `Default`, the outline from section 3, `#[element(state)]` and its duplicate-state error, `crate_root` taking each macro's candidate crates | the trybuild cases: a field with a reserved name, two fields of one state type, an unknown setting; a test-only state giving a test trait through a blanket impl; a control whose `defaults` makes it focusable, with a style setter winning over that default; a unit test that a disabled element's hook isn't called |
+| C | `#[element]`: the four fields and their reserved names, the `XamlType` output with `ElementImpl::defaults` called from `Default`, `__private` in `artic-element` re-exporting what that output names, the outline from section 3, `#[element(state)]` and its duplicate-state error, `crate_root` taking each macro's candidate crates | the trybuild cases: a field with a reserved name, a struct that also derives `XamlType`, a tuple struct, two fields of one state type, an unknown setting in a field's `#[element(...)]`; a control built by `Default` and by `TypeInfo.new` has run `defaults`; a test-only state giving a test trait through a blanket impl; a control whose `defaults` makes it focusable, with a style setter winning over that default; a unit test that a disabled element's hook isn't called |
 | D | the default accesskit node; opacity, transform and visibility in composition, with `Layers.visible` | `default_accessibility_node`; a pixel test where opacity changes the drawn color; a hidden parent's child isn't drawn and isn't in the accesskit tree, and is back in both once the parent is `Visible` again; a layout-only change, such as a new `Margin`, updates the node's accesskit bounds; siblings drawn by `ZIndex`, ties in tree order; an out-of-range opacity clamped |
 
 ## 9. Spec changes

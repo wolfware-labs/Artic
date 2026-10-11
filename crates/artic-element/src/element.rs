@@ -73,8 +73,8 @@ pub trait ElementImpl {
     Handled::No
   }
 
-  /// Adds the control's role, name, value and actions to the default node built from the property groups. By
-  /// default, nothing.
+  /// Adds the control's role, name, value and actions to the default node built from the property
+  /// groups. By default, nothing.
   fn accessibility(&self, cx: &AccessCx<'_>, node: &mut accesskit::Node) {
     let _ = (cx, node);
   }
