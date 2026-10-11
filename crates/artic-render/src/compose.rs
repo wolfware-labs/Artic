@@ -14,6 +14,10 @@ pub struct Layers {
   pub clip: Option<Clip>,
   /// Blends the node and its descendants as one group, from 0 to 1.
   pub opacity: f32,
+  /// Whether the node and its descendants are drawn at all.
+  pub visible: bool,
+  /// The node's drawing order among its siblings: lower first, ties in tree order.
+  pub z_index: i32,
 }
 
 impl Default for Layers {
@@ -22,6 +26,8 @@ impl Default for Layers {
       transform: None,
       clip: None,
       opacity: 1.0,
+      visible: true,
+      z_index: 0,
     }
   }
 }
@@ -48,9 +54,10 @@ impl Compositor {
   /// Builds the frame for `root`'s visual subtree.
   ///
   /// Each node is wrapped in its layers (transform, then clip, then opacity, each only if set),
-  /// which also wrap its visual descendants; it draws before them. A node is recorded again only if
-  /// it's render-dirty or has no fragment yet, and its render flag is cleared. Fragments of nodes
-  /// no longer in the subtree are dropped.
+  /// which also wrap its visual descendants; it draws before them, and they draw in `z_index`
+  /// order, ties in tree order. A node that isn't visible is skipped with its whole subtree. A
+  /// node is recorded again only if it's render-dirty or has no fragment yet, and its render flag
+  /// is cleared. Fragments of nodes no longer drawn are dropped.
   pub fn compose(&mut self, tree: &mut UiTree, root: NodeId, nodes: &mut impl Nodes) -> Scene {
     let mut previous = std::mem::take(&mut self.fragments);
     let mut walk = Walk {
@@ -77,6 +84,9 @@ struct Walk<'a, N> {
 impl<N: Nodes> Walk<'_, N> {
   fn visit(&mut self, tree: &mut UiTree, node: NodeId) {
     let layers = self.nodes.layers(tree, node);
+    if !layers.visible {
+      return;
+    }
     let set = [
       layers.transform.map(Layer::Transform),
       layers.clip.map(Layer::Clip),
@@ -96,8 +106,12 @@ impl<N: Nodes> Walk<'_, N> {
     self.compositor.fragments.insert(node, Arc::clone(&fragment));
     self.items.push(SceneItem::Fragment(fragment));
 
-    let children: Vec<NodeId> = tree.children(TreeKind::Visual, node).collect();
-    for child in children {
+    let mut children: Vec<(i32, NodeId)> = tree
+      .children(TreeKind::Visual, node)
+      .map(|child| (self.nodes.layers(tree, child).z_index, child))
+      .collect();
+    children.sort_by_key(|(z_index, _)| *z_index);
+    for (_, child) in children {
       self.visit(tree, child);
     }
     self.items.extend((0..pushed).map(|_| SceneItem::Pop));
@@ -165,6 +179,78 @@ mod tests {
       .collect()
   }
 
+  // A node that isn't visible is skipped together with its whole subtree, visible descendants
+  // included.
+  #[test]
+  fn hidden_node_skips_its_subtree() {
+    let mut tree = UiTree::new();
+    let [root, a, b, _c] = sample(&mut tree);
+    let mut nodes = Table::default();
+    nodes.layers.insert(
+      a,
+      Layers {
+        visible: false,
+        ..Layers::default()
+      },
+    );
+
+    let scene = Compositor::default().compose(&mut tree, root, &mut nodes);
+
+    assert_eq!(fragment_nodes(&scene), [root, b]);
+  }
+
+  // A subtree hidden for a frame comes back whole once it's visible again.
+  #[test]
+  fn subtree_returns_when_visible_again() {
+    let mut tree = UiTree::new();
+    let [root, a, b, c] = sample(&mut tree);
+    let mut compositor = Compositor::default();
+    let mut nodes = Table::default();
+    nodes.layers.insert(
+      a,
+      Layers {
+        visible: false,
+        ..Layers::default()
+      },
+    );
+    compositor.compose(&mut tree, root, &mut nodes);
+
+    nodes.layers.remove(&a);
+    let scene = compositor.compose(&mut tree, root, &mut nodes);
+
+    assert_eq!(fragment_nodes(&scene), [root, a, c, b]);
+  }
+
+  // Siblings draw by ZIndex, lowest first; equal values keep tree order.
+  #[test]
+  fn children_draw_by_z_index() {
+    let mut tree = UiTree::new();
+    let root = tree.alloc(Box::new(Node));
+    let [first, second, third] = [(); 3].map(|()| tree.alloc(Box::new(Node)));
+    for child in [first, second, third] {
+      tree.add_child(TreeKind::Visual, root, child);
+    }
+    let mut nodes = Table::default();
+    nodes.layers.insert(
+      first,
+      Layers {
+        z_index: 1,
+        ..Layers::default()
+      },
+    );
+    nodes.layers.insert(
+      third,
+      Layers {
+        z_index: -1,
+        ..Layers::default()
+      },
+    );
+
+    let scene = Compositor::default().compose(&mut tree, root, &mut nodes);
+
+    assert_eq!(fragment_nodes(&scene), [root, third, second, first]);
+  }
+
   // Fragments follow the visual tree depth first, each node before its descendants.
   #[test]
   fn scene_composes_fragments_in_visual_order() {
@@ -213,6 +299,7 @@ mod tests {
       transform: Some(transform),
       clip: Some(clip),
       opacity: 0.5,
+      ..Layers::default()
     };
     nodes.layers.insert(a, layers);
 
