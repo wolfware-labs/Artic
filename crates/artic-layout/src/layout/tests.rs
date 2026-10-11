@@ -398,6 +398,50 @@ mod skipped {
     layout.run(&mut tree, &Toggles, parent, available, 1.0, false);
     assert_eq!(tree.get_as::<Toggle>(child).unwrap().measured.get(), 1);
   }
+
+  /// A root, a middle node and a leaf, laid out once.
+  fn three_levels() -> (UiTree, LayoutManager, [NodeId; 3]) {
+    let mut tree = UiTree::new();
+    let nodes = [(); 3].map(|()| tree.alloc(Box::<Toggle>::default()));
+    tree.add_child(TreeKind::Visual, nodes[0], nodes[1]);
+    tree.add_child(TreeKind::Visual, nodes[1], nodes[2]);
+    let mut layout = LayoutManager::default();
+    layout.run(&mut tree, &Toggles, nodes[0], Size::new(100.0, 100.0), 1.0, false);
+    (tree, layout, nodes)
+  }
+
+  /// How many times `node` has measured.
+  fn measures(tree: &UiTree, node: NodeId) -> u32 {
+    tree.get_as::<Toggle>(node).unwrap().measured.get()
+  }
+
+  // A dirty node under a dirty ancestor waits for the ancestor's measure, so when the ancestor
+  // stops measuring its children in the same run, the node isn't measured at all.
+  #[test]
+  fn dirty_descendant_of_a_collapsing_ancestor_isnt_measured() {
+    let (mut tree, mut layout, [root, middle, leaf]) = three_levels();
+
+    tree.get_as::<Toggle>(middle).unwrap().skip.set(true);
+    LayoutManager::invalidate_measure(&mut tree, middle);
+    LayoutManager::invalidate_measure(&mut tree, leaf);
+    layout.run(&mut tree, &Toggles, root, Size::new(100.0, 100.0), 1.0, false);
+
+    assert_eq!(measures(&tree, leaf), 1);
+    assert_eq!(layout.rect(leaf), None);
+  }
+
+  // When the ancestor keeps measuring, its measure still reaches the dirty node through a clean
+  // node in between, which would otherwise answer from its cache.
+  #[test]
+  fn dirty_descendant_of_a_dirty_ancestor_is_still_measured() {
+    let (mut tree, mut layout, [root, _, leaf]) = three_levels();
+
+    LayoutManager::invalidate_measure(&mut tree, root);
+    LayoutManager::invalidate_measure(&mut tree, leaf);
+    layout.run(&mut tree, &Toggles, root, Size::new(100.0, 100.0), 1.0, false);
+
+    assert_eq!(measures(&tree, leaf), 2);
+  }
 }
 
 mod misuse {

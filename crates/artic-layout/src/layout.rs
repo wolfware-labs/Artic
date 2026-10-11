@@ -81,10 +81,30 @@ impl LayoutManager {
     }
     self.slots.retain(|node, _| depths.contains_key(node));
 
-    let mut by_depth: BTreeMap<usize, Vec<NodeId>> = BTreeMap::new();
+    // A dirty node under a dirty ancestor waits for that ancestor's measure, which may skip it as
+    // a collapsed element does. The nodes between them are marked, so a clean one there doesn't
+    // answer from its cache and the measure still reaches the node.
+    let mut nested = HashSet::new();
+    let mut between = Vec::new();
     for node in &dirty {
+      let mut path = Vec::new();
+      for ancestor in tree
+        .ancestors(TreeKind::Visual, *node)
+        .take_while(|ancestor| depths.contains_key(ancestor))
+      {
+        if dirty.contains(&ancestor) {
+          nested.insert(*node);
+          between.append(&mut path);
+          break;
+        }
+        path.push(ancestor);
+      }
+    }
+    let mut by_depth: BTreeMap<usize, Vec<NodeId>> = BTreeMap::new();
+    for node in dirty.iter().filter(|node| !nested.contains(*node)) {
       by_depth.entry(depths[node]).or_default().push(*node);
     }
+    dirty.extend(between);
     let mut cx = LayoutCx {
       tree,
       nodes,
