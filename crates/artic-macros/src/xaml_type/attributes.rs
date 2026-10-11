@@ -47,6 +47,7 @@ pub struct FieldAttributes {
   pub affects: Option<Affects>,
   pub inherits: Option<Span>,
   pub name: Option<LitStr>,
+  pub flatten: Option<Span>,
 }
 
 /// The stages listed in `affects = layout | render`.
@@ -186,11 +187,29 @@ pub fn parse_field_attributes(field: &Field) -> syn::Result<Option<FieldAttribut
         attributes.inherits = Some(meta.path.get_ident().map_or_else(Span::call_site, Ident::span));
       } else if meta.path.is_ident("name") {
         attributes.name = Some(meta.value()?.parse::<LitStr>()?);
+      } else if meta.path.is_ident("flatten") {
+        attributes.flatten = Some(meta.path.get_ident().map_or_else(Span::call_site, Ident::span));
       } else {
-        return Err(unknown_key(&meta, "`default`, `key`, `affects`, `inherits` or `name`"));
+        return Err(unknown_key(
+          &meta,
+          "`default`, `key`, `affects`, `inherits`, `name` or `flatten`",
+        ));
       }
       Ok(())
     })?;
+  }
+  if let Some(attributes) = &found
+    && attributes.flatten.is_some()
+    && (attributes.default.is_some()
+      || attributes.key.is_some()
+      || attributes.affects.is_some()
+      || attributes.inherits.is_some()
+      || attributes.name.is_some())
+  {
+    return Err(Error::new_spanned(
+      field,
+      "`flatten` takes no other settings: the group's properties carry their own",
+    ));
   }
   if let Some(attributes) = &found
     && let Some(key) = &attributes.key

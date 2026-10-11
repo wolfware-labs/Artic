@@ -22,6 +22,11 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
     .iter()
     .filter(|f| matches!(f.role, Role::Collection))
     .collect();
+  let groups: Vec<&XamlField> = analysis
+    .xaml_fields
+    .iter()
+    .filter(|f| matches!(f.role, Role::Group))
+    .collect();
 
   let keys = properties.iter().map(|field| key_static(field));
   let default_fields = analysis.xaml_fields.iter().map(|field| default_field(field));
@@ -30,6 +35,20 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
     let field_ident = field.ident;
     quote!(visit(&self.#field_ident);)
   });
+  let group_visits = groups.iter().map(|field| {
+    let field_ident = field.ident;
+    quote!(__artic::PropertyGroup::visit_properties(&self.#field_ident, visit);)
+  });
+  let group_infos = groups.iter().map(|field| {
+    let ty = field.ty;
+    let field_name = field.ident.to_string();
+    quote!(__artic::PropertyGroupInfo { field: #field_name, properties: <#ty as __artic::PropertyGroup>::PROPERTIES })
+  });
+  let group_checks = groups.iter().map(|field| {
+    let ty = field.ty;
+    quote_spanned!(ty.span()=> __artic::assert_property_group::<#ty>();)
+  });
+  let group_count = groups.len();
   let property_infos = properties.iter().map(|field| property_info(field));
   let event_infos = events.iter().map(|field| {
     let name = xaml_name(field);
@@ -40,14 +59,7 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
   });
   let property_count = properties.len();
   let event_count = events.len();
-  let value_checks = properties.iter().map(|field| {
-    let Role::Property { value, .. } = field.role else {
-      unreachable!("filtered to properties")
-    };
-    quote_spanned!(value.span()=>
-      (&&__artic::ValueCheck::<#value>(__artic::PhantomData)).value_must_implement_fromstr_or_derive_xamltype();
-    )
-  });
+  let value_checks = properties.iter().map(|field| value_check(field));
   let collection_checks = collections.iter().map(|field| {
     let ty = field.ty;
     quote_spanned!(ty.span()=> __artic::assert_collection::<#ty>();)
@@ -102,12 +114,14 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
       impl __artic::Object for #ident {
         fn visit_properties(&self, visit: &mut dyn ::core::ops::FnMut(&dyn __artic::AnyProperty)) {
           #(#visits)*
+          #(#group_visits)*
         }
       }
 
       static __PROPERTIES: [__artic::PropertyInfo; #property_count] = [#(#property_infos),*];
       static __EVENTS: [__artic::EventInfo; #event_count] = [#(#event_infos),*];
       static __ATTACHED: [__artic::AttachedPropertyInfo; #attached_count] = [#(#attached_infos),*];
+      static __GROUPS: [__artic::PropertyGroupInfo; #group_count] = [#(#group_infos),*];
 
       #(#attached_keys)*
 
@@ -129,7 +143,7 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
         content: #content,
         is_collection: #is_collection,
         properties: &__PROPERTIES,
-        groups: &[],
+        groups: &__GROUPS,
         events: &__EVENTS,
         attached_properties: &__ATTACHED,
         markup_extension: #markup_extension_info,
@@ -147,6 +161,7 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
         use __artic::{ViaChild as _, ViaFromStr as _, ViaXamlType as _};
         #(#value_checks)*
         #(#collection_checks)*
+        #(#group_checks)*
         #(#attached_checks)*
       }
     };
@@ -263,6 +278,16 @@ fn attached_info(attached: &Attached) -> TokenStream {
   }
 }
 
+/// The check that a property's value type can be written in markup, pointing at the type.
+pub fn value_check(field: &XamlField) -> TokenStream {
+  let Role::Property { value, .. } = field.role else {
+    unreachable!("properties only")
+  };
+  quote_spanned!(value.span()=>
+    (&&__artic::ValueCheck::<#value>(__artic::PhantomData)).value_must_implement_fromstr_or_derive_xamltype();
+  )
+}
+
 fn is_property(field: &XamlField) -> bool {
   matches!(field.role, Role::Property { .. })
 }
@@ -283,7 +308,7 @@ fn generated_key(field: &Ident) -> Ident {
 }
 
 /// The `static PropertyKey` the derive writes for a property without a shared `key`.
-fn key_static(field: &XamlField) -> TokenStream {
+pub fn key_static(field: &XamlField) -> TokenStream {
   if field.attributes.key.is_some() {
     return TokenStream::new();
   }
@@ -309,7 +334,7 @@ fn affects_tokens(affects: Affects) -> TokenStream {
 }
 
 /// How `Default` creates one `#[xaml]` field.
-fn default_field(field: &XamlField) -> TokenStream {
+pub fn default_field(field: &XamlField) -> TokenStream {
   let field_ident = field.ident;
   match field.role {
     Role::Property { inner, .. } => {
@@ -320,12 +345,12 @@ fn default_field(field: &XamlField) -> TokenStream {
       };
       quote!(#field_ident: __artic::Property::new(&#key, #value))
     }
-    Role::Event { .. } | Role::Collection => quote!(#field_ident: ::core::default::Default::default()),
+    Role::Event { .. } | Role::Collection | Role::Group => quote!(#field_ident: ::core::default::Default::default()),
   }
 }
 
 /// The `PropertyInfo` for one property, with its metadata read from the key.
-fn property_info(field: &XamlField) -> TokenStream {
+pub fn property_info(field: &XamlField) -> TokenStream {
   let Role::Property { inner, .. } = field.role else {
     unreachable!("properties only")
   };

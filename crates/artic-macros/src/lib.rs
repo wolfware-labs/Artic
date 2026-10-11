@@ -2,6 +2,7 @@
 
 mod crate_root;
 mod xaml_enum;
+mod xaml_properties;
 mod xaml_type;
 
 use proc_macro::TokenStream;
@@ -35,6 +36,8 @@ use syn::{DeriveInput, parse_macro_input};
 ///   key, `key = STATIC` to share a `PropertyKey` with other types instead (inheritance across
 ///   types needs it), and `name = "..."` to rename it (the field name in PascalCase otherwise).
 /// - `Event<A>` is a XAML event named like a property.
+/// - `#[xaml(flatten)]` on a field whose type derives `XamlProperties`: its properties are
+///   listed and visited as the type's own. It takes no other settings.
 /// - Any other `#[xaml]` field is a collection of child elements and must implement
 ///   `XamlCollection`.
 ///
@@ -61,6 +64,21 @@ use syn::{DeriveInput, parse_macro_input};
 pub fn derive_xaml_type(input: TokenStream) -> TokenStream {
   let input = parse_macro_input!(input as DeriveInput);
   xaml_type::expand(&input)
+    .unwrap_or_else(syn::Error::into_compile_error)
+    .into()
+}
+
+/// Makes a struct a property group: a set of properties several XAML types share by embedding it
+/// in a field marked `#[xaml(flatten)]`, as controls embed `ElementBase`.
+///
+/// Fields follow `XamlType`'s rules for `Property` fields; a group holds no events or
+/// collections, and takes no attributes on the struct. The derive implements `Default` and
+/// `PropertyGroup`. A group's keys are its own, so every type that flattens it shares them, and
+/// an inheriting property inherits across those types.
+#[proc_macro_derive(XamlProperties, attributes(xaml))]
+pub fn derive_xaml_properties(input: TokenStream) -> TokenStream {
+  let input = parse_macro_input!(input as DeriveInput);
+  xaml_properties::expand(&input)
     .unwrap_or_else(syn::Error::into_compile_error)
     .into()
 }

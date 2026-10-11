@@ -288,3 +288,56 @@ fn markup_extension_schema_is_registered() {
   assert_eq!(schema(lookup("Nothing")), (vec![], vec![]));
   assert!(lookup("Border").markup_extension.is_none());
 }
+
+/// A property group two widgets share.
+#[derive(Debug, artic_macros::XamlProperties)]
+struct Common {
+  #[xaml(affects = layout)]
+  margin: Property<i32>,
+  #[xaml(default = true, inherits)]
+  enabled: Property<bool>,
+}
+
+/// A widget that flattens `Common` and adds a property of its own.
+#[derive(Debug, XamlType)]
+#[xaml(namespace = "https://artic.rs/test")]
+struct Widget {
+  #[xaml(flatten)]
+  common: Common,
+  #[xaml]
+  size: Property<i32>,
+}
+
+/// Another widget, to check that a group's inheriting property crosses types.
+#[derive(Debug, XamlType)]
+#[xaml(namespace = "https://artic.rs/test")]
+struct Gadget {
+  #[xaml(flatten)]
+  common: Common,
+}
+
+// A flattened group's properties are registered as the type's, with its field, and visited.
+#[test]
+fn flattened_group_is_registered_and_visited() {
+  let info = <Widget as XamlType>::TYPE_INFO;
+  assert_eq!(info.groups[0].field, "common");
+  assert_eq!(info.property("Margin").map(|found| found.group), Some(Some("common")));
+  assert_eq!(info.property("Size").map(|found| found.group), Some(None));
+
+  let mut visited = 0;
+  artic_core::Object::visit_properties(&Widget::default(), &mut |_| visited += 1);
+  assert_eq!(visited, 3);
+}
+
+// A group's inheriting property uses one key, so it inherits across the types that flatten it.
+#[test]
+fn group_property_inherits_across_types() {
+  let mut tree = UiTree::new();
+  let widget = tree.alloc(Box::new(Widget::default()));
+  let gadget = tree.alloc(Box::new(Gadget::default()));
+  tree.add_child(TreeKind::Logical, widget, gadget);
+
+  tree.get_as::<Widget>(widget).unwrap().common.enabled.set(false);
+
+  assert!(!tree.get_as::<Gadget>(gadget).unwrap().common.enabled.get());
+}
