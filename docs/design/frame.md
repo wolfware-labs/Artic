@@ -24,7 +24,7 @@ All in `artic-platform`, which depends on `artic-element` to drive the tree as `
 | `FrameStats` | `{ measured: u32, arranged: u32, recorded: u32, rendered: bool }`, `Copy + Eq + Default` |
 | `Hooks` | Per-stage lists of boxed closures: `before_layout`, `after_present`, `wants_frame`, and `on_error` for a frame that failed |
 | `Runner<R: Renderer>` | `impl AppHandler`. Owns the `UiTree`, the renderer, the `Hooks` and the `ElementTypes` cast table, built once and lent to every pipeline, and per surface its root, latest `SurfaceInfo`, a `needs_frame` mark, its `Pipeline` and the last `FrameStats` |
-| `run(host, runner) -> Result<(), Error>` | Checks `renderer.accepts(host.targets())`, then `host.run(runner)`; returns the error a frame stored, if any, when the host's `run` returns after the loop ends |
+| `run(host, runner) -> Result<(), Error>` | Checks `renderer.accepts(host.targets())`, then `host.run(runner)`; returns the error a frame failed with, if any, when the host's `run` returns after the loop ends |
 | `Error` | `Unsupported(TargetKind)`: the renderer can't draw on what the host offers; `Render(RenderError)`: a frame failed |
 
 ```rust
@@ -110,7 +110,7 @@ A node that isn't an element gets default layers and records nothing.
 | `event(Suspended)`, `event(Resumed)` | nothing beyond settling; the surfaces come and go through `surface_lost` and `surface_changed` |
 | `woken` | settles; #79 connects the dispatcher's cross-thread `post` here |
 
-`AppHandler` calls can't return errors. On `RenderError::SurfaceLost` the runner calls `renderer.surface_lost(id)`, which drops what the renderer kept for the surface (`artic-vello`'s swapchain), then marks the surface and asks for a frame, so the next one rebuilds it. Any other render error is passed to every `on_error` hook and kept, and the runner calls `cx.exit()`. A host whose `run` blocks until the loop ends, such as `artic-winit`, returns to `run`, which returns the kept error as `Error::Render`, so a launcher whose `main` returns a `Result` reports it. A host whose `run` returns at once, such as a browser's, has already returned when a frame fails, so `on_error` is how an app on it learns of the failure.
+`AppHandler` calls can't return errors. On `RenderError::SurfaceLost` the runner calls `renderer.surface_lost(id)`, which drops what the renderer kept for the surface (`artic-vello`'s swapchain), then marks the surface and asks for a frame, so the next one rebuilds it. Any other render error is passed to every `on_error` hook and kept, and the runner calls `cx.exit()`. `Host::run` takes the runner by value and returns nothing, so the error is kept outside it: before calling `host.run`, `run` gives the runner one end of a shared slot (an `Rc<RefCell<Option<Error>>>`; the runner never leaves the UI thread) and keeps the other. A host whose `run` blocks until the loop ends, such as `artic-winit`, returns to `run`, which takes the error from its end and returns it as `Error::Render`, so a launcher whose `main` returns a `Result` reports it. A host whose `run` returns at once, such as a browser's, has already returned when a frame fails, so `on_error` is how an app on it learns of the failure.
 
 ## 7. Stats
 
