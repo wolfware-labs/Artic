@@ -169,13 +169,15 @@ The app is a library; each target has a **launcher**, a few lines that name a ho
 pub fn app() -> artic::App { … }
 
 // launchers/desktop/src/main.rs
-fn main() {
-  artic::run(artic_winit::Host::new(), artic_vello::Renderer::new(), my_app::app());
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+  artic::run(artic_winit::Host::new()?, artic_vello::Renderer::new()?, my_app::app());
+  Ok(())
 }
 
 // launchers/pi/src/main.rs
-fn main() {
-  artic::run(artic_fbdev::Host::new(), artic_tiny_skia::Renderer::new(), my_app::app());
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+  artic::run(artic_fbdev::Host::new()?, artic_tiny_skia::Renderer::new()?, my_app::app());
+  Ok(())
 }
 ```
 

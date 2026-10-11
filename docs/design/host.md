@@ -8,7 +8,7 @@ A **host** drives the screen: it owns the event loop, reports surfaces and event
 
 | Who | Writes | Sees |
 | --- | --- | --- |
-| App authors | `pub fn app() -> artic::App`, and a launcher: `artic::run(artic_winit::Host::new()?, artic_vello::Renderer::new()?, my_app::app())` | `artic::App`, `artic::run`, a host and a renderer |
+| App authors | `pub fn app() -> artic::App`, and a launcher: `artic::run(artic_winit::Host::new()?, artic_vello::Renderer::new()?, my_app::app())`, from a `main` that returns a `Result` | `artic::App`, `artic::run`, a host and a renderer |
 | Host adapter authors (winit, SDL, a framebuffer, a browser) | `impl Host for MyHost`, calling an `AppHandler` from their loop | `Host`, `AppHandler`, `HostContext`, `SurfaceInfo`, `HostEvent`, `Waker` |
 | artic (#40) | `impl AppHandler` for the frame pipeline | the same seam, from the other side |
 
@@ -67,7 +67,7 @@ pub trait Windows {
 | `SurfaceInfo` | `artic-platform` | `size: PhysicalSize`, `scale: f32` (device pixels per logical unit), `display: DisplayId`, `refresh_rate: Option<f32>` (some platforms don't report it) |
 | `DisplayId` | `artic-platform` | an opaque id the host assigns per display |
 | `HostEvent` | `artic-platform` | `#[non_exhaustive]`: `CloseRequested { surface }`, `Suspended`, `Resumed` |
-| `Waker` | `artic-platform` | `Clone + Send + Sync`; `wake()` makes the host call `AppHandler::woken` on its loop. It wraps an `Arc<dyn Fn() + Send + Sync>` the host supplies. |
+| `Waker` | `artic-platform` | `Clone + Send + Sync`; `wake()` makes the host call `AppHandler::woken` on its loop. An adapter builds one with `Waker::new(hook)`, where `hook` is any `Fn() + Send + Sync + 'static` that wakes its loop. |
 
 `SurfaceId`, `PhysicalSize`, `Target` and `TargetKind` are `artic-render`'s, shared with the renderer seam.
 
@@ -81,21 +81,25 @@ pub trait Windows {
 
 ## 5. `artic-winit`
 
-The desktop adapter, at layer 5, depending on `artic-platform`, `artic-render`, `artic-core` and `winit`. It exports `Host`, whose `new()` fails if the event loop can't be created, and no `winit` type appears in a public item. Inside, `Host` implements winit's `ApplicationHandler` and keeps a map from winit's `WindowId` to artic's `SurfaceId`.
+The desktop adapter, at layer 5, depending on `artic-platform`, `artic-render`, `artic-core` and `winit`. It exports `Host` and `Error`: `Host::new() -> Result<Host, Error>` fails if the event loop can't be created, such as with no display, and `Error` carries only a message, so no `winit` type appears in a public item. Inside, `Host` implements winit's `ApplicationHandler` and keeps a map from winit's `WindowId` to artic's `SurfaceId`.
 
 | winit | `artic-winit` | `AppHandler` |
 | --- | --- | --- |
 | first `resumed` | builds the `Waker` from the `EventLoopProxy` | `started(cx, waker)`; artic opens its first window through `cx.windows()`, and `surface_changed` follows |
-| later `resumed`, `suspended` | (mobile) | `event(Resumed)`, `event(Suspended)` |
-| `WindowEvent::Resized`, `ScaleFactorChanged`, `Moved` | rebuilds the surface's `SurfaceInfo`, with the current monitor as its `DisplayId` and its refresh rate | `surface_changed` |
+| `suspended` | (mobile: the GPU surfaces are destroyed) | `surface_lost` for each surface, in open order, then `event(Suspended)` |
+| later `resumed` | (mobile: the surfaces are recreated) | `event(Resumed)`, then `surface_changed` for each surface |
+| `WindowEvent::Resized`, `ScaleFactorChanged`, `Moved` | rebuilds the surface's `SurfaceInfo`, with the current monitor as its `DisplayId` and its refresh rate | `surface_changed`, if anything differs from what was last reported |
 | `WindowEvent::CloseRequested` | | `event(CloseRequested { surface })` |
-| `WindowEvent::RedrawRequested` | lends the window as `Target::Handles`, with the time since `run` started (winit doesn't expose present times) | `frame(cx, surface, target, time)` |
+| `WindowEvent::RedrawRequested` | reads the current monitor again, then lends the window as `Target::Handles`, with the time since `run` started (winit doesn't expose present times) | `surface_changed` if the display changed, then `frame(cx, surface, target, time)` |
 | `user_event` (a `Waker` fired) | | `woken` |
 | `about_to_wait` | `ControlFlow::Wait`: sleep until the next event or wake-up | |
 
 - `cx.request_frame(id)` calls the window's `request_redraw()`, which schedules one `RedrawRequested` for that window; winit merges repeated requests. Scheduling isn't pacing: a handler that asks for the next frame from inside `frame` runs as fast as rendering allows unless something waits for the display. Pacing each surface to its display's refresh (§10) is #40's, through the renderer's vsync'd presentation and the platform's frame callbacks.
 - `cx.exit()` exits the loop; windows still open are reported through `surface_lost` before `run` returns.
 - `targets()` is `TargetKind::Handles`.
+- The monitor is read on every resize, scale change, move and frame, because Wayland sends no `Moved` and a move between monitors of equal scale sends no scale change; a display change on its own is still reported.
+- A window opened during a handler call reports its first `surface_changed` right after that call returns, since the context can't call the handler while it's in a call. A window that couldn't be created reports `surface_lost` the same way.
+- `run` panics if winit can't run its loop, which happens only when a loop already ran in the process: the seam's `run` returns nothing, and a silent failure would hide it.
 
 The translation from a winit `WindowEvent` to a `SurfaceInfo`, a `HostEvent` or a frame is a pure function over values pulled out of the event, so tests construct its inputs without a display (winit's `ScaleFactorChanged` carries a writer tests can't build).
 
