@@ -133,7 +133,7 @@ pub fn expand(attribute: TokenStream, item: TokenStream) -> syn::Result<TokenStr
         }
 
         fn accessibility(&self, cx: &__artic::AccessCx<'_>) -> __artic::accesskit::Node {
-          let mut node = self.interaction.accessibility(cx, self.appearance.visibility.get());
+          let mut node = self.interaction.accessibility(cx);
           <Self as __artic::ElementImpl>::accessibility(self, cx, &mut node);
           node
         }

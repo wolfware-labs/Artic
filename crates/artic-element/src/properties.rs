@@ -149,13 +149,22 @@ impl LayoutProperties {
 }
 
 impl AppearanceProperties {
-  /// The element's layers in composition for its arranged `size`, with the control's `clip`.
+  /// The element's layers in composition for its arranged `size`: its opacity held to 0–1 (NaN
+  /// counts as 1), its render transform around its centre in its own coordinates, whether it's
+  /// visible, its z-index, and the control's `clip`.
   #[must_use]
   pub fn layers(&self, size: Size, clip: Option<Clip>) -> Layers {
-    let _ = size;
+    let opacity = self.opacity.get();
+    let (x, y) = (size.width / 2.0, size.height / 2.0);
     Layers {
+      transform: self
+        .render_transform
+        .get()
+        .map(|transform| Transform::translate(-x, -y).then(transform).then(Transform::translate(x, y))),
       clip,
-      ..Layers::default()
+      opacity: if opacity.is_nan() { 1.0 } else { opacity.clamp(0.0, 1.0) },
+      visible: self.visibility.get() == Visibility::Visible,
+      z_index: self.z_index.get(),
     }
   }
 }
@@ -178,10 +187,10 @@ impl InteractionProperties {
   }
 
   /// The element's default accessibility node, which the control's `ElementImpl::accessibility`
-  /// adds to: a generic container at its bounds. `visibility` comes from the appearance group.
+  /// adds to: a generic container at its bounds, disabled when `IsEnabled` is false. The tree walk
+  /// leaves out elements that aren't visible.
   #[must_use]
-  pub fn accessibility(&self, cx: &AccessCx<'_>, visibility: Visibility) -> accesskit::Node {
-    let _ = visibility;
+  pub fn accessibility(&self, cx: &AccessCx<'_>) -> accesskit::Node {
     let bounds = cx.bounds();
     let mut node = accesskit::Node::new(accesskit::Role::GenericContainer);
     node.set_bounds(accesskit::Rect::new(
@@ -190,6 +199,9 @@ impl InteractionProperties {
       f64::from(bounds.x + bounds.width),
       f64::from(bounds.y + bounds.height),
     ));
+    if !self.is_enabled.get() {
+      node.set_disabled();
+    }
     node
   }
 }
