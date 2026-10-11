@@ -77,6 +77,16 @@ pub fn analyze(input: &DeriveInput) -> syn::Result<Analysis<'_>> {
       format_args!("`content` names `{content}`, which is not a `#[xaml]` field of this struct"),
     ));
   }
+  if let Some(content) = &attributes.content
+    && xaml_fields
+      .iter()
+      .any(|field| field.ident == content && matches!(field.role, Role::Group))
+  {
+    return Err(Error::new_spanned(
+      content,
+      format_args!("`content` names `{content}`, a flattened property group, which can't receive content"),
+    ));
+  }
   Ok(Analysis {
     ident: &input.ident,
     attributes,
