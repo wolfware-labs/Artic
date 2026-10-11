@@ -247,3 +247,23 @@ fn combining_follower_is_marked_dirty_despite_own_value() {
 
   assert_eq!(tree.dirty(child), Affects::RENDER);
 }
+
+// A change reaches a combining grandchild through a parent with its own value, marking both dirty.
+#[test]
+fn combine_marks_dirty_through_a_node_with_its_own_value() {
+  let mut tree = UiTree::new();
+  let (root, root_enabled) = new_toggle(&mut tree, true);
+  let (middle, _) = new_toggle(&mut tree, true);
+  let (leaf, enabled) = new_toggle(&mut tree, true);
+  tree.add_child(TreeKind::Logical, root, middle);
+  tree.add_child(TreeKind::Logical, middle, leaf);
+  tree.clear_dirty(middle, Affects::LAYOUT | Affects::RENDER);
+  tree.clear_dirty(leaf, Affects::LAYOUT | Affects::RENDER);
+
+  root_enabled.set(false);
+
+  assert_eq!((tree.dirty(middle), tree.dirty(leaf)), (Affects::RENDER, Affects::RENDER));
+  assert!(!enabled.get());
+  root_enabled.set(true);
+  assert!(enabled.get());
+}

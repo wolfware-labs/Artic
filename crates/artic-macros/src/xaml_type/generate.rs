@@ -325,8 +325,8 @@ pub fn key_static(field: &XamlField) -> TokenStream {
     None => quote!(__artic::Inheritance::None),
     Some(Inherits::Replace) => quote!(__artic::Inheritance::Replace),
     Some(Inherits::Combine(path)) => match path.get_ident() {
-      Some(name) => quote!(__artic::Inheritance::Combine(__artic::inherit::#name)),
-      None => quote!(__artic::Inheritance::Combine(#path)),
+      Some(name) => quote_spanned!(path.span()=> __artic::Inheritance::Combine(__artic::inherit::#name)),
+      None => quote_spanned!(path.span()=> __artic::Inheritance::Combine(#path)),
     },
   };
   quote! {

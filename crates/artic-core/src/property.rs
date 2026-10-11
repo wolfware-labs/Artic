@@ -31,8 +31,8 @@
 //! # Keys and metadata
 //!
 //! Every property is created with a [`PropertyKey`]: a `static` per property kind that names it,
-//! says which frame stages a change [`Affects`], and says how it inherits ([`Inheritance`]). Properties on
-//! different node types are the same kind when they share the key.
+//! says which frame stages a change [`Affects`], and says how it inherits ([`Inheritance`]).
+//! Properties on different node types are the same kind when they share the key.
 //!
 //! Once a node is in a [`UiTree`](crate::tree::UiTree), a change to the effective value of
 //! one of its properties adds the key's stages to the node's dirty flags right away. A write that
@@ -192,7 +192,8 @@ where
   ///
   /// Like [`get`](Property::get), this subscribes the running observer. Clearing the winning level
   /// changes the source even when the next level holds an equal value, and readers are marked dirty
-  /// then too.
+  /// then too. Under [`Inheritance::Combine`] it names the property's own level: the ancestor's
+  /// part isn't a level, so a `Local` source can still read `false` under a disabled ancestor.
   ///
   /// # Examples
   ///

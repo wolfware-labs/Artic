@@ -39,7 +39,7 @@ use syn::{DeriveInput, parse_macro_input};
 ///   A bare `inherits` replaces what the property inherits with its own value; `inherits = f`
 ///   combines the two through `f(own, inherited)`, where a single name such as `and` is one of
 ///   `artic_core::property::inherit`'s functions and a longer path names any
-///   `fn(&T, &T) -> T`.
+///   `fn(&T, &T) -> T`: write your own function as `self::my_fn` or `crate::my_fn`.
 /// - `Event<A>` is a XAML event named like a property.
 /// - `#[xaml(flatten)]` on a field whose type derives `XamlProperties`: its properties are
 ///   listed and visited as the type's own. It takes no other settings.
