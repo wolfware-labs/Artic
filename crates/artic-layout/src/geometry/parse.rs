@@ -141,9 +141,10 @@ impl FromStr for Rect {
 impl FromStr for Transform {
   type Err = ParseGeometryError;
 
-  /// Parses CSS transform functions separated by whitespace: `translate(x, y)` or `translate(x)`,
-  /// `rotate(degrees)`, `scale(s)` or `scale(x, y)`, such as `"translate(10, 20) rotate(45)"`. As
-  /// in CSS, the rightmost function applies to the element first.
+  /// Parses CSS transform functions: `translate(x, y)` or `translate(x)`, `rotate(degrees)`,
+  /// `scale(s)` or `scale(x, y)`, such as `"translate(10, 20) rotate(45)"`. As in CSS, whitespace
+  /// between functions is optional, none may come between a name and its parenthesis, and the
+  /// rightmost function applies to the element first.
   fn from_str(text: &str) -> Result<Self, Self::Err> {
     const FORMS: &str = r#""translate(10, 20)", "rotate(45)", "scale(2)" or several, such as "translate(10, 0) rotate(45)""#;
     let fail = |problem| error(text, "Transform", FORMS, problem);
@@ -156,7 +157,7 @@ impl FromStr for Transform {
       let unknown = || fail(GeometryProblem::UnknownFunction(rest.to_owned()));
       let open = rest.find('(').ok_or_else(unknown)?;
       let close = rest.find(')').filter(|close| *close > open).ok_or_else(unknown)?;
-      let name = rest[..open].trim();
+      let name = &rest[..open];
       let numbers = read_numbers(&rest[open + 1..close], Sign::Any).map_err(fail)?;
       let function = match (name, numbers.as_slice()) {
         ("translate", [x]) => Transform::translate(*x, 0.0),
@@ -324,6 +325,20 @@ mod tests {
     assert_eq!(at("scale(2)".parse().unwrap(), 3.0, 4.0), (6.0, 8.0));
     assert_eq!(at("scale(2 3)".parse().unwrap(), 3.0, 4.0), (6.0, 12.0));
     assert_eq!(at("rotate(90)".parse().unwrap(), 1.0, 0.0), (0.0, 1.0));
+  }
+
+  // As in CSS, whitespace between functions is optional, but none may come between a function's
+  // name and its parenthesis.
+  #[test]
+  fn transform_whitespace_follows_css() {
+    let spaced: Transform = "translate(100, 0) rotate(90)".parse().unwrap();
+    let packed: Transform = "translate(100, 0)rotate(90)".parse().unwrap();
+
+    assert_eq!(at(packed, 1.0, 0.0), at(spaced, 1.0, 0.0));
+    assert_eq!(
+      "rotate (90)".parse::<Transform>().unwrap_err().problem,
+      GeometryProblem::UnknownFunction("rotate ".to_owned())
+    );
   }
 
   // As in CSS, the rightmost function applies to the element first: this rotates, then moves.

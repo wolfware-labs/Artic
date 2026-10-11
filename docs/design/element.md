@@ -147,7 +147,7 @@ The pipeline builds a `TypeId → ElementType` map once. `cast` answers `LayoutN
 
 `DataContext` arrives with data binding (M5), whose `DataRef` is its type and which makes it inherit. An `Option<NodeId>` now would make it a child-element slot, since that's what a `NodeId` property means to the registry.
 
-`RenderTransform` is written as CSS transform functions, separated by whitespace: `translate(x, y)` or `translate(x)`, `rotate(degrees)`, `scale(s)` or `scale(x, y)`, such as `RenderTransform="translate(10, 0) rotate(45)"`. As in CSS, the rightmost function applies to the element first: that example rotates, then moves.
+`RenderTransform` is written as CSS transform functions: `translate(x, y)` or `translate(x)`, `rotate(degrees)`, `scale(s)` or `scale(x, y)`, such as `RenderTransform="translate(10, 0) rotate(45)"`. As in CSS, whitespace between functions is optional, none may come between a name and its parenthesis, and the rightmost function applies to the element first: that example rotates, then moves.
 
 The size properties and the alignments are what #41's `Sizing` holds; `ElementBase` builds a `Sizing` from them for `measure_with` and `arrange_with`.
 
