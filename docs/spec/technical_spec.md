@@ -71,7 +71,7 @@ Each layer builds on the ones below it. The exact dependency edges and the rules
 | `artic-xaml-compiler` | Infoset → Rust source (`build.rs` API and `cargo artic` CLI) | `compile_dir()`, `CompileOptions` |
 | `artic-xaml-runtime` | Infoset → live object tree using the registry; file watcher and hot-swap | `XamlLoader`, `HotReload` |
 | `artic-layout` | Measure/arrange protocol, panels, invalidation | `Layoutable`, `LayoutCx`, `LayoutManager`, `Size`, `Rect`, `Thickness` |
-| `artic-element` | The `Element` trait and its render, hit-test, event and accessibility contexts; gesture recognizers. Shared by controls and the platform host (D25) | `Element`, `RenderCx`, `EventCx`, `AccessCx` |
+| `artic-element` | The `Element` trait and its render, hit-test, event and accessibility contexts; `CommonProperties`, the properties every control embeds; gesture recognizers. Shared by controls and the platform host (D25) | `Element`, `CommonProperties`, `RenderCx`, `EventCx`, `AccessCx` |
 | `artic-controls` | Templated controls, primitives, default `ControlTemplate`s | `Button`, `TextBox`, `ItemsControl`, … |
 | `artic-style` | Selector parser and matcher, `Style`, `Setter`, pseudo-classes, resource dictionaries, theme switching | `Selector`, `Style`, `ResourceDictionary` |
 | `artic-render` | `Renderer` trait, scene graph (display list), `Target`; text shaping via `parley`. No backend dependencies | `Renderer`, `Scene`, `Target`, `DrawingContext` |
@@ -113,7 +113,7 @@ XAML needs to name types and properties by string; Rust does not. The registry e
 #[derive(Debug, XamlType)]
 #[xaml(namespace = "https://artic.rs/ui", content = child)]
 pub struct Border {
-    #[xaml(flatten)] pub base: ElementBase,      // composition; its properties are listed as Border's
+    #[xaml(flatten)] pub common: CommonProperties,      // composition; its properties are listed as Border's
     #[xaml] pub child: Property<Option<NodeId>>,
     #[xaml(default = Thickness::ZERO, affects = layout)] pub padding: Property<Thickness>,
     #[xaml(affects = render)] pub background: Property<Option<Brush>>,
@@ -122,7 +122,7 @@ pub struct Border {
 }
 ```
 
-The derive emits a `TypeInfo` static and registers it with `linkme` (distributed slice) so the registry is assembled at link time. It also writes the type's `Default` (each property created with its key and default) and `Object` impls, so the struct derives `Debug` but not `Default`. Field types decide everything: a `Property<T>` is a settable XAML property if `T: FromStr` or `T: XamlType` (looking through `Option`, and `NodeId` marks a child slot); an `Event<A>` is a XAML event; a `#[xaml(flatten)]` field is a property group (`#[derive(XamlProperties)]`, such as `ElementBase`) whose properties are listed as the type's; any other `#[xaml]` field must implement `XamlCollection` and accepts child elements.
+The derive emits a `TypeInfo` static and registers it with `linkme` (distributed slice) so the registry is assembled at link time. It also writes the type's `Default` (each property created with its key and default) and `Object` impls, so the struct derives `Debug` but not `Default`. Field types decide everything: a `Property<T>` is a settable XAML property if `T: FromStr` or `T: XamlType` (looking through `Option`, and `NodeId` marks a child slot); an `Event<A>` is a XAML event; a `#[xaml(flatten)]` field is a property group (`#[derive(XamlProperties)]`, such as `CommonProperties`) whose properties are listed as the type's; any other `#[xaml]` field must implement `XamlCollection` and accepts child elements.
 
 Each property gets its own `PropertyKey` unless `#[xaml(key = FONT_SIZE)]` names a shared one; properties that inherit across types share their key. `affects = layout | render` and `inherits` set the metadata of a generated key.
 
@@ -130,7 +130,7 @@ Each property gets its own `PropertyKey` unless `#[xaml(key = FONT_SIZE)]` names
 
 | Item | Fields | Consumer |
 | --- | --- | --- |
-| `TypeInfo` | XAML name, namespace, Rust path, `new: fn(&mut UiTree) -> NodeId`, content field, `is_collection`, properties, events, attached properties, `markup_extension: Option<&MarkupExtensionInfo>`, whitespace, `kind` (node or value, from the value objects design), `groups` (flattened property groups such as `ElementBase`) | compiler, loader |
+| `TypeInfo` | XAML name, namespace, Rust path, `new: fn(&mut UiTree) -> NodeId`, content field, `is_collection`, properties, events, attached properties, `markup_extension: Option<&MarkupExtensionInfo>`, whitespace, `kind` (node or value, from the value objects design), `groups` (flattened property groups such as `CommonProperties`) | compiler, loader |
 | `PropertyInfo` | name, Rust field path, value type path, `affects: Layout \| Render`, `inherits`, `access: &PropertyAccess` (typed thunks, see below) | compiler emits `node.field.set(v)` directly; loader calls the `access` thunks |
 | `AttachedPropertyInfo` | owner, name, value type, target (`AttachedTarget::ChildrenOfOwner` for `Grid.Row`, `Any` for `Accessibility.Name`) | both |
 | `EventInfo` | name, args type path, `subscribe: fn(&mut UiTree, NodeId, HandlerId)` | both |
@@ -385,7 +385,7 @@ Two trees, as in WPF/Avalonia: the **logical tree** (what the XAML declared; sco
 
 ### Element traits and composition
 
-There is no control class hierarchy. A control is a struct that embeds the state it needs and implements the traits for the behavior it has; `#[derive(Element)]` delegates the shared parts to the embedded `ElementBase`.
+There is no control class hierarchy. A control is a struct that embeds the state it needs and implements the traits for the behavior it has; `#[derive(Element)]` delegates the shared parts to the embedded `CommonProperties`.
 
 ```rust
 pub trait Element: Object + Layoutable {          // Layoutable (§7 Layout protocol) brings measure/arrange
@@ -400,7 +400,7 @@ pub trait ElementImpl {                           // what a control writes; the 
     fn arrange_override(&self, cx: &mut LayoutCx, size: Size) {}
     fn render(&self, cx: &mut RenderCx, scene: &mut SceneBuilder) {}
     fn on_event(&mut self, cx: &mut EventCx, event: &InputEvent) -> Handled { Handled::No }   // not called while disabled
-    fn accessibility(&self, cx: &AccessCx, node: &mut accesskit::Node) {}   // adds to ElementBase's node
+    fn accessibility(&self, cx: &AccessCx, node: &mut accesskit::Node) {}   // adds to CommonProperties's node
     fn clip(&self, size: Size) -> Option<Clip> { None }                    // clips the element and its descendants
     fn on_apply_template(&mut self, cx: &mut TemplateCx) {}   // per-control hooks live here, defaulted; added with TemplateCx in #84
 }
@@ -413,7 +413,7 @@ impl<T: Element + HasState<ContentState>> HasContent for T {}   // and likewise 
 
 #[derive(Debug, Element, XamlType)]               // XamlType writes Default
 pub struct Button {
-    #[xaml(flatten)] pub base: ElementBase,
+    #[xaml(flatten)] pub common: CommonProperties,
     #[element(state)] #[xaml(flatten)] pub content: ContentState,    // HasState<ContentState>, so HasContent
     #[element(state)] #[xaml(flatten)] pub template: TemplateState,  // HasState<TemplateState>, so Templated
     #[xaml] pub click: Event<ClickEvent>,
@@ -422,7 +422,7 @@ pub struct Button {
 impl ElementImpl for Button { /* measure_override, render, on_event, … */ }
 ```
 
-- `ElementBase` holds the universal state: `Width/Height/Min*/Max*`, `Margin`, `HorizontalAlignment/VerticalAlignment`, `Visibility` (`Visible`, `Hidden` keeps its space, `Collapsed` takes none; there is no `IsVisible`, see [the elements design](../design/element.md#visibility)), `IsEnabled`, `Opacity`, `ZIndex`, `Classes`, `Name`, `Cursor`, `Focusable`, `IsHitTestVisible`, `ToolTip` (v1: text), `RenderTransform` (CSS transform functions: `translate(10, 0) rotate(45)`). `DataContext` joins it with data binding.
+- `CommonProperties` holds the universal state: `Width/Height/Min*/Max*`, `Margin`, `HorizontalAlignment/VerticalAlignment`, `Visibility` (`Visible`, `Hidden` keeps its space, `Collapsed` takes none; there is no `IsVisible`, see [the elements design](../design/element.md#visibility)), `IsEnabled`, `Opacity`, `ZIndex`, `Classes`, `Name`, `Cursor`, `Focusable`, `IsHitTestVisible`, `ToolTip` (v1: text), `RenderTransform` (CSS transform functions: `translate(10, 0) rotate(45)`). `DataContext` joins it with data binding.
 - Reusable state structs (`ContentState`, `TemplateState`, `SelectionState`, `RangeState`) replace the WPF base classes `ContentControl`, `TemplatedControl`, `SelectingItemsControl`, `RangeBase`. For each `#[element(state)]` field of type `S`, the derive implements `HasState<S>` for the struct, and each trait is implemented for every `HasState` of its state by a blanket impl. See [the elements design](../design/element.md).
 - Style selectors match on the Rust type name; "derived type" matching (`Button` matching a `ToggleButton`) does not exist. A style meant for several controls lists them or uses a class.
 - App-defined controls are the same derive on the same traits; nothing in the framework is special-cased.
@@ -433,7 +433,7 @@ impl ElementImpl for Button { /* measure_override, render, on_event, … */ }
 WPF two-pass measure/arrange with these rules:
 
 1. `measure(available)` returns the desired size, already including `Margin`. Results are cached per `available`; a node re-measures only when it or a descendant is `InvalidateMeasure`d, or `available` changes.
-2. `arrange(rect)` positions children; alignment and `Margin` are applied by `ElementBase` before the element's own `arrange_override`, so control authors only place children.
+2. `arrange(rect)` positions children; alignment and `Margin` are applied by `CommonProperties` before the element's own `arrange_override`, so control authors only place children.
 3. Infinite constraints are legal (`ScrollViewer`, `StackPanel` on its axis). An element that returns an infinite desired size is a bug and panics in debug.
 4. Layout runs top-down from the highest dirty node; a dirty leaf whose desired size does not change stops propagation (`LayoutCx::desired_size_changed`).
 5. Units are logical pixels (`f32`); the platform layer supplies the scale factor; rounding to device pixels happens in `arrange` (`SnapToPixels` on by default), edge by edge so neighbors never leave a pixel's gap.
@@ -451,29 +451,29 @@ WPF two-pass measure/arrange with these rules:
 | `WrapPanel` | `Orientation`, `ItemWidth/ItemHeight` |
 | `Canvas` | `Canvas.Left/Top/Right/Bottom` |
 | `UniformGrid` | `Rows`, `Columns` |
-| `Panel` | base; `Children` collection, `Background` |
+| `Panel` | common; `Children` collection, `Background` |
 
 ### Control set (v1)
 
 | Control | Composed of | Template parts (`PART_*`) | Notes |
 | --- | --- | --- | --- |
-| `TextBlock` | base | — | `Text`, `Inlines` (Run, Bold, Italic), wrapping, trimming |
-| `Image` | base | — | `Source` (path/bytes), `Stretch` |
-| `Border` | base | — | child, background, border brush/thickness, corner radius, `BoxShadow` |
-| `ContentPresenter` | base + content | — | resolves `Content` to text, node, or `DataTemplate` |
-| `Button` | base + content + template | `PART_ContentPresenter` | `Click`, `Command`, `CommandParameter`, `IsDefault`, `IsCancel` |
+| `TextBlock` | common | — | `Text`, `Inlines` (Run, Bold, Italic), wrapping, trimming |
+| `Image` | common | — | `Source` (path/bytes), `Stretch` |
+| `Border` | common | — | child, background, border brush/thickness, corner radius, `BoxShadow` |
+| `ContentPresenter` | common + content | — | resolves `Content` to text, node, or `DataTemplate` |
+| `Button` | common + content + template | `PART_ContentPresenter` | `Click`, `Command`, `CommandParameter`, `IsDefault`, `IsCancel` |
 | `ToggleButton` | Button's parts + `ToggleState` | same | `IsChecked: Option<bool>` |
 | `CheckBox`, `RadioButton` | as ToggleButton | same | `GroupName` on radio |
-| `TextBox` | base + template + `TextEditor` | `PART_TextPresenter`, `PART_ScrollViewer` | single/multi-line, selection, IME (§12), `Placeholder`, `PasswordChar`, `AcceptsReturn` |
-| `Slider` | base + template + `RangeState` | `PART_Track`, `PART_Thumb` | `Minimum/Maximum/Value`, keyboard steps |
-| `ScrollViewer` | base + content + template | `PART_Content`, `PART_HScrollBar`, `PART_VScrollBar` | smooth wheel scrolling, overlay scrollbars on macOS |
-| `ItemsControl` | base + template + `ItemsState` | `PART_ItemsPresenter` | `Items`, `ItemTemplate`, `ItemsPanel`; consumes `ObservableVec` diffs |
+| `TextBox` | common + template + `TextEditor` | `PART_TextPresenter`, `PART_ScrollViewer` | single/multi-line, selection, IME (§12), `Placeholder`, `PasswordChar`, `AcceptsReturn` |
+| `Slider` | common + template + `RangeState` | `PART_Track`, `PART_Thumb` | `Minimum/Maximum/Value`, keyboard steps |
+| `ScrollViewer` | common + content + template | `PART_Content`, `PART_HScrollBar`, `PART_VScrollBar` | smooth wheel scrolling, overlay scrollbars on macOS |
+| `ItemsControl` | common + template + `ItemsState` | `PART_ItemsPresenter` | `Items`, `ItemTemplate`, `ItemsPanel`; consumes `ObservableVec` diffs |
 | `ListBox` | ItemsControl's parts + `SelectionState` | `PART_ScrollViewer` | `SelectedItem/Index`, `SelectionMode`, virtualization |
 | `ComboBox` | as ListBox + `PopupState` | `PART_Popup`, `PART_Toggle` | popup rendered in the window's overlay layer |
 | `TabControl` | ItemsControl's parts + `SelectionState` | `PART_TabStrip`, `PART_Content` | `TabItem` header/content |
-| `Popup` | base | — | overlay-layer primitive used by ComboBox, ToolTip |
-| `UserControl` | base + content | — | root for app views |
-| `Window` | base + content | — | title, size, `SizeToContent`, decorations |
+| `Popup` | common | — | overlay-layer primitive used by ComboBox, ToolTip |
+| `UserControl` | common + content | — | root for app views |
+| `Window` | common + content | — | title, size, `SizeToContent`, decorations |
 
 Every `TemplatedControl` ships a default `ControlTemplate` in the theme dictionary (§8) and looks up `PART_*` names after the template is applied (`on_apply_template`). Missing required parts are an error in debug.
 

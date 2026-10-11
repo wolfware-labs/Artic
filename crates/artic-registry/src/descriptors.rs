@@ -99,7 +99,7 @@ pub struct PropertyInfo {
   pub inherits: bool,
 }
 
-/// Properties several types share by embedding one struct, such as `ElementBase`.
+/// Properties several types share by embedding one struct, such as `CommonProperties`.
 ///
 /// `#[derive(XamlProperties)]` implements it. A type lists a group's properties as its own by
 /// marking the field `#[xaml(flatten)]`.
@@ -115,7 +115,7 @@ pub trait PropertyGroup {
 /// A property group a type embeds, whose properties are listed as the type's.
 #[derive(Debug)]
 pub struct PropertyGroupInfo {
-  /// The Rust field that holds the group, such as `base`.
+  /// The Rust field that holds the group, such as `common`.
   pub field: &'static str,
   /// The group's properties.
   pub properties: &'static [PropertyInfo],
@@ -124,7 +124,7 @@ pub struct PropertyGroupInfo {
 /// A property found on a type, with the field of the group it lives in, if any.
 #[derive(Debug, Clone, Copy)]
 pub struct PropertyRef {
-  /// The group's field, such as `base`, or `None` for the type's own property.
+  /// The group's field, such as `common`, or `None` for the type's own property.
   pub group: Option<&'static str>,
   /// The property.
   pub info: &'static PropertyInfo,

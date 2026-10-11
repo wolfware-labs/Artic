@@ -13,7 +13,7 @@ use artic_render::{Clip, Layers, SceneBuilder};
 ///
 /// [`Layoutable`] brings `measure` and `arrange`. Controls don't implement this trait by hand:
 /// `#[derive(Element)]` writes it around their [`ElementImpl`], with the shared work of
-/// `ElementBase`.
+/// `CommonProperties`.
 pub trait Element: Object + Layoutable {
   /// Records the element's own drawing, in its own coordinates, without its descendants.
   fn render(&self, cx: &mut RenderCx<'_>, scene: &mut SceneBuilder);
@@ -43,9 +43,9 @@ pub trait Element: Object + Layoutable {
 
 /// What a control writes: only what is special about it. Every method has a default.
 ///
-/// `#[derive(Element)]` calls these from its [`Element`] implementation, after `ElementBase`'s
-/// shared work: margin, size limits and alignment around `measure_override` and
-/// `arrange_override`, visibility, opacity and transform around the rest. A control with nothing
+/// `#[derive(Element)]` calls these from its [`Element`] implementation, after the shared work of
+/// [`CommonProperties`](crate::CommonProperties): margin, size limits and alignment around
+/// `measure_override` and `arrange_override`, visibility, opacity and transform around the rest. A control with nothing
 /// special writes `impl ElementImpl for Spacer {}`.
 pub trait ElementImpl {
   /// The content's size within `available`, which already excludes the margin and is held within
@@ -72,8 +72,8 @@ pub trait ElementImpl {
     Handled::No
   }
 
-  /// Adds the control's role, name, value and actions to the node `ElementBase` built. By default,
-  /// nothing.
+  /// Adds the control's role, name, value and actions to the node `CommonProperties` built. By
+  /// default, nothing.
   fn accessibility(&self, cx: &AccessCx<'_>, node: &mut accesskit::Node) {
     let _ = (cx, node);
   }

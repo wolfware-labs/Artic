@@ -69,7 +69,7 @@ pub fn derive_xaml_type(input: TokenStream) -> TokenStream {
 }
 
 /// Makes a struct a property group: a set of properties several XAML types share by embedding it
-/// in a field marked `#[xaml(flatten)]`, as controls embed `ElementBase`.
+/// in a field marked `#[xaml(flatten)]`, as controls embed `CommonProperties`.
 ///
 /// Fields follow `XamlType`'s rules for `Property` fields; a group holds no events or
 /// collections, and takes no attributes on the struct. The derive implements `Default` and

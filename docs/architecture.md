@@ -32,12 +32,12 @@ flowchart TD
 
   controls --> element[artic-element]
   controls --> style
-  controls --> registry[artic-registry]
-  controls --> macros[artic-macros]
 
   platform --> element
 
   element --> render[artic-render]
+  element --> registry[artic-registry]
+  element --> macros[artic-macros]
 
   test[artic-test] --> platform
   test --> style
@@ -75,7 +75,7 @@ The graph omits edges that a lower edge already implies (for example `artic-cont
 | `artic-style` | `artic-core`, `artic-registry`, `artic-xaml` (for `Span`/`Diagnostic` in selector errors) |
 | `artic-xaml-compiler` | `artic-xaml`, `artic-registry` |
 | `artic-xaml-runtime` | `artic-xaml`, `artic-registry`, `artic-core` |
-| `artic-element` | `artic-core`, `artic-layout`, `artic-render` |
+| `artic-element` | `artic-core`, `artic-registry`, `artic-layout`, `artic-render`, `artic-macros` |
 | `artic-controls` | `artic-core`, `artic-registry`, `artic-layout`, `artic-render`, `artic-element`, `artic-style`, `artic-macros` |
 | `artic-platform` | `artic-core`, `artic-layout`, `artic-render`, `artic-element` |
 | `artic-cli` | `artic-xaml`, `artic-xaml-compiler`, `artic-lsp` (shared source index for `check` and `lsp`) |
@@ -89,7 +89,7 @@ The graph omits edges that a lower edge already implies (for example `artic-cont
 ## Rules
 
 - `artic-controls` does not depend on `artic-platform`. Input event types live in `artic-core`, and the facade connects the platform host to the tree. Controls stay testable without a window and portable to future targets.
-- The `Element` trait and its contexts (`RenderCx`, `HitTestCx`, `EventCx`, `AccessCx`) live in `artic-element`, together with gesture recognizers. `WindowDesc` is plain data in `artic-core`, so the platform host and the `Window` control both see it. Controls implement `Element`; the platform host drives any `dyn Element` without knowing the concrete controls. `ElementBase` and `#[derive(Element)]` stay with the controls and macros.
+- The `Element` trait and its contexts (`RenderCx`, `HitTestCx`, `EventCx`, `AccessCx`) live in `artic-element`, together with gesture recognizers. `WindowDesc` is plain data in `artic-core`, so the platform host and the `Window` control both see it. Controls implement `Element`; the platform host drives any `dyn Element` without knowing the concrete controls. `CommonProperties`, the properties every control embeds, lives there too, so a control library needs only `artic-element`; `#[derive(Element)]` stays with the macros.
 - `artic-layout` defines `Layoutable`, `LayoutCx` and `LayoutManager` over `Layoutable`; `Element` extends `Layoutable`, so layout never names `Element`. Text measurement reaches layout through a small trait defined in `artic-layout` and implemented by `artic-render`'s text shaping (`parley`), the same for every renderer.
 - `artic-platform` owns the frame pipeline (dispatcher, style pass, layout, scene build, render, accesskit). Stages that need crates the platform cannot see, such as the style pass or OS theme → root pseudo-classes, are registered as hooks by the facade. The platform never depends on `artic-style`, `artic-controls` or `artic-theme`.
 - Tree behaviours that call `Element` (routed-event dispatch, hit testing, focus navigation) live in `artic-element`; `artic-core` keeps only the data types they use.

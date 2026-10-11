@@ -12,7 +12,7 @@ use std::str::FromStr;
 const UI: &str = "https://artic.rs/ui";
 
 // Placeholders for value types that later issues add: geometry (#22), brushes (#35), pointer input
-// and the element base (#42). They only need to parse from text and have defaults.
+// and the common properties (#42). They only need to parse from text and have defaults.
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 struct Thickness(f32);
@@ -55,13 +55,13 @@ impl FromStr for Brush {
 struct PointerEvent;
 
 #[derive(Debug, Default)]
-struct ElementBase;
+struct CommonProperties;
 
 /// The `Border` from the spec's §3, with `affects` added.
 #[derive(Debug, XamlType)]
 #[xaml(namespace = "https://artic.rs/ui", content = child)]
 struct Border {
-  _base: ElementBase,
+  _common: CommonProperties,
   #[xaml]
   child: Property<Option<NodeId>>,
   #[xaml(default = Thickness::ZERO, affects = layout)]
