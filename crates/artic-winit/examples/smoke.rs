@@ -2,7 +2,7 @@
 // exits after `ARTIC_SMOKE_FRAMES` frames, or when the window is closed if the variable isn't set.
 // It draws nothing: rendering comes with the frame pipeline (#40).
 //
-// Run with `ARTIC_SMOKE_FRAMES=120 cargo run -p artic-winit --example smoke`. CI runs it (#53).
+// Run with `ARTIC_SMOKE_FRAMES=120 cargo run -p artic-winit --example smoke`.
 
 use artic_core::window::WindowDesc;
 use artic_platform::{AppHandler, Host as _, HostContext, HostEvent, SurfaceInfo, Waker};

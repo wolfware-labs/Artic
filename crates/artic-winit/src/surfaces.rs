@@ -21,7 +21,7 @@ pub(crate) struct Surfaces<K, W> {
   entries: Vec<Entry<K, W>>,
   next: u64,
   displays: HashMap<u64, DisplayId>,
-  lost: Vec<SurfaceId>,
+  lost: Vec<(SurfaceId, Option<W>)>,
 }
 
 impl<K, W> Default for Surfaces<K, W> {
@@ -55,14 +55,24 @@ impl<K: PartialEq + Copy, W> Surfaces<K, W> {
     id
   }
 
-  /// Records that surface `id` is gone, such as a closed window or one that couldn't be created,
-  /// so it's reported lost.
+  /// Records that surface `id` never got a window, because it couldn't be created, so it's
+  /// reported lost.
   pub(crate) fn lose(&mut self, id: SurfaceId) {
-    self.lost.push(id);
+    self.lost.push((id, None));
   }
 
-  /// The surfaces to report lost, oldest first, emptying the list.
-  pub(crate) fn take_lost(&mut self) -> Vec<SurfaceId> {
+  /// Closes surface `id`, keeping its window until its loss is reported, so the handles a renderer
+  /// holds stay valid until then.
+  pub(crate) fn close(&mut self, id: SurfaceId) {
+    if let Some(index) = self.entries.iter().position(|entry| entry.id == id) {
+      let entry = self.entries.remove(index);
+      self.lost.push((entry.id, Some(entry.window)));
+    }
+  }
+
+  /// The surfaces to report lost, oldest first, each with its window to drop once reported,
+  /// emptying the list.
+  pub(crate) fn take_lost(&mut self) -> Vec<(SurfaceId, Option<W>)> {
     std::mem::take(&mut self.lost)
   }
 
@@ -100,15 +110,9 @@ impl<K: PartialEq + Copy, W> Surfaces<K, W> {
     }
   }
 
-  /// Removes surface `id` and returns its window.
-  pub(crate) fn remove(&mut self, id: SurfaceId) -> Option<W> {
-    let index = self.entries.iter().position(|entry| entry.id == id)?;
-    Some(self.entries.remove(index).window)
-  }
-
-  /// Removes every surface and returns their ids, in the order they opened.
-  pub(crate) fn drain(&mut self) -> Vec<SurfaceId> {
-    self.entries.drain(..).map(|entry| entry.id).collect()
+  /// Removes every surface and returns it with its window, in the order they opened.
+  pub(crate) fn drain(&mut self) -> Vec<(SurfaceId, W)> {
+    self.entries.drain(..).map(|entry| (entry.id, entry.window)).collect()
   }
 
   /// The display id for the monitor the library describes by `key`, the same for the same key.
@@ -124,6 +128,7 @@ mod tests {
   use artic_platform::{DisplayId, SurfaceInfo};
   use artic_render::PhysicalSize;
   use pretty_assertions::assert_eq;
+  use std::rc::Rc;
 
   /// Facts for a 100 × 100 surface at scale 1 on `display`.
   fn info(display: u64) -> SurfaceInfo {
@@ -169,9 +174,12 @@ mod tests {
     let mut surfaces = Surfaces::<u32, ()>::default();
     let [first, second, third] = [10, 20, 30].map(|key| surfaces.insert(key, ()));
 
-    surfaces.remove(second);
+    surfaces.close(second);
 
-    assert_eq!(surfaces.drain(), [first, third]);
+    assert_eq!(
+      surfaces.drain().into_iter().map(|(id, ())| id).collect::<Vec<_>>(),
+      [first, third]
+    );
     assert_eq!(surfaces.id(10), None);
   }
 
@@ -194,7 +202,35 @@ mod tests {
     let id = surfaces.reserve();
     surfaces.lose(id);
 
-    assert_eq!(surfaces.take_lost(), [id]);
+    assert_eq!(surfaces.take_lost().into_iter().map(|(id, _)| id).collect::<Vec<_>>(), [id]);
     assert!(surfaces.take_lost().is_empty());
+  }
+
+  // A closed window is kept until its loss is reported, so its handles stay valid until then.
+  #[test]
+  fn closed_window_lives_until_reported() {
+    let mut surfaces = Surfaces::<u32, Rc<()>>::default();
+    let window = Rc::new(());
+    let id = surfaces.insert(10, Rc::clone(&window));
+
+    surfaces.close(id);
+
+    assert_eq!(Rc::strong_count(&window), 2);
+    let lost = surfaces.take_lost();
+    assert_eq!(lost.iter().map(|(id, _)| *id).collect::<Vec<_>>(), [id]);
+    drop(lost);
+    assert_eq!(Rc::strong_count(&window), 1);
+  }
+
+  // Forgetting the facts makes the same facts count as a change again.
+  #[test]
+  fn forgotten_facts_are_reported_again() {
+    let mut surfaces = Surfaces::<u32, ()>::default();
+    let id = surfaces.insert(10, ());
+    surfaces.update(id, info(1));
+
+    surfaces.forget_facts();
+
+    assert!(surfaces.update(id, info(1)));
   }
 }

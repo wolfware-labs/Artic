@@ -6,9 +6,9 @@ use std::sync::Arc;
 /// Wakes a host's loop from any thread, so it calls
 /// [`AppHandler::woken`](crate::AppHandler::woken) there.
 ///
-/// A host builds one in its loop and hands it to [`AppHandler::started`](crate::AppHandler::started);
-/// work posted to the dispatcher from another thread wakes the loop through it. The hook is the
-/// host's: `artic-winit` sends an event through winit's loop proxy.
+/// A host builds one in its loop and hands it to [`AppHandler::started`](crate::AppHandler::started),
+/// and another thread wakes the loop through it, such as when it posts work for the UI thread.
+/// The hook is the host's: `artic-winit` sends an event through winit's loop proxy.
 #[derive(Clone)]
 pub struct Waker(Arc<dyn Fn() + Send + Sync>);
 

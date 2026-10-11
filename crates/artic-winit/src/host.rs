@@ -53,8 +53,8 @@ impl artic_platform::Host for Host {
   ///
   /// # Panics
   ///
-  /// Panics if winit can't run its loop, which happens only when a loop already ran in this
-  /// process.
+  /// Panics if winit's loop ends with an error, such as a lost connection to the display server.
+  /// The surfaces have been reported lost by then.
   fn run(self, app: impl AppHandler + 'static) {
     let mut driver = Driver {
       app,
@@ -67,7 +67,7 @@ impl artic_platform::Host for Host {
     self
       .event_loop
       .run_app(&mut driver)
-      .expect("winit runs one event loop per process");
+      .expect("winit's event loop ended with an error");
   }
 }
 
@@ -107,8 +107,9 @@ impl<A: AppHandler> Driver<A> {
       for surface in opened {
         self.refresh(event_loop, surface, None);
       }
-      for surface in lost {
+      for (surface, window) in lost {
         self.call(event_loop, |app, cx| app.surface_lost(cx, surface));
+        drop(window);
       }
     }
   }
@@ -131,9 +132,13 @@ impl<A: AppHandler> Driver<A> {
     let monitor = window.current_monitor();
     let key = monitor.as_ref().map_or(0, |monitor| {
       let mut hasher = DefaultHasher::new();
-      monitor.name().hash(&mut hasher);
-      let position = monitor.position();
-      (position.x, position.y).hash(&mut hasher);
+      match monitor.name() {
+        Some(name) => name.hash(&mut hasher),
+        None => {
+          let position = monitor.position();
+          (position.x, position.y).hash(&mut hasher);
+        }
+      }
       hasher.finish()
     });
     let info = SurfaceInfo {
@@ -190,6 +195,9 @@ impl<A: AppHandler> ApplicationHandler for Driver<A> {
       Translated::Close => self.call(event_loop, |app, cx| app.event(cx, HostEvent::CloseRequested { surface })),
       Translated::Redraw => {
         self.refresh(event_loop, surface, None);
+        if self.surfaces.window(surface).is_none() {
+          return;
+        }
         let time = self.start.elapsed();
         self.call(event_loop, |app, cx| app.frame(cx, surface, Target::Handles(&*window), time));
       }
@@ -206,8 +214,15 @@ impl<A: AppHandler> ApplicationHandler for Driver<A> {
   }
 
   fn exiting(&mut self, event_loop: &ActiveEventLoop) {
-    for surface in self.surfaces.drain() {
-      self.call(event_loop, |app, cx| app.surface_lost(cx, surface));
+    loop {
+      let open = self.surfaces.drain();
+      if open.is_empty() {
+        return;
+      }
+      for (surface, window) in open {
+        self.call(event_loop, |app, cx| app.surface_lost(cx, surface));
+        drop(window);
+      }
     }
   }
 }
@@ -255,8 +270,6 @@ impl Windows for Context<'_> {
   }
 
   fn close(&mut self, surface: SurfaceId) {
-    if self.surfaces.remove(surface).is_some() {
-      self.surfaces.lose(surface);
-    }
+    self.surfaces.close(surface);
   }
 }

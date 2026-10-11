@@ -17,7 +17,7 @@ struct Requests {
   opened: Vec<String>,
 }
 
-/// The fake host's context: a window list that hands out ids, and a log of requests.
+/// The fake host's context: a window list that opens one window, and a log of requests.
 struct FakeContext<'a> {
   requests: &'a mut Requests,
 }
@@ -171,9 +171,7 @@ fn platform_has_no_winit_dependency() {
   let manifest = include_str!("../Cargo.toml");
 
   assert!(
-    !manifest
-      .lines()
-      .any(|line| line.starts_with("winit") || line.starts_with("raw-window-handle")),
+    !manifest.contains("winit") && !manifest.contains("raw-window-handle"),
     "artic-platform must not depend on a backend"
   );
 }
