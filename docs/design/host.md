@@ -86,7 +86,7 @@ The desktop adapter, at layer 5, depending on `artic-platform`, `artic-render`, 
 | winit | `artic-winit` | `AppHandler` |
 | --- | --- | --- |
 | first `resumed` | builds the `Waker` from the `EventLoopProxy` | `started(cx, waker)`; artic opens its first window through `cx.windows()`, and `surface_changed` follows |
-| `suspended` | (mobile: the GPU surfaces are destroyed) ignores frame requests and redraws until resumed | `surface_lost` for each surface, in open order, then `event(Suspended)` |
+| `suspended` | (mobile: the GPU surfaces are destroyed) until resumed, ignores frame requests, redraws and surface changes, and forgets a destroyed window without reporting it again | `surface_lost` for each surface, in open order, then `event(Suspended)` |
 | later `resumed` | (mobile: the surfaces are recreated) | `event(Resumed)`, then `surface_changed` for each surface |
 | `WindowEvent::Resized`, `ScaleFactorChanged`, `Moved` | rebuilds the surface's `SurfaceInfo`, with the current monitor as its `DisplayId` and its refresh rate | `surface_changed`, if anything differs from what was last reported |
 | `WindowEvent::CloseRequested` | | `event(CloseRequested { surface })` |

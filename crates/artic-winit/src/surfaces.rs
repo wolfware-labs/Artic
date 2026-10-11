@@ -70,6 +70,12 @@ impl<K: PartialEq + Copy, W> Surfaces<K, W> {
     }
   }
 
+  /// Removes surface `id` without reporting it lost, for a surface already reported lost, such as
+  /// one destroyed while the app is suspended.
+  pub(crate) fn discard(&mut self, id: SurfaceId) {
+    self.entries.retain(|entry| entry.id != id);
+  }
+
   /// The surfaces to report lost, oldest first, each with its window to drop once reported,
   /// emptying the list.
   pub(crate) fn take_lost(&mut self) -> Vec<(SurfaceId, Option<W>)> {
@@ -220,6 +226,17 @@ mod tests {
     assert_eq!(lost.iter().map(|(id, _)| *id).collect::<Vec<_>>(), [id]);
     drop(lost);
     assert_eq!(Rc::strong_count(&window), 1);
+  }
+
+  // A discarded surface is gone without being reported lost again.
+  #[test]
+  fn discarded_surface_is_not_reported() {
+    let mut surfaces = Surfaces::<u32, ()>::default();
+    let id = surfaces.insert(10, ());
+
+    surfaces.discard(id);
+
+    assert_eq!((surfaces.id(10), surfaces.take_lost().len()), (None, 0));
   }
 
   // Forgetting the facts makes the same facts count as a change again.

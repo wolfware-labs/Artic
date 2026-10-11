@@ -123,8 +123,12 @@ impl<A: AppHandler> Driver<A> {
 
   /// Reads `surface`'s facts from its window, with `size` and `scale` from an event when it has
   /// them, and reports them if they changed. The monitor is read each time, since a move between
-  /// displays doesn't always send an event.
+  /// displays doesn't always send an event. Nothing is reported while suspended: resuming reports
+  /// every surface.
   fn refresh(&mut self, event_loop: &ActiveEventLoop, surface: SurfaceId, changed: Option<(PhysicalSize, Option<f32>)>) {
+    if self.suspended {
+      return;
+    }
     let Some(window) = self.surfaces.window(surface).map(Rc::clone) else {
       return;
     };
@@ -202,6 +206,7 @@ impl<A: AppHandler> ApplicationHandler for Driver<A> {
       Translated::Changed { size, scale } => self.refresh(event_loop, surface, Some((size, scale))),
       Translated::Moved => self.refresh(event_loop, surface, None),
       Translated::Close => self.call(event_loop, |app, cx| app.event(cx, HostEvent::CloseRequested { surface })),
+      Translated::Destroyed if self.suspended => self.surfaces.discard(surface),
       Translated::Destroyed => {
         self.surfaces.close(surface);
         self.report(event_loop);
