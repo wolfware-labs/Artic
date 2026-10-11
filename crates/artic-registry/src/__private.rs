@@ -4,8 +4,8 @@ use std::fmt::{Debug, Formatter, Result};
 use std::str::FromStr;
 
 pub use crate::{
-  ArgInfo, AttachedPropertyInfo, AttachedTarget, EventInfo, MarkupExtensionInfo, PropertyInfo, TypeInfo, Whitespace,
-  XamlCollection, XamlType, register_type,
+  ArgInfo, AttachedPropertyInfo, AttachedTarget, EventInfo, MarkupExtensionInfo, PropertyGroup, PropertyGroupInfo,
+  PropertyInfo, TypeInfo, Whitespace, XamlCollection, XamlType, register_type,
 };
 pub use artic_core::Object;
 pub use artic_core::event::Event;
@@ -46,6 +46,9 @@ impl ViaChild for &&ValueCheck<NodeId> {}
 /// Compiles only if `T` is a collection of child elements.
 pub const fn assert_collection<T: XamlCollection>() {}
 
+/// Compiles only if `T` is a property group.
+pub const fn assert_property_group<T: PropertyGroup>() {}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -65,6 +68,7 @@ mod tests {
     content: None,
     is_collection: false,
     properties: &[],
+    groups: &[],
     events: &[],
     attached_properties: &[],
     markup_extension: None,

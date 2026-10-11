@@ -1,4 +1,4 @@
-use artic_core::property::Affects;
+use artic_core::property::{Affects, AnyProperty};
 use artic_core::tree::{NodeId, UiTree};
 
 /// What the registry knows about one Rust type that XAML can name.
@@ -22,6 +22,8 @@ pub struct TypeInfo {
   pub is_collection: bool,
   /// The type's settable XAML properties.
   pub properties: &'static [PropertyInfo],
+  /// The property groups the type embeds, whose properties are listed as the type's.
+  pub groups: &'static [PropertyGroupInfo],
   /// The type's XAML events.
   pub events: &'static [EventInfo],
   /// The attached properties this type owns, set on other elements as `Owner.Name`.
@@ -52,6 +54,25 @@ pub trait XamlType {
 }
 
 impl TypeInfo {
+  /// The type's property named `name`: one of its own, or one from a group it embeds.
+  #[must_use]
+  pub fn property(&self, name: &str) -> Option<PropertyRef> {
+    let own = self
+      .properties
+      .iter()
+      .find(|info| info.name == name)
+      .map(|info| PropertyRef { group: None, info });
+    own.or_else(|| {
+      self.groups.iter().find_map(|group| {
+        let info = group.properties.iter().find(|info| info.name == name)?;
+        Some(PropertyRef {
+          group: Some(group.field),
+          info,
+        })
+      })
+    })
+  }
+
   /// Whether the type can be used as a markup extension, such as `{Binding}`.
   #[must_use]
   pub const fn is_markup_extension(&self) -> bool {
@@ -76,6 +97,37 @@ pub struct PropertyInfo {
   pub affects: Affects,
   /// Whether the property takes its value from a logical ancestor when it has none of its own.
   pub inherits: bool,
+}
+
+/// Properties several types share by embedding one struct, such as `ElementBase`.
+///
+/// `#[derive(XamlProperties)]` implements it. A type lists a group's properties as its own by
+/// marking the field `#[xaml(flatten)]`.
+pub trait PropertyGroup {
+  /// The group's properties.
+  const PROPERTIES: &'static [PropertyInfo];
+
+  /// Lists the group's properties, as [`Object::visit_properties`](artic_core::Object::visit_properties)
+  /// does for a node.
+  fn visit_properties(&self, visit: &mut dyn FnMut(&dyn AnyProperty));
+}
+
+/// A property group a type embeds, whose properties are listed as the type's.
+#[derive(Debug)]
+pub struct PropertyGroupInfo {
+  /// The Rust field that holds the group, such as `base`.
+  pub field: &'static str,
+  /// The group's properties.
+  pub properties: &'static [PropertyInfo],
+}
+
+/// A property found on a type, with the field of the group it lives in, if any.
+#[derive(Debug, Clone, Copy)]
+pub struct PropertyRef {
+  /// The group's field, such as `base`, or `None` for the type's own property.
+  pub group: Option<&'static str>,
+  /// The property.
+  pub info: &'static PropertyInfo,
 }
 
 /// A XAML event of a type.
@@ -168,6 +220,7 @@ mod tests {
       affects: PADDING.affects(),
       inherits: PADDING.inherits(),
     }],
+    groups: &[],
     events: &[EventInfo {
       name: "PointerPressed",
       args_type: "artic_core::PointerEvent",

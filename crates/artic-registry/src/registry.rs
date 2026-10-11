@@ -2,8 +2,8 @@ mod error;
 
 use crate::{AttachedPropertyInfo, TypeInfo, XAML_TYPES};
 pub use error::{Duplicate, RegistryError};
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 
 /// Lookup tables over a set of [`TypeInfo`] descriptors.
 ///
@@ -55,6 +55,16 @@ impl Registry {
       if registry.by_rust_path.insert(info.rust_path, info).is_some() {
         duplicates.push(Duplicate::RustPath { path: info.rust_path });
       }
+      let mut names = HashSet::new();
+      let groups = info.groups.iter().flat_map(|group| group.properties);
+      for property in info.properties.iter().chain(groups) {
+        if !names.insert(property.name) {
+          duplicates.push(Duplicate::Property {
+            owner: info.rust_path,
+            name: property.name,
+          });
+        }
+      }
       for attached in info.attached_properties {
         let owned = registry.attached.entry(info.rust_path).or_default();
         if owned.insert(attached.name, attached).is_some() {
@@ -95,8 +105,9 @@ impl Registry {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::{AttachedTarget, Whitespace};
+  use crate::{AttachedTarget, PropertyGroupInfo, PropertyInfo, Whitespace};
   use artic_core::Object;
+  use artic_core::property::Affects;
   use artic_core::property::AnyProperty;
   use artic_core::tree::{NodeId, UiTree};
   use pretty_assertions::assert_eq;
@@ -124,11 +135,63 @@ mod tests {
       content: None,
       is_collection: false,
       properties: &[],
+      groups: &[],
       events: &[],
       attached_properties: &[],
       markup_extension: None,
       whitespace: Whitespace::Collapse,
     }
+  }
+
+  static GROUP: [PropertyInfo; 1] = [PropertyInfo {
+    name: "Margin",
+    field: "margin",
+    value_type: "Thickness",
+    affects: Affects::LAYOUT,
+    inherits: false,
+  }];
+  static GROUPS: [PropertyGroupInfo; 1] = [PropertyGroupInfo {
+    field: "base",
+    properties: &GROUP,
+  }];
+
+  // A type's properties include its groups', each with the field of the group it lives in.
+  #[test]
+  fn property_lookup_searches_groups() {
+    let info = TypeInfo {
+      groups: &GROUPS,
+      ..info(UI, "Border", "artic_controls::Border")
+    };
+
+    let found = info.property("Margin").expect("Margin, from the group");
+    assert_eq!(found.group, Some("base"));
+    assert!(info.property("Padding").is_none());
+  }
+
+  // A type's own property named like a group's is a duplicate.
+  #[test]
+  fn own_property_shadowing_a_group_is_a_duplicate() {
+    static OWN: [PropertyInfo; 1] = [PropertyInfo {
+      name: "Margin",
+      field: "margin",
+      value_type: "f32",
+      affects: Affects::NONE,
+      inherits: false,
+    }];
+    static BORDER: TypeInfo = TypeInfo {
+      properties: &OWN,
+      groups: &GROUPS,
+      ..info(UI, "Border", "artic_controls::Border")
+    };
+
+    let error = Registry::from_types(&[&BORDER]).unwrap_err();
+    assert_eq!(
+      error.duplicates,
+      [Duplicate::Property {
+        owner: BORDER.rust_path,
+        name: "Margin",
+      }]
+    );
   }
 
   static BUTTON: TypeInfo = info(UI, "Button", "artic_controls::Button");

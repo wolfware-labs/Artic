@@ -12,7 +12,8 @@ mod registry;
 
 pub use collection::XamlCollection;
 pub use descriptors::{
-  ArgInfo, AttachedPropertyInfo, AttachedTarget, EventInfo, MarkupExtensionInfo, PropertyInfo, TypeInfo, Whitespace, XamlType,
+  ArgInfo, AttachedPropertyInfo, AttachedTarget, EventInfo, MarkupExtensionInfo, PropertyGroup, PropertyGroupInfo,
+  PropertyInfo, PropertyRef, TypeInfo, Whitespace, XamlType,
 };
 pub use registry::{Duplicate, Registry, RegistryError};
 
@@ -44,6 +45,7 @@ use linkme::distributed_slice;
 ///   content: None,
 ///   is_collection: false,
 ///   properties: &[],
+///   groups: &[],
 ///   events: &[],
 ///   attached_properties: &[],
 ///   markup_extension: None,
@@ -101,6 +103,7 @@ pub static XAML_TYPES: [&'static TypeInfo];
 ///   content: None,
 ///   is_collection: false,
 ///   properties: &[],
+///   groups: &[],
 ///   events: &[],
 ///   attached_properties: &[],
 ///   markup_extension: None,

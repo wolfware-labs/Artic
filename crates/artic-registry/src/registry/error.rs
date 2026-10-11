@@ -29,6 +29,14 @@ pub enum Duplicate {
     /// The Rust path both descriptors use.
     path: &'static str,
   },
+  /// A type has two properties with one name, counting the groups it flattens.
+  #[error("`{owner}` has two properties named `{name}`, counting the groups it flattens")]
+  Property {
+    /// The Rust path of the type.
+    owner: &'static str,
+    /// The property's name.
+    name: &'static str,
+  },
   /// One owner declares the same attached property twice.
   #[error("`{owner}` declares the attached property `{name}` twice")]
   AttachedProperty {

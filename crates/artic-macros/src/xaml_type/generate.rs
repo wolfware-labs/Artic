@@ -129,6 +129,7 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
         content: #content,
         is_collection: #is_collection,
         properties: &__PROPERTIES,
+        groups: &[],
         events: &__EVENTS,
         attached_properties: &__ATTACHED,
         markup_extension: #markup_extension_info,
