@@ -1,9 +1,5 @@
 name: CI
 
-# The repository is public, so GitHub's standard runners cost nothing: pull requests run the same
-# jobs as main, on Linux, Windows and macOS. The Rust jobs still skip changes that touch no Rust,
-# since they'd only repeat main's result.
-#
 # If the change filter itself fails, every job runs: a broken filter must cost minutes, never skip
 # a check, since a skipped job satisfies a required one.
 #
