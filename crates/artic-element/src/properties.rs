@@ -67,8 +67,8 @@ pub struct AppearanceProperties {
 /// A control has it in its `interaction` field.
 #[derive(Debug, XamlProperties)]
 pub struct InteractionProperties {
-  /// Whether the element takes input; a disabled panel disables everything inside it.
-  #[xaml(default = true, affects = render, inherits)]
+  /// Whether the element takes input; a disabled ancestor disables it whatever it sets itself.
+  #[xaml(default = true, affects = render, inherits = and)]
   pub is_enabled: Property<bool>,
   /// Whether the element can be hit by the pointer while it's drawn.
   #[xaml(default = true, affects = render)]
