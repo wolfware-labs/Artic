@@ -1,6 +1,7 @@
 //! Derive and attribute macros for artic types, view-models and views.
 
 mod crate_root;
+mod element;
 mod xaml_enum;
 mod xaml_properties;
 mod xaml_type;
@@ -92,6 +93,64 @@ pub fn derive_xaml_properties(input: TokenStream) -> TokenStream {
 pub fn derive_xaml_enum(input: TokenStream) -> TokenStream {
   let input = parse_macro_input!(input as DeriveInput);
   xaml_enum::expand(&input)
+    .unwrap_or_else(syn::Error::into_compile_error)
+    .into()
+}
+
+/// Makes a struct an element: it adds the property groups every control has, writes what
+/// `#[derive(XamlType)]` writes, and writes `Layoutable` and `Element` around the struct's
+/// `ElementImpl`. The struct reaches the cast table, so the frame pipeline finds it with no
+/// registration call.
+///
+/// ```ignore
+/// #[element]
+/// #[derive(Debug)]
+/// #[xaml(namespace = "https://artic.rs/ui", content = child)]
+/// pub struct Border {
+///   #[xaml] pub child: Property<Option<NodeId>>,
+/// }
+///
+/// impl ElementImpl for Border { /* measure_override, render, … */ }
+/// ```
+///
+/// `#[element]` goes first, above the struct's `#[derive(...)]` and `#[xaml(...)]` attributes,
+/// and takes no settings. It adds four fields before the struct's own, each flattened into the
+/// struct's properties: `layout: LayoutProperties`, `appearance: AppearanceProperties`,
+/// `interaction: InteractionProperties` and `identity: IdentityProperties`. A field of the
+/// struct with one of those names is an error, as is `XamlType` in its derives, since
+/// `#[element]` writes it. A unit struct gets the four fields; a tuple struct or a generic one is
+/// an error.
+///
+/// The struct's `Default` calls `ElementImpl::defaults` once, after building the fields, so a
+/// control can change its defaults there with `Property::set_default`.
+///
+/// Each `Element` method does the groups' shared work, then calls the matching `ElementImpl`
+/// hook:
+///
+/// - `measure` and `arrange`: a collapsed element takes no space and its hooks aren't called;
+///   otherwise the margin, size limits and alignment wrap `measure_override` and
+///   `arrange_override`.
+/// - `render`: calls `ElementImpl::render`.
+/// - `hit_test`: a miss unless the element is `Visible` and `IsHitTestVisible`, otherwise its
+///   bounds. There is no hook.
+/// - `on_event`: `Handled::No` without calling `ElementImpl::on_event` while `IsEnabled` is false,
+///   locally or through a logical ancestor.
+/// - `accessibility`: the default node, which `ElementImpl::accessibility` adds to.
+/// - `layers`: the appearance group's layers, with `ElementImpl::clip` as the clip.
+///
+/// # State fields
+///
+/// For each field marked `#[element(state)]`, of type `S`, `#[element]` implements
+/// `HasState<S>`, and the traits built on that state reach the struct through their blanket
+/// impls. A struct holds at most one field per state type: two fields whose types are written the
+/// same way are an error naming both, and two names for one type, such as an alias, are rustc's
+/// conflicting-implementations error (E0119).
+///
+/// Generated code reaches artic through `artic`, or `artic-element` if the crate doesn't depend
+/// on `artic`; `#[xaml(crate = path)]` names another path.
+#[proc_macro_attribute]
+pub fn element(attribute: TokenStream, item: TokenStream) -> TokenStream {
+  element::expand(attribute.into(), item.into())
     .unwrap_or_else(syn::Error::into_compile_error)
     .into()
 }

@@ -19,6 +19,7 @@ syn.workspace = true
 
 [dev-dependencies]
 artic-core.workspace = true
+artic-element.workspace = true
 artic-registry.workspace = true
 pretty_assertions.workspace = true
 syn = { workspace = true, features = ["extra-traits"] }

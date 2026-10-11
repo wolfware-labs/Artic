@@ -185,6 +185,7 @@ name = "artic-macros"
 version = "0.1.0"
 dependencies = [
  "artic-core",
+ "artic-element",
  "artic-registry",
  "pretty_assertions",
  "proc-macro-crate",

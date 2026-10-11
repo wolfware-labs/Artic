@@ -91,6 +91,7 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
       (&&__artic::ValueCheck::<#value>(__artic::PhantomData)).value_must_implement_fromstr_or_derive_xamltype();
     )
   });
+  let after_default = &analysis.after_default;
   let whitespace = match analysis.attributes.whitespace {
     Whitespace::Collapse => quote!(__artic::Whitespace::Collapse),
     Whitespace::Significant => quote!(__artic::Whitespace::Significant),
@@ -104,10 +105,12 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
 
       impl ::core::default::Default for #ident {
         fn default() -> Self {
-          Self {
+          let value = Self {
             #(#default_fields,)*
             #(#other_fields: ::core::default::Default::default(),)*
-          }
+          };
+          #after_default
+          value
         }
       }
 

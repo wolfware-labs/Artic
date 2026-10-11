@@ -1,0 +1,212 @@
+use crate::crate_root::{ELEMENT, crate_root};
+use crate::xaml_type::attributes::parse_type_attributes;
+use crate::xaml_type::fields::analyze;
+use crate::xaml_type::generate::generate;
+use proc_macro2::TokenStream;
+use quote::quote;
+use syn::punctuated::Punctuated;
+use syn::{Attribute, DeriveInput, Error, Field, Fields, FieldsNamed, Ident, ItemStruct, Path, Token, Type, parse_quote};
+
+/// The fields `#[element]` adds, with their group types, in the order it adds them.
+const GROUPS: [(&str, &str); 4] = [
+  ("layout", "LayoutProperties"),
+  ("appearance", "AppearanceProperties"),
+  ("interaction", "InteractionProperties"),
+  ("identity", "IdentityProperties"),
+];
+
+/// Makes the struct an element: adds the four property groups, writes what `derive(XamlType)`
+/// writes with a `Default` that calls `ElementImpl::defaults`, and writes `Layoutable`, `Element`,
+/// `HasState` for its state fields and its cast-table entry.
+pub fn expand(attribute: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
+  if !attribute.is_empty() {
+    return Err(Error::new_spanned(attribute, "`#[element]` takes no settings"));
+  }
+  let mut item: ItemStruct = syn::parse2(item)?;
+  let ident = item.ident.clone();
+  if !item.generics.params.is_empty() {
+    return Err(Error::new_spanned(
+      &item.generics,
+      "`#[element]` can't be used on a generic struct",
+    ));
+  }
+  reject_xaml_type_derive(&item.attrs)?;
+  let mut fields = match &item.fields {
+    Fields::Named(fields) => fields.clone(),
+    Fields::Unit => parse_quote!({}),
+    Fields::Unnamed(fields) => {
+      return Err(Error::new_spanned(
+        fields,
+        "`#[element]` needs a struct with named fields, or a unit struct",
+      ));
+    }
+  };
+  for field in &fields.named {
+    let name = field.ident.as_ref().expect("named fields have names");
+    if GROUPS.iter().any(|(group, _)| name == group) {
+      return Err(Error::new_spanned(
+        name,
+        format!("`{name}` is added by `#[element]`; remove this field"),
+      ));
+    }
+  }
+  let states = state_fields(&fields)?;
+
+  let probe: DeriveInput = syn::parse2(quote!(#item))?;
+  let crate_path = parse_type_attributes(&probe)?.crate_path;
+  let root = crate_root(crate_path.as_ref(), &ident, ELEMENT)?;
+  let root_path: Path = syn::parse2(root.clone())?;
+
+  let added: FieldsNamed = {
+    let groups = GROUPS.iter().map(|(name, ty)| {
+      let name = Ident::new(name, ident.span());
+      let ty = Ident::new(ty, ident.span());
+      quote!(#[xaml(flatten)] pub #name: #root::__private::#ty)
+    });
+    parse_quote!({ #(#groups,)* })
+  };
+  let own = std::mem::take(&mut fields.named);
+  fields.named = added.named.into_iter().chain(own).collect();
+  item.fields = Fields::Named(fields);
+  item.semi_token = None;
+
+  let input: DeriveInput = syn::parse2(quote!(#item))?;
+  let mut analysis = analyze(&input)?;
+  analysis.attributes.crate_path = Some(root_path);
+  analysis.after_default = Some(quote!(<Self as __artic::ElementImpl>::defaults(&value);));
+  let xaml_type = generate(&analysis)?;
+
+  strip_helpers(&mut item);
+  let state_impls = states.iter().map(|(field_ident, ty)| {
+    quote! {
+      impl __artic::HasState<#ty> for #ident {
+        fn state(&self) -> &#ty {
+          &self.#field_ident
+        }
+
+        fn state_mut(&mut self) -> &mut #ty {
+          &mut self.#field_ident
+        }
+      }
+    }
+  });
+  Ok(quote! {
+    #item
+
+    #xaml_type
+
+    const _: () = {
+      use #root::__private as __artic;
+
+      impl __artic::Layoutable for #ident {
+        fn measure(&self, cx: &mut __artic::LayoutCx<'_>, available: __artic::Size) -> __artic::Size {
+          self.layout.measure(cx, self.appearance.visibility.get(), available, |cx, available| {
+            <Self as __artic::ElementImpl>::measure_override(self, cx, available)
+          })
+        }
+
+        fn arrange(&self, cx: &mut __artic::LayoutCx<'_>, slot: __artic::Rect) {
+          self.layout.arrange(cx, self.appearance.visibility.get(), slot, |cx, size| {
+            <Self as __artic::ElementImpl>::arrange_override(self, cx, size)
+          })
+        }
+      }
+
+      impl __artic::Element for #ident {
+        fn render(&self, cx: &mut __artic::RenderCx<'_>, scene: &mut __artic::SceneBuilder) {
+          <Self as __artic::ElementImpl>::render(self, cx, scene)
+        }
+
+        fn hit_test(&self, cx: &__artic::HitTestCx<'_>, point: __artic::Point) -> __artic::HitTestResult {
+          self.interaction.hit_test(cx, self.appearance.visibility.get(), point)
+        }
+
+        fn on_event(&mut self, cx: &mut __artic::EventCx<'_>, event: &__artic::InputEvent) -> __artic::Handled {
+          if !self.interaction.accepts_input() {
+            return __artic::Handled::No;
+          }
+          <Self as __artic::ElementImpl>::on_event(self, cx, event)
+        }
+
+        fn accessibility(&self, cx: &__artic::AccessCx<'_>) -> __artic::accesskit::Node {
+          let mut node = self.interaction.accessibility(cx, self.appearance.visibility.get());
+          <Self as __artic::ElementImpl>::accessibility(self, cx, &mut node);
+          node
+        }
+
+        fn layers(&self, size: __artic::Size) -> __artic::Layers {
+          self.appearance.layers(size, <Self as __artic::ElementImpl>::clip(self, size))
+        }
+      }
+
+      #(#state_impls)*
+
+      __artic::element_type!(#ident);
+    };
+  })
+}
+
+/// Rejects `XamlType` in the struct's derives, since `#[element]` writes it.
+fn reject_xaml_type_derive(attributes: &[Attribute]) -> syn::Result<()> {
+  for attribute in attributes.iter().filter(|attribute| attribute.path().is_ident("derive")) {
+    let derives = attribute.parse_args_with(Punctuated::<Path, Token![,]>::parse_terminated)?;
+    if let Some(derive) = derives
+      .iter()
+      .find(|derive| derive.segments.last().is_some_and(|segment| segment.ident == "XamlType"))
+    {
+      return Err(Error::new_spanned(
+        derive,
+        "`#[element]` writes `XamlType`; remove `XamlType` from this derive",
+      ));
+    }
+  }
+  Ok(())
+}
+
+/// Removes the `xaml` and `element` helper attributes from the struct and its fields, which only
+/// the macros read.
+fn strip_helpers(item: &mut ItemStruct) {
+  let is_helper = |attribute: &Attribute| attribute.path().is_ident("xaml") || attribute.path().is_ident("element");
+  item.attrs.retain(|attribute| !is_helper(attribute));
+  for field in &mut item.fields {
+    field.attrs.retain(|attribute| !is_helper(attribute));
+  }
+}
+
+/// The fields marked `#[element(state)]`, each with its type. Two fields whose types are written
+/// the same way are an error naming both.
+fn state_fields(fields: &FieldsNamed) -> syn::Result<Vec<(Ident, Type)>> {
+  let mut states: Vec<(Ident, Type)> = Vec::new();
+  for field in &fields.named {
+    if !is_state(field)? {
+      continue;
+    }
+    let field_ident = field.ident.clone().expect("named fields have names");
+    let ty = &field.ty;
+    let written = quote!(#ty).to_string();
+    if let Some((first, _)) = states.iter().find(|(_, other)| quote!(#other).to_string() == written) {
+      return Err(Error::new_spanned(
+        ty,
+        format!("`{field_ident}` has the same state type as `{first}`; a struct holds at most one field per state type"),
+      ));
+    }
+    states.push((field_ident, ty.clone()));
+  }
+  Ok(states)
+}
+
+/// Whether the field is marked `#[element(state)]`. Any other `element` setting is an error.
+fn is_state(field: &Field) -> syn::Result<bool> {
+  let mut state = false;
+  for attribute in field.attrs.iter().filter(|attribute| attribute.path().is_ident("element")) {
+    attribute.parse_nested_meta(|meta| {
+      if meta.path.is_ident("state") {
+        state = true;
+        Ok(())
+      } else {
+        Err(meta.error("unknown `element` setting; the only one is `state`"))
+      }
+    })?;
+  }
+  Ok(state)
+}
