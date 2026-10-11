@@ -1,10 +1,10 @@
 use crate::Object;
-use crate::property::{Affects, AnyProperty, Precedence, Property, PropertyKey};
+use crate::property::{Affects, AnyProperty, Inheritance, Precedence, Property, PropertyKey};
 use crate::tree::{NodeId, UiTree};
 use pretty_assertions::assert_eq;
 
-static FONT_SIZE: PropertyKey<i32> = PropertyKey::new("FontSize", Affects::LAYOUT, false);
-static FOREGROUND: PropertyKey<i32> = PropertyKey::new("Foreground", Affects::RENDER, false);
+static FONT_SIZE: PropertyKey<i32> = PropertyKey::new("FontSize", Affects::LAYOUT, Inheritance::None);
+static FOREGROUND: PropertyKey<i32> = PropertyKey::new("Foreground", Affects::RENDER, Inheritance::None);
 
 #[derive(Debug)]
 struct Label {

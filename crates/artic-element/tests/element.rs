@@ -148,6 +148,20 @@ fn inherited_disabled_skips_hook() {
   assert_eq!(tree.get_as::<Tile>(child).unwrap().events, 0);
 }
 
+// A disabled parent disables a child whose own IsEnabled is true, so its hook doesn't run.
+#[test]
+fn disabled_parent_overrides_child_enabled() {
+  let mut tree = UiTree::new();
+  let parent = tree.alloc(Box::new(Tile::default()));
+  let child = tree.alloc(Box::new(Tile::default()));
+  tree.add_child(TreeKind::Logical, parent, child);
+  tree.get_as::<Tile>(child).unwrap().interaction.is_enabled.set(true);
+  tree.get_as::<Tile>(parent).unwrap().interaction.is_enabled.set(false);
+
+  assert_eq!(send(&mut tree, child), Handled::No);
+  assert_eq!(tree.get_as::<Tile>(child).unwrap().events, 0);
+}
+
 // Element::hit_test is the interaction group's: a hidden Tile is missed inside its bounds.
 #[test]
 fn element_hit_test_misses_hidden_element() {

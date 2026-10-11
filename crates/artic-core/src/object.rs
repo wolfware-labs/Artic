@@ -48,10 +48,10 @@ use std::fmt::Debug;
 ///
 /// ```
 /// use artic_core::Object;
-/// use artic_core::property::{Affects, AnyProperty, Property, PropertyKey};
+/// use artic_core::property::{Affects, AnyProperty, Inheritance, Property, PropertyKey};
 /// use artic_core::tree::UiTree;
 ///
-/// static FONT_SIZE: PropertyKey<f32> = PropertyKey::new("FontSize", Affects::LAYOUT, true);
+/// static FONT_SIZE: PropertyKey<f32> = PropertyKey::new("FontSize", Affects::LAYOUT, Inheritance::Replace);
 ///
 /// #[derive(Debug)]
 /// struct TextBlock {

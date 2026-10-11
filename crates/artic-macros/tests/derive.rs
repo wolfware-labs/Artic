@@ -2,7 +2,7 @@
 // descriptors their fields describe, and their generated `Default` and `Object` impls work.
 
 use artic_core::event::Event;
-use artic_core::property::{Affects, Precedence, Property, PropertyKey};
+use artic_core::property::{Affects, Inheritance, Precedence, Property, PropertyKey};
 use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_macros::XamlType;
 use artic_registry::{AttachedTarget, Registry, TypeInfo, Whitespace, XamlType};
@@ -88,7 +88,7 @@ struct Run {
   text: Property<String>,
 }
 
-static FONT_SIZE: PropertyKey<f32> = PropertyKey::new("FontSize", Affects::LAYOUT, true);
+static FONT_SIZE: PropertyKey<f32> = PropertyKey::new("FontSize", Affects::LAYOUT, Inheritance::Replace);
 
 #[derive(Debug, XamlType)]
 #[xaml(namespace = "https://artic.rs/ui")]
@@ -340,4 +340,29 @@ fn group_property_inherits_across_types() {
   tree.get_as::<Widget>(widget).unwrap().common.enabled.set(false);
 
   assert!(!tree.get_as::<Gadget>(gadget).unwrap().common.enabled.get());
+}
+
+/// A node whose enabled flag every ancestor must allow.
+#[derive(Debug, XamlType)]
+#[xaml(namespace = "https://artic.rs/test")]
+struct Switch {
+  #[xaml(default = true, inherits = and)]
+  enabled: Property<bool>,
+}
+
+// A combining property ANDs with its ancestor's: a disabled Switch disables a child Switch that
+// enables itself, until the parent is enabled again.
+#[test]
+fn combining_property_ands_with_its_ancestor() {
+  let mut tree = UiTree::new();
+  let parent = tree.alloc(Box::new(Switch::default()));
+  let child = tree.alloc(Box::new(Switch::default()));
+  tree.add_child(TreeKind::Logical, parent, child);
+  tree.get_as::<Switch>(child).unwrap().enabled.set(true);
+  let enabled = |tree: &UiTree| tree.get_as::<Switch>(child).unwrap().enabled.get();
+
+  tree.get_as::<Switch>(parent).unwrap().enabled.set(false);
+  assert!(!enabled(&tree));
+  tree.get_as::<Switch>(parent).unwrap().enabled.set(true);
+  assert!(enabled(&tree));
 }

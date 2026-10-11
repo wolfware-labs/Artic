@@ -20,7 +20,7 @@ where
 {
   pub fn new(key: &'static PropertyKey<T>, default: T) -> Self {
     Self {
-      levels: Levels::new(default),
+      levels: Levels::new(default, key.inheritance()),
       key,
       dirty: None,
       followers: Vec::new(),

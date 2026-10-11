@@ -9,7 +9,9 @@ pub use crate::{
 };
 pub use artic_core::Object;
 pub use artic_core::event::Event;
-pub use artic_core::property::{Affects, AnyProperty, AttachedKey, ParseEnumError, Property, PropertyKey};
+pub use artic_core::property::{
+  Affects, AnyProperty, AttachedKey, Inheritance, ParseEnumError, Property, PropertyKey, inherit,
+};
 pub use artic_core::tree::{NodeId, UiTree};
 pub use std::marker::PhantomData;
 

@@ -6,12 +6,12 @@
 //! through.
 //!
 //! ```
-//! use artic_core::property::{Affects, Precedence, Property, PropertyKey};
+//! use artic_core::property::{Affects, Inheritance, Precedence, Property, PropertyKey};
 //! use artic_core::reactive::{effect, flush_effects};
 //! use std::cell::Cell;
 //! use std::rc::Rc;
 //!
-//! static BACKGROUND: PropertyKey<&str> = PropertyKey::new("Background", Affects::RENDER, false);
+//! static BACKGROUND: PropertyKey<&str> = PropertyKey::new("Background", Affects::RENDER, Inheritance::None);
 //!
 //! let background = Property::new(&BACKGROUND, "white");
 //! let painted = Rc::new(Cell::new(""));
@@ -31,8 +31,8 @@
 //! # Keys and metadata
 //!
 //! Every property is created with a [`PropertyKey`]: a `static` per property kind that names it,
-//! says which frame stages a change [`Affects`], and says whether it inherits. Properties on
-//! different node types are the same kind when they share the key.
+//! says which frame stages a change [`Affects`], and says how it inherits ([`Inheritance`]).
+//! Properties on different node types are the same kind when they share the key.
 //!
 //! Once a node is in a [`UiTree`](crate::tree::UiTree), a change to the effective value of
 //! one of its properties adds the key's stages to the node's dirty flags right away. A write that
@@ -40,11 +40,14 @@
 //!
 //! # Inheritance
 //!
-//! A property whose key inherits takes its value from the nearest logical ancestor that has a
-//! property of the same kind, when nothing above the [`Precedence::Inherited`] level is set. The
-//! level holds a link to that ancestor's property rather than a copy, so the inherited value is
-//! never stale, and a change on the ancestor marks the inheriting nodes dirty. The tree sets the
-//! link when a node moves in the logical tree; the visual tree plays no part.
+//! A property whose key inherits follows the nearest logical ancestor that has a property of the
+//! same kind. Under [`Inheritance::Replace`] it takes that ancestor's value when nothing above the
+//! [`Precedence::Inherited`] level is set. Under [`Inheritance::Combine`] its effective value is
+//! the key's function of its own value and the ancestor's, such as [`inherit::and`], so a
+//! disabled panel disables a child that enables itself; [`own`](Property::own) reads the child's
+//! own value. The link is to that ancestor's property rather than a copy, so the inherited value
+//! is never stale, and a change on the ancestor marks the nodes that depend on it dirty. The tree
+//! sets the link when a node moves in the logical tree; the visual tree plays no part.
 //!
 //! A property belongs to the [`Scope`](crate::reactive::Scope) it was created in, and a node to its
 //! tree. Dispose a node's scope only once the node has left the tree: a descendant that still
@@ -53,6 +56,7 @@
 mod affects;
 mod any;
 mod attached;
+pub mod inherit;
 mod key;
 mod levels;
 mod parse_enum_error;
@@ -62,7 +66,7 @@ use crate::reactive::{Change, Signal};
 pub use affects::Affects;
 pub use any::{AnyProperty, KeyId};
 pub use attached::AttachedKey;
-pub use key::PropertyKey;
+pub use key::{Inheritance, PropertyKey};
 use levels::Levels;
 pub use parse_enum_error::ParseEnumError;
 use state::PropertyState;
@@ -117,9 +121,9 @@ pub enum Precedence {
 /// # Examples
 ///
 /// ```
-/// use artic_core::property::{Affects, Precedence, Property, PropertyKey};
+/// use artic_core::property::{Affects, Inheritance, Precedence, Property, PropertyKey};
 ///
-/// static WIDTH: PropertyKey<f64> = PropertyKey::new("Width", Affects::LAYOUT, false);
+/// static WIDTH: PropertyKey<f64> = PropertyKey::new("Width", Affects::LAYOUT, Inheritance::None);
 ///
 /// let width = Property::new(&WIDTH, 0.0);
 /// width.set_at(Precedence::StyleSetter, 50.0);
@@ -177,18 +181,26 @@ where
     self.0.with(|state| state.levels.with_effective(function))
   }
 
+  /// Calls `function` with a reference to the property's own value: its highest set level, or its
+  /// default, without what it inherits. Under [`Inheritance::Combine`] that is what the property
+  /// asks for before its ancestors have their say.
+  pub fn with_own<TResult>(&self, function: impl FnOnce(&T) -> TResult) -> TResult {
+    self.0.with(|state| state.levels.with_own(function))
+  }
+
   /// Returns the level that supplies the effective value.
   ///
   /// Like [`get`](Property::get), this subscribes the running observer. Clearing the winning level
   /// changes the source even when the next level holds an equal value, and readers are marked dirty
-  /// then too.
+  /// then too. Under [`Inheritance::Combine`] it names the property's own level: the ancestor's
+  /// part isn't a level, so a `Local` source can still read `false` under a disabled ancestor.
   ///
   /// # Examples
   ///
   /// ```
-  /// use artic_core::property::{Affects, Precedence, Property, PropertyKey};
+  /// use artic_core::property::{Affects, Inheritance, Precedence, Property, PropertyKey};
   ///
-  /// static WIDTH: PropertyKey<f64> = PropertyKey::new("Width", Affects::LAYOUT, false);
+  /// static WIDTH: PropertyKey<f64> = PropertyKey::new("Width", Affects::LAYOUT, Inheritance::None);
   ///
   /// let width = Property::new(&WIDTH, 0.0);
   /// assert_eq!(width.effective_source(), Precedence::Default);
@@ -290,7 +302,7 @@ where
         continue;
       }
       let inherits_from_here = follower.0.with_untracked(|state| {
-        let inherits = state.levels.effective_source() == Precedence::Inherited;
+        let inherits = state.levels.combines() || state.levels.effective_source() == Precedence::Inherited;
         if inherits {
           state.mark_dirty();
         }
@@ -319,6 +331,13 @@ where
   pub fn get(&self) -> T {
     self.with(T::clone)
   }
+
+  /// Returns a clone of the property's own value, without what it inherits.
+  ///
+  /// To read without cloning, use [`with_own`](Property::with_own).
+  pub fn own(&self) -> T {
+    self.with_own(T::clone)
+  }
 }
 
 #[cfg(test)]
@@ -333,7 +352,7 @@ mod tests {
   assert_not_impl_any!(Property<i32>: Send, Sync);
   assert_impl_all!(Property<String>: Copy);
 
-  static TEST: PropertyKey<i32> = PropertyKey::new("Test", Affects::LAYOUT, false);
+  static TEST: PropertyKey<i32> = PropertyKey::new("Test", Affects::LAYOUT, Inheritance::None);
 
   /// Every level, lowest first.
   const LEVELS: [Precedence; 6] = [
@@ -418,6 +437,47 @@ mod tests {
 
     property.clear(Precedence::StyleSetter);
     assert_eq!(property.get(), 0);
+  }
+
+  static ENABLED: PropertyKey<bool> = PropertyKey::new("Enabled", Affects::RENDER, Inheritance::Combine(inherit::and));
+
+  // A combining property ANDs its own value with its source's: a source's false wins over any
+  // own true, and a source's true leaves the own value.
+  #[test]
+  fn combine_ands_own_with_source() {
+    let source = Property::new(&ENABLED, true);
+    let property = Property::new(&ENABLED, true);
+    property.follow(Some(source));
+    property.set(true);
+
+    source.set(false);
+    assert!(!property.get());
+    source.set(true);
+    assert!(property.get());
+    property.set(false);
+    assert!(!property.get());
+  }
+
+  // A combining property's default still counts while it follows a source.
+  #[test]
+  fn combine_default_is_visible_under_a_source() {
+    let source = Property::new(&ENABLED, true);
+    let property = Property::new(&ENABLED, true);
+    property.follow(Some(source));
+
+    property.set_default(false);
+
+    assert!(!property.get());
+  }
+
+  // own reads the property's levels and default, without what it inherits.
+  #[test]
+  fn own_ignores_the_source() {
+    let source = Property::new(&ENABLED, false);
+    let property = Property::new(&ENABLED, true);
+    property.follow(Some(source));
+
+    assert_eq!((property.get(), property.own()), (false, true));
   }
 
   // A value set as the default shows only while no other level holds one.

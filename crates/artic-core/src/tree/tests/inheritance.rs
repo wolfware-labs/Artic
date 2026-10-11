@@ -1,10 +1,11 @@
 use crate::Object;
-use crate::property::{Affects, AnyProperty, Precedence, Property, PropertyKey};
+use crate::property::{Affects, AnyProperty, Inheritance, Precedence, Property, PropertyKey, inherit};
 use crate::tree::{NodeId, TreeKind, UiTree};
 use pretty_assertions::assert_eq;
 
-static FONT_SIZE: PropertyKey<i32> = PropertyKey::new("FontSize", Affects::LAYOUT, true);
-static WIDTH: PropertyKey<i32> = PropertyKey::new("Width", Affects::LAYOUT, false);
+static FONT_SIZE: PropertyKey<i32> = PropertyKey::new("FontSize", Affects::LAYOUT, Inheritance::Replace);
+static WIDTH: PropertyKey<i32> = PropertyKey::new("Width", Affects::LAYOUT, Inheritance::None);
+static ENABLED: PropertyKey<bool> = PropertyKey::new("Enabled", Affects::RENDER, Inheritance::Combine(inherit::and));
 
 /// A root node with an inheritable font size.
 #[derive(Debug)]
@@ -38,6 +39,25 @@ impl Object for TextBlock {
     visit(&self.font_size);
     visit(&self.width);
   }
+}
+
+/// A node whose enabled flag combines with its ancestors'.
+#[derive(Debug)]
+struct Toggle {
+  enabled: Property<bool>,
+}
+
+impl Object for Toggle {
+  fn visit_properties(&self, visit: &mut dyn FnMut(&dyn AnyProperty)) {
+    visit(&self.enabled);
+  }
+}
+
+/// Allocates a toggle with `enabled` set locally.
+fn new_toggle(tree: &mut UiTree, enabled: bool) -> (NodeId, Property<bool>) {
+  let property = Property::new(&ENABLED, true);
+  property.set(enabled);
+  (tree.alloc(Box::new(Toggle { enabled: property })), property)
 }
 
 /// Allocates a window with `font_size` set locally.
@@ -198,4 +218,52 @@ fn reparenting_a_container_updates_its_descendants() {
   tree.add_child(TreeKind::Logical, small, panel);
 
   assert_eq!(font_size.get(), 12);
+}
+
+// A combining value ANDs down a chain: a disabled root disables a grandchild that enables itself,
+// through a parent that enables itself too.
+#[test]
+fn combine_chains_through_ancestors() {
+  let mut tree = UiTree::new();
+  let (root, _) = new_toggle(&mut tree, false);
+  let (middle, _) = new_toggle(&mut tree, true);
+  let (leaf, enabled) = new_toggle(&mut tree, true);
+  tree.add_child(TreeKind::Logical, root, middle);
+  tree.add_child(TreeKind::Logical, middle, leaf);
+
+  assert!(!enabled.get());
+}
+
+// A combining node is marked dirty when its source changes, even with a value of its own.
+#[test]
+fn combining_follower_is_marked_dirty_despite_own_value() {
+  let mut tree = UiTree::new();
+  let (parent, parent_enabled) = new_toggle(&mut tree, true);
+  let (child, _) = new_toggle(&mut tree, true);
+  tree.add_child(TreeKind::Logical, parent, child);
+  tree.clear_dirty(child, Affects::LAYOUT | Affects::RENDER);
+
+  parent_enabled.set(false);
+
+  assert_eq!(tree.dirty(child), Affects::RENDER);
+}
+
+// A change reaches a combining grandchild through a parent with its own value, marking both dirty.
+#[test]
+fn combine_marks_dirty_through_a_node_with_its_own_value() {
+  let mut tree = UiTree::new();
+  let (root, root_enabled) = new_toggle(&mut tree, true);
+  let (middle, _) = new_toggle(&mut tree, true);
+  let (leaf, enabled) = new_toggle(&mut tree, true);
+  tree.add_child(TreeKind::Logical, root, middle);
+  tree.add_child(TreeKind::Logical, middle, leaf);
+  tree.clear_dirty(middle, Affects::LAYOUT | Affects::RENDER);
+  tree.clear_dirty(leaf, Affects::LAYOUT | Affects::RENDER);
+
+  root_enabled.set(false);
+
+  assert_eq!((tree.dirty(middle), tree.dirty(leaf)), (Affects::RENDER, Affects::RENDER));
+  assert!(!enabled.get());
+  root_enabled.set(true);
+  assert!(enabled.get());
 }

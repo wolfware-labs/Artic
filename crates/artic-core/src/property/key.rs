@@ -15,9 +15,9 @@ use std::marker::PhantomData;
 /// # Examples
 ///
 /// ```
-/// use artic_core::property::{Affects, PropertyKey};
+/// use artic_core::property::{Affects, Inheritance, PropertyKey};
 ///
-/// static FONT_SIZE: PropertyKey<f32> = PropertyKey::new("FontSize", Affects::LAYOUT, true);
+/// static FONT_SIZE: PropertyKey<f32> = PropertyKey::new("FontSize", Affects::LAYOUT, Inheritance::Replace);
 ///
 /// assert_eq!(FONT_SIZE.name(), "FontSize");
 /// assert!(FONT_SIZE.inherits());
@@ -25,22 +25,53 @@ use std::marker::PhantomData;
 pub struct PropertyKey<T> {
   name: &'static str,
   affects: Affects,
-  inherits: bool,
+  inheritance: Inheritance<T>,
   value_type: PhantomData<fn() -> T>,
+}
+
+/// How a property takes part in inheritance from its logical ancestors.
+pub enum Inheritance<T> {
+  /// It doesn't inherit.
+  None,
+  /// Its own value, when one is set above the `Inherited` level, replaces what it inherits;
+  /// otherwise it takes the nearest ancestor's effective value.
+  Replace,
+  /// Its effective value is the function of its own value, from its levels or its default, and
+  /// the nearest ancestor's effective value, such as [`inherit::and`](super::inherit::and) for a
+  /// flag every ancestor must allow.
+  Combine(fn(&T, &T) -> T),
+}
+
+impl<T> Clone for Inheritance<T> {
+  fn clone(&self) -> Self {
+    *self
+  }
+}
+
+impl<T> Copy for Inheritance<T> {}
+
+impl<T> Debug for Inheritance<T> {
+  fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
+    match self {
+      Inheritance::None => formatter.write_str("None"),
+      Inheritance::Replace => formatter.write_str("Replace"),
+      Inheritance::Combine(_) => formatter.write_str("Combine"),
+    }
+  }
 }
 
 impl<T> PropertyKey<T> {
   /// Creates the key for a property kind named `name`.
   ///
   /// `affects` lists the frame stages a change to the property's effective value has to redo.
-  /// `inherits` makes the property take its value from the nearest logical ancestor that has the
-  /// same key, when nothing above the `Inherited` level is set.
+  /// `inheritance` says whether the property takes part in inheritance from the nearest logical
+  /// ancestor that has the same key, and how.
   #[must_use]
-  pub const fn new(name: &'static str, affects: Affects, inherits: bool) -> Self {
+  pub const fn new(name: &'static str, affects: Affects, inheritance: Inheritance<T>) -> Self {
     Self {
       name,
       affects,
-      inherits,
+      inheritance,
       value_type: PhantomData,
     }
   }
@@ -57,11 +88,16 @@ impl<T> PropertyKey<T> {
     self.affects
   }
 
-  /// Whether the property takes its value from a logical ancestor when nothing above the
-  /// `Inherited` level is set.
+  /// Whether the property takes part in inheritance, by replacing or by combining.
   #[must_use]
   pub const fn inherits(&self) -> bool {
-    self.inherits
+    !matches!(self.inheritance, Inheritance::None)
+  }
+
+  /// How the property takes part in inheritance.
+  #[must_use]
+  pub const fn inheritance(&self) -> Inheritance<T> {
+    self.inheritance
   }
 }
 
@@ -71,7 +107,7 @@ impl<T> Debug for PropertyKey<T> {
       .debug_struct("PropertyKey")
       .field("name", &self.name)
       .field("affects", &self.affects)
-      .field("inherits", &self.inherits)
+      .field("inheritance", &self.inheritance)
       .finish()
   }
 }
