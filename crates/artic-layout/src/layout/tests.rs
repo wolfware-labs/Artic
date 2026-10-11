@@ -321,3 +321,81 @@ mod bounds {
     assert_eq!(arranged(inner), 1, "same slot, nothing changed below: not arranged again");
   }
 }
+
+mod skipped {
+  use crate::geometry::{Rect, Size};
+  use crate::{LayoutCx, LayoutManager, LayoutNodes, Layoutable};
+  use artic_core::Object;
+  use artic_core::property::AnyProperty;
+  use artic_core::tree::{NodeId, TreeKind, UiTree};
+  use pretty_assertions::assert_eq;
+  use std::cell::Cell;
+
+  /// Measures its children unless `skip` is set, as a collapsed element does; counts its own
+  /// measures.
+  #[derive(Debug, Default)]
+  struct Toggle {
+    skip: Cell<bool>,
+    measured: Cell<u32>,
+  }
+
+  impl Object for Toggle {
+    fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  }
+
+  impl Layoutable for Toggle {
+    fn measure(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size {
+      self.measured.set(self.measured.get() + 1);
+      if self.skip.get() {
+        return Size::ZERO;
+      }
+      let children: Vec<NodeId> = cx.children().collect();
+      for child in children {
+        cx.measure(child, available);
+      }
+      Size::new(10.0, 10.0)
+    }
+
+    fn arrange(&self, cx: &mut LayoutCx<'_>, rect: Rect) {
+      if self.skip.get() {
+        return;
+      }
+      let children: Vec<NodeId> = cx.children().collect();
+      for child in children {
+        cx.arrange(child, Rect::new(0.0, 0.0, rect.width, rect.height));
+      }
+    }
+  }
+
+  /// Lays out `Toggle` nodes.
+  struct Toggles;
+
+  impl LayoutNodes for Toggles {
+    fn layoutable<'a>(&self, tree: &'a UiTree, node: NodeId) -> Option<&'a dyn Layoutable> {
+      tree.get_as::<Toggle>(node).map(|toggle| toggle as &dyn Layoutable)
+    }
+  }
+
+  // Once a parent stops measuring a child, the child and its subtree are forgotten, and a child
+  // made dirty afterwards isn't laid out.
+  #[test]
+  fn children_a_measure_skips_are_forgotten() {
+    let mut tree = UiTree::new();
+    let [parent, child, grandchild] = [(); 3].map(|()| tree.alloc(Box::<Toggle>::default()));
+    tree.add_child(TreeKind::Visual, parent, child);
+    tree.add_child(TreeKind::Visual, child, grandchild);
+    let mut layout = LayoutManager::default();
+    let available = Size::new(100.0, 100.0);
+    layout.run(&mut tree, &Toggles, parent, available, 1.0, false);
+    assert!(layout.rect(grandchild).is_some());
+
+    tree.get_as::<Toggle>(parent).unwrap().skip.set(true);
+    LayoutManager::invalidate_measure(&mut tree, parent);
+    layout.run(&mut tree, &Toggles, parent, available, 1.0, false);
+    assert_eq!((layout.rect(child), layout.rect(grandchild)), (None, None));
+
+    LayoutManager::invalidate_measure(&mut tree, child);
+    layout.run(&mut tree, &Toggles, parent, available, 1.0, false);
+    assert_eq!(tree.get_as::<Toggle>(child).unwrap().measured.get(), 1);
+  }
+}

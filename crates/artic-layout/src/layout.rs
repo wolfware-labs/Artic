@@ -15,7 +15,8 @@ pub trait Layoutable {
   /// Returns the size the element wants within `available`, its margin included.
   ///
   /// An axis of `available` may be infinite: the parent offers as much as the element wants. The
-  /// returned size must be finite. Children are measured through [`LayoutCx::measure`].
+  /// returned size must be finite. Children are measured through [`LayoutCx::measure`]; a child it
+  /// doesn't measure is forgotten, with its subtree, until a later measure measures it.
   fn measure(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size;
 
   /// Places the element in `rect`, in its parent's coordinates, and its children through
@@ -92,6 +93,7 @@ impl LayoutManager {
       scale,
       snap,
       current: None,
+      measured: Vec::new(),
     };
 
     // Upward: a dirty node measures again in the size it had. If its desired size is unchanged,
@@ -187,6 +189,8 @@ pub struct LayoutCx<'a> {
   snap: bool,
   /// The node being measured or arranged.
   current: Option<NodeId>,
+  /// The children measured so far by each node being measured, innermost last.
+  measured: Vec<HashSet<NodeId>>,
 }
 
 impl<'a> LayoutCx<'a> {
@@ -233,6 +237,9 @@ impl<'a> LayoutCx<'a> {
   /// an infinite, NaN or negative size; release builds treat such an axis as zero.
   pub fn measure(&mut self, child: NodeId, available: Size) -> Size {
     let available = self.checked_available(child, available);
+    if let Some(siblings) = self.measured.last_mut() {
+      siblings.insert(child);
+    }
     let slot = self.slots.entry(child).or_default();
     if !self.dirty.contains(&child) && slot.available == Some(available) {
       return slot.desired;
@@ -240,11 +247,17 @@ impl<'a> LayoutCx<'a> {
     let desired = match self.nodes.layoutable(self.tree, child) {
       Some(layoutable) => {
         let parent = self.current.replace(child);
+        self.measured.push(HashSet::new());
         let desired = layoutable.measure(self, available);
+        let measured = self.measured.pop().expect("pushed above");
         self.current = parent;
+        self.forget_unmeasured(child, &measured);
         desired
       }
-      None => Size::ZERO,
+      None => {
+        self.forget_unmeasured(child, &HashSet::new());
+        Size::ZERO
+      }
     };
     let desired = checked_desired(child, desired, available);
     self.dirty.remove(&child);
@@ -294,6 +307,22 @@ impl<'a> LayoutCx<'a> {
     let node = self.node();
     let bounds = self.snap(self.checked_rect(node, bounds));
     self.slots.entry(node).or_default().rect = Some(bounds);
+  }
+
+  /// Forgets what layout knew about `node`'s visual children that its measure didn't measure, and
+  /// about their subtrees, so neither the upward nor the waiting pass lays them out.
+  fn forget_unmeasured(&mut self, node: NodeId, measured: &HashSet<NodeId>) {
+    let skipped: Vec<NodeId> = self
+      .tree
+      .children(TreeKind::Visual, node)
+      .filter(|child| !measured.contains(child))
+      .collect();
+    for child in skipped {
+      self.slots.remove(&child);
+      for descendant in self.tree.descendants(TreeKind::Visual, child) {
+        self.slots.remove(&descendant);
+      }
+    }
   }
 
   fn checked_available(&self, child: NodeId, available: Size) -> Size {
