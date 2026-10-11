@@ -252,3 +252,72 @@ fn layout_rounding_snaps_to_device_pixels() {
     }
   }
 }
+
+mod bounds {
+  use crate::geometry::{Rect, Size};
+  use crate::{LayoutCx, LayoutManager, LayoutNodes, Layoutable};
+  use artic_core::Object;
+  use artic_core::property::AnyProperty;
+  use artic_core::tree::{NodeId, TreeKind, UiTree};
+  use pretty_assertions::assert_eq;
+  use std::cell::Cell;
+
+  /// Takes a 10-unit inset of its slot as its bounds, and fills them with its children.
+  #[derive(Debug, Default)]
+  struct Inset {
+    arranged: Cell<u32>,
+  }
+
+  impl Object for Inset {
+    fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  }
+
+  impl Layoutable for Inset {
+    fn measure(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size {
+      let children: Vec<NodeId> = cx.children().collect();
+      for child in children {
+        cx.measure(child, available);
+      }
+      available
+    }
+
+    fn arrange(&self, cx: &mut LayoutCx<'_>, slot: Rect) {
+      self.arranged.set(self.arranged.get() + 1);
+      let bounds = Rect::new(slot.x + 10.0, slot.y + 10.0, slot.width - 20.0, slot.height - 20.0);
+      cx.set_bounds(bounds);
+      let children: Vec<NodeId> = cx.children().collect();
+      for child in children {
+        cx.arrange(child, Rect::new(0.0, 0.0, bounds.width, bounds.height));
+      }
+    }
+  }
+
+  /// Lays out `Inset` nodes.
+  struct Insets;
+
+  impl LayoutNodes for Insets {
+    fn layoutable<'a>(&self, tree: &'a UiTree, node: NodeId) -> Option<&'a dyn Layoutable> {
+      tree.get_as::<Inset>(node).map(|inset| inset as &dyn Layoutable)
+    }
+  }
+
+  // An element's bounds are what it set, its children are placed relative to them, and the same
+  // slot doesn't arrange it again although its bounds differ from the slot.
+  #[test]
+  fn set_bounds_records_the_element_box() {
+    let mut tree = UiTree::new();
+    let outer = tree.alloc(Box::<Inset>::default());
+    let inner = tree.alloc(Box::<Inset>::default());
+    tree.add_child(TreeKind::Visual, outer, inner);
+    let mut layout = LayoutManager::default();
+
+    layout.run(&mut tree, &Insets, outer, Size::new(100.0, 80.0), 1.0, false);
+    assert_eq!(layout.rect(outer), Some(Rect::new(10.0, 10.0, 80.0, 60.0)));
+    assert_eq!(layout.rect(inner), Some(Rect::new(10.0, 10.0, 60.0, 40.0)));
+
+    LayoutManager::invalidate_measure(&mut tree, outer);
+    layout.run(&mut tree, &Insets, outer, Size::new(100.0, 80.0), 1.0, false);
+    let arranged = |node| tree.get_as::<Inset>(node).unwrap().arranged.get();
+    assert_eq!(arranged(inner), 1, "same slot, nothing changed below: not arranged again");
+  }
+}

@@ -39,9 +39,12 @@ struct Slot {
   available: Option<Size>,
   /// What the last measure returned.
   desired: Size,
-  /// The last rectangle the node was arranged in, in its parent's coordinates.
+  /// The rectangle the parent last offered, in its coordinates.
+  offered: Option<Rect>,
+  /// The node's bounds in its parent's coordinates: the offered rectangle, unless the node set its
+  /// own with [`LayoutCx::set_bounds`].
   rect: Option<Rect>,
-  /// Whether the node must be arranged again even in the same rectangle.
+  /// Whether the node must be arranged again even when offered the same rectangle.
   arrange_dirty: bool,
 }
 
@@ -130,14 +133,14 @@ impl LayoutManager {
     let mut waiting: Vec<(usize, NodeId)> = cx
       .slots
       .iter()
-      .filter(|(_, slot)| slot.arrange_dirty && slot.rect.is_some())
+      .filter(|(_, slot)| slot.arrange_dirty && slot.offered.is_some())
       .map(|(node, _)| (depths[node], *node))
       .collect();
     waiting.sort_by_key(|(depth, _)| *depth);
     for (_, node) in waiting {
       let slot = cx.slots[&node];
       if slot.arrange_dirty
-        && let Some(rect) = slot.rect
+        && let Some(rect) = slot.offered
       {
         cx.arrange(node, rect);
       }
@@ -165,7 +168,7 @@ impl LayoutManager {
       .map(|slot| slot.desired)
   }
 
-  /// The rectangle `node` was last arranged in, in its parent's coordinates.
+  /// The bounds `node` was last arranged in, in its parent's coordinates.
   #[must_use]
   pub fn rect(&self, node: NodeId) -> Option<Rect> {
     self.slots.get(&node).and_then(|slot| slot.rect)
@@ -259,7 +262,7 @@ impl<'a> LayoutCx<'a> {
   }
 
   /// Arranges `child` in `rect`, in the coordinates of the node being laid out, snapped to the
-  /// device-pixel grid. A child already in that rectangle with nothing changed is skipped.
+  /// device-pixel grid. A child already offered that rectangle, with nothing changed, is skipped.
   ///
   /// # Panics
   ///
@@ -267,9 +270,10 @@ impl<'a> LayoutCx<'a> {
   pub fn arrange(&mut self, child: NodeId, rect: Rect) {
     let rect = self.snap(self.checked_rect(child, rect));
     let slot = self.slots.entry(child).or_default();
-    if slot.rect == Some(rect) && !slot.arrange_dirty {
+    if slot.offered == Some(rect) && !slot.arrange_dirty {
       return;
     }
+    slot.offered = Some(rect);
     slot.rect = Some(rect);
     slot.arrange_dirty = false;
     if let Some(layoutable) = self.nodes.layoutable(self.tree, child) {
@@ -277,6 +281,19 @@ impl<'a> LayoutCx<'a> {
       layoutable.arrange(self, rect);
       self.current = parent;
     }
+  }
+
+  /// Sets the bounds of the node being arranged, in its parent's coordinates, when they aren't the
+  /// rectangle its parent offered: after a margin and alignment, for instance. Its children are
+  /// placed relative to these bounds. They're snapped like [`arrange`](LayoutCx::arrange)'s.
+  ///
+  /// # Panics
+  ///
+  /// Panics outside a node's `arrange`.
+  pub fn set_bounds(&mut self, bounds: Rect) {
+    let node = self.node();
+    let bounds = self.snap(self.checked_rect(node, bounds));
+    self.slots.entry(node).or_default().rect = Some(bounds);
   }
 
   fn checked_available(&self, child: NodeId, available: Size) -> Size {
