@@ -3,14 +3,21 @@ use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote};
 use syn::{Error, Ident, Path};
 
-/// The path generated code uses to reach artic: `override_path` if given, or whichever of `artic`
-/// and `artic-registry` the calling crate depends on. Generated code then names
+/// The crates the XAML derives reach artic through: (package, library).
+pub const REGISTRY: &[(&str, &str)] = &[("artic", "artic"), ("artic-registry", "artic_registry")];
+
+/// The path generated code uses to reach artic: `override_path` if given, or the first of
+/// `candidates` the calling crate depends on. Generated code then names
 /// `<root>::__private::...`. The error points at `target`.
-pub fn crate_root(override_path: Option<&Path>, target: &impl ToTokens) -> syn::Result<TokenStream> {
+pub fn crate_root(
+  override_path: Option<&Path>,
+  target: &impl ToTokens,
+  candidates: &[(&str, &str)],
+) -> syn::Result<TokenStream> {
   if let Some(path) = override_path {
     return Ok(quote!(#path));
   }
-  for (package, library) in [("artic", "artic"), ("artic-registry", "artic_registry")] {
+  for (package, library) in candidates {
     match crate_name(package) {
       Ok(FoundCrate::Name(name)) => {
         let name = Ident::new(&name, Span::call_site());
@@ -23,8 +30,9 @@ pub fn crate_root(override_path: Option<&Path>, target: &impl ToTokens) -> syn::
       Err(_) => {}
     }
   }
+  let names: Vec<String> = candidates.iter().map(|(package, _)| format!("`{package}`")).collect();
   Err(Error::new_spanned(
     target,
-    "this derive needs `artic` (or `artic-registry`) in this crate's dependencies",
+    format!("this derive needs {} in this crate's dependencies", names.join(" or ")),
   ))
 }
