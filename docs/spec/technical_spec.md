@@ -401,7 +401,7 @@ pub trait ElementImpl {                           // what a control writes; the 
     fn render(&self, cx: &mut RenderCx, scene: &mut SceneBuilder) {}
     fn on_event(&mut self, cx: &mut EventCx, event: &InputEvent) -> Handled { Handled::No }   // not called while disabled
     fn accessibility(&self, cx: &AccessCx, node: &mut accesskit::Node) {}   // adds to ElementBase's node
-    fn clip(&self, size: Size) -> Option<Clip> { None }                    // clips the descendants
+    fn clip(&self, size: Size) -> Option<Clip> { None }                    // clips the element and its descendants
     fn on_apply_template(&mut self, cx: &mut TemplateCx) {}   // per-control hooks live here, defaulted; added with TemplateCx in #84
 }
 pub trait HasState<S> { fn state(&self) -> &S; fn state_mut(&mut self) -> &mut S; }
@@ -713,7 +713,7 @@ Accessibility, text editing, and input are cross-cutting: every control implemen
 
 ### Accessibility
 
-- `accesskit` on all five targets (Windows UIA, macOS/iOS NSAccessibility/UIAccessibility, Linux AT-SPI, Android via `accesskit_android`). Each visible element's `accessibility()` returns a node with role, name, value, state, bounds, and actions; an element that isn't `Visible` gets no node, and neither do its descendants; the tree is rebuilt incrementally from render-dirty nodes and pushed once per frame.
+- `accesskit` on all five targets (Windows UIA, macOS/iOS NSAccessibility/UIAccessibility, Linux AT-SPI, Android via `accesskit_android`). Each visible element's `accessibility()` returns a node with role, name, value, state, bounds, and actions; an element that isn't `Visible` gets no node, and neither do its descendants, whose nodes are rebuilt when it becomes `Visible` again; the tree is rebuilt incrementally from render-dirty nodes and pushed once per frame.
 - Attached properties: `Accessibility.Name`, `.HelpText`, `.LabeledBy`, `.LiveRegion`, `.Role` override (D20, renamed from the WPF `AutomationProperties`).
 - Actions (`Click`, `Focus`, `SetValue`, `ScrollIntoView`) arrive through the host's `accessibility` capability and are routed to the element like input.
 - Reduced-motion and high-contrast OS settings surface as root pseudo-classes (`:reduced-motion`, `:high-contrast`) so themes react through selectors.
