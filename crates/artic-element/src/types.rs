@@ -24,13 +24,13 @@ pub struct ElementType {
 }
 
 /// Every element type linked into the program. [`element_type!`](crate::element_type) adds one;
-/// `#[derive(Element)]` does it for each control.
+/// `#[element]` does it for each control.
 #[distributed_slice]
 pub static ELEMENT_TYPES: [ElementType];
 
 /// Adds an element type to [`ELEMENT_TYPES`], so [`ElementTypes`] finds its nodes.
 ///
-/// `#[derive(Element)]` writes this for each control; a hand-written [`Element`] calls it once.
+/// `#[element]` writes this for each control; a hand-written [`Element`] calls it once.
 /// The calling crate needs no `linkme` dependency, and needn't import `Any` or `Element`.
 #[macro_export]
 macro_rules! element_type {

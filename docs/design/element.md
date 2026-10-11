@@ -1,8 +1,8 @@
 # Design: elements
 
-Issue: #42. Implemented by four pull requests under #42, in order: A (`artic-element`), B (`CommonProperties`), C (`#[derive(Element)]`), D (accessibility and composition). Related: #41 (layout), #33 (scene composition), #84 (`ContentState`, `TemplateState`), #241 (`linkme` on wasm).
+Issue: #42. Implemented by pull requests under #42, in order: A (`artic-element`), B (the common properties), B2 (the property groups), C (`#[element]`), D (accessibility and composition). Related: #41 (layout), #33 (scene composition), #84 (`ContentState`, `TemplateState`), #241 (`linkme` on wasm).
 
-Every control has the same body: a size, a margin, an alignment, a visibility, an opacity. WPF gives it to them through a base class, `FrameworkElement`. Rust has no class inheritance, so artic gives it through composition: a control embeds a `CommonProperties`, and `#[derive(Element)]` writes the code that connects the two. This document fixes the traits, the common properties and what the derive writes.
+Every control has the same body: a size, a margin, an alignment, a visibility, an opacity. WPF gives it to them through a base class, `FrameworkElement`. Rust has no class inheritance, so artic gives it through composition: a control is marked `#[element]`, which gives it four property groups and writes the code that connects them to the control. This document fixes the traits, the groups and what `#[element]` writes.
 
 ## 1. Pieces
 
@@ -14,8 +14,8 @@ Every control has the same body: a size, a margin, an alignment, a visibility, a
 | `ElementType` | `artic-element` | How the pipeline finds a node's `&dyn Element` |
 | `HitTestCx`, `EventCx`, `RenderCx`, `AccessCx`, `HitTestResult`, `Handled` | `artic-element` | Placeholders M3 fills in, enough for the defaults |
 | `InputEvent` | `artic-core` | Placeholder input data, named to avoid `Event<A>`, the field type |
-| `CommonProperties`, `Visibility`, `Cursor`, `Classes` | `artic-element` | The properties every control has |
-| `#[derive(Element)]`, `#[derive(XamlProperties)]` | `artic-macros` | The two new derives |
+| `LayoutProperties`, `AppearanceProperties`, `InteractionProperties`, `IdentityProperties`, `Visibility`, `Cursor`, `Classes` | `artic-element` | The properties every control has, in four groups |
+| `#[element]`, `#[derive(XamlProperties)]` | `artic-macros` | The element attribute and the group derive |
 
 ## 2. The traits
 
@@ -31,6 +31,9 @@ pub trait Element: Object + Layoutable {
 }
 
 pub trait ElementImpl {
+  /// Changes the control's defaults, with `Property::set_default`. Called once, when the control
+  /// is created.
+  fn defaults(&self) {}
   /// The content's size within `available`, which already excludes the margin and is held within
   /// the element's limits.
   fn measure_override(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size { Size::ZERO }
@@ -38,7 +41,7 @@ pub trait ElementImpl {
   fn arrange_override(&self, cx: &mut LayoutCx<'_>, size: Size) {}
   fn render(&self, cx: &mut RenderCx<'_>, scene: &mut SceneBuilder) {}
   fn on_event(&mut self, cx: &mut EventCx<'_>, event: &InputEvent) -> Handled { Handled::No }
-  /// Adds the control's role, name, value and actions to the default node `CommonProperties` built.
+  /// Adds the control's role, name, value and actions to the default node built from the groups.
   fn accessibility(&self, cx: &AccessCx<'_>, node: &mut accesskit::Node) {}
   /// Clips the element and its descendants, in its own coordinates, for its arranged `size`.
   fn clip(&self, size: Size) -> Option<Clip> { None }
@@ -50,29 +53,34 @@ pub trait ElementImpl {
 
 - The supertrait is `Object`, the trait in `artic-core`; spec §7's `XamlObject` is renamed to match. Not every node comes from markup: builder-made and test nodes implement `Object` too.
 - `Layoutable` (#41) brings `measure` and `arrange`, so `Element` adds only what layout doesn't need.
-- `Element` is what the pipeline calls; `ElementImpl` is what the author writes. The derive connects them, so an author can't skip the shared work by overriding the wrong method. A control with no content writes `impl ElementImpl for Spacer {}`.
+- `Element` is what the pipeline calls; `ElementImpl` is what the author writes. `#[element]` connects them, so an author can't skip the shared work by overriding the wrong method. A control with no content writes `impl ElementImpl for Spacer {}`.
 
-## 3. What the derive writes
+## 3. What `#[element]` writes
 
-`#[derive(Element)]` requires a field `common: CommonProperties` and writes `Layoutable` and `Element` for the struct:
+`#[element]` is an attribute on the control's struct, not a derive, because it adds fields: a derive can only add items next to a struct. It:
 
-| Method | Shared work, from `CommonProperties` | Then calls |
+- adds four fields, `#[xaml(flatten)] pub layout: LayoutProperties`, `appearance: AppearanceProperties`, `interaction: InteractionProperties` and `identity: IdentityProperties`. The names are reserved: a field of the struct with one of them is an error that says `#[element]` adds it;
+- adds `#[derive(XamlType)]`, so the derive sees the added fields whatever order the attributes are written in; the struct's own `#[xaml(...)]` attributes are kept;
+- makes the type's `Default` call `ElementImpl::defaults` once, after building the fields (section 5);
+- writes `Layoutable` and `Element` for the struct:
+
+| Method | Shared work, from the groups | Then calls |
 | --- | --- | --- |
-| `measure` | `Collapsed`: returns zero, children not measured. Otherwise #41's `measure_with`: margin off, limits on | `measure_override` |
+| `measure` | `layout`, with `appearance.visibility`. `Collapsed`: returns zero, children not measured. Otherwise #41's `measure_with`: margin off, limits on | `measure_override` |
 | `arrange` | `Collapsed`: returns, children not arranged, since `arrange_with` would stretch a zero size to the slot. Otherwise #41's `arrange_with`: margin, limits, alignment | `arrange_override` with the content's size |
 | `render` | | `ElementImpl::render`; a hidden subtree is skipped by composition (section 7) |
-| `hit_test` | not `Visible`, or `IsHitTestVisible` false: a miss. Otherwise the trait default, `cx.bounds_test(point)` | |
-| `on_event` | `IsEnabled` false (the inherited value): `Handled::No`, the control isn't called | `ElementImpl::on_event` |
+| `hit_test` | `appearance.visibility` not `Visible`, or `interaction.is_hit_test_visible` false: a miss. Otherwise the trait default, `cx.bounds_test(point)` | |
+| `on_event` | `interaction.is_enabled` false (the inherited value): `Handled::No`, the control isn't called | `ElementImpl::on_event` |
 | `accessibility` | builds the default node (section 7) | `ElementImpl::accessibility`, which adds to it |
-| `layers` | `Opacity` (clamped), `RenderTransform`, `Visibility` and `ZIndex` as a `Layers` (section 7) | `ElementImpl::clip`, for the clip layer |
+| `layers` | `appearance`: `Opacity` (clamped), `RenderTransform`, `Visibility` and `ZIndex` as a `Layers` (section 7) | `ElementImpl::clip`, for the clip layer |
 
-An element doesn't always fill the slot its parent offers: a margin or an alignment makes its box smaller. `CommonProperties::arrange` reports that box, the slot less the margin, sized and aligned, with `LayoutCx::set_bounds`, so `LayoutManager::rect` is the element's box rather than its slot, and its children are placed relative to it. Each node keeps the offered slot separately, so being offered the same slot still skips arranging.
+An element doesn't always fill the slot its parent offers: a margin or an alignment makes its box smaller. `LayoutProperties::arrange` reports that box, the slot less the margin, sized and aligned, with `LayoutCx::set_bounds`, so `LayoutManager::rect` is the element's box rather than its slot, and its children are placed relative to it. Each node keeps the offered slot separately, so being offered the same slot still skips arranging.
 
-A struct without `common: CommonProperties` fails to compile with an error that names the missing field.
+A struct that declares a field named `layout`, `appearance`, `interaction` or `identity` fails to compile with an error that says `#[element]` adds it.
 
 ### State structs
 
-For a field marked `#[element(state)]`, the derive implements `HasState<S>` for the struct, where `S` is the field's type:
+For a field marked `#[element(state)]`, `#[element]` implements `HasState<S>` for the struct, where `S` is the field's type:
 
 ```rust
 pub trait HasState<S> {
@@ -80,9 +88,9 @@ pub trait HasState<S> {
   fn state_mut(&mut self) -> &mut S;
 }
 
-#[derive(Debug, Element, XamlType)]
+#[element]
+#[derive(Debug)]
 pub struct Button {
-  #[xaml(flatten)] pub common: CommonProperties,
   #[element(state)] #[xaml(flatten)] pub content: ContentState, // HasState<ContentState>; its properties are Button's
 }
 
@@ -97,11 +105,11 @@ pub trait HasContent: Element + HasState<ContentState> {
 impl<T: Element + HasState<ContentState>> HasContent for T {}
 ```
 
-The rule, as documented on the derive: for each `#[element(state)]` field of type `S`, the derive implements `HasState<S>` for the struct, and the traits built on a state are implemented through `HasState<S>` by a blanket impl. A state trait therefore holds only methods its state fully determines, each with a default that reads the state; it names the state type (`HasState::<ContentState>::state(self)`) because a struct can have several. A blanket impl can't be overridden for one type, so anything a control customizes is an `ElementImpl` hook instead (section 2). A state struct that holds properties, such as `ContentState`'s `Property<Content>`, is also a property group: it derives `XamlProperties`, and its field is marked `#[xaml(flatten)]` too, so its properties are registered and visited like `CommonProperties`'s. The two attributes are read by different derives: `element(state)` by `Element`, `xaml(flatten)` by `XamlType`. A struct has at most one field per state type, since two would mean two `impl HasState<S>` for the same `S`. The derive reports two fields whose types are written the same way, naming both; two names for one type, such as an alias, reach rustc's conflicting-implementations error (E0119) instead, which the rule's rustdoc explains. There is no table of type names in the macro, so aliases work, and any crate, apps included, can add a state struct and its trait without changing `artic-macros`.
+The rule, as documented on `#[element]`: for each `#[element(state)]` field of type `S`, it implements `HasState<S>` for the struct, and the traits built on a state are implemented through `HasState<S>` by a blanket impl. A state trait therefore holds only methods its state fully determines, each with a default that reads the state; it names the state type (`HasState::<ContentState>::state(self)`) because a struct can have several. A blanket impl can't be overridden for one type, so anything a control customizes is an `ElementImpl` hook instead (section 2). A state struct that holds properties, such as `ContentState`'s `Property<Content>`, is also a property group: it derives `XamlProperties`, and its field is marked `#[xaml(flatten)]` too, so its properties are registered and visited like the groups'. The two attributes are read by different macros: `element(state)` by `#[element]`, which removes it, `xaml(flatten)` by `XamlType`. A struct has at most one field per state type, since two would mean two `impl HasState<S>` for the same `S`. `#[element]` reports two fields whose types are written the same way, naming both; two names for one type, such as an alias, reach rustc's conflicting-implementations error (E0119) instead, which the rule's rustdoc explains. There is no table of type names in the macro, so aliases work, and any crate, apps included, can add a state struct and its trait without changing `artic-macros`.
 
 ## 4. Finding a node's `Element`
 
-`UiTree` stores `Box<dyn Object>`, and Rust can't downcast a `&dyn Object` to a trait `artic-core` doesn't know. `#[derive(Element)]` therefore adds the type to a `linkme` slice in `artic-element`:
+`UiTree` stores `Box<dyn Object>`, and Rust can't downcast a `&dyn Object` to a trait `artic-core` doesn't know. `#[element]` therefore adds the type to a `linkme` slice in `artic-element`:
 
 ```rust
 pub struct ElementType {
@@ -120,36 +128,49 @@ cast: |object| (object as &dyn ::core::any::Any).downcast_ref::<Border>().map(|b
 cast_mut: |object| (object as &mut dyn ::core::any::Any).downcast_mut::<Border>().map(|border| border as &mut dyn __artic::Element),
 ```
 
-The pipeline builds a `TypeId → ElementType` map once. `cast` answers `LayoutNodes` and the render `Nodes`; `cast_mut` serves input dispatch, which calls `on_event(&mut self)`. A hand-written `Element` registers with `element_type!(TestElement)`, the line the derive emits. App controls need no registration call, as spec §7 requires. `linkme` doesn't support wasm yet; the registry has the same limit, and #241 fixes both.
+The pipeline builds a `TypeId → ElementType` map once. `cast` answers `LayoutNodes` and the render `Nodes`; `cast_mut` serves input dispatch, which calls `on_event(&mut self)`. A hand-written `Element` registers with `element_type!(TestElement)`, the line `#[element]` emits. App controls need no registration call, as spec §7 requires. `linkme` doesn't support wasm yet; the registry has the same limit, and #241 fixes both.
 
-## 5. `CommonProperties`
+## 5. The property groups
 
-`CommonProperties` is a property group, not a XAML type: `#[derive(XamlProperties)]` gives it its keys, `PROPERTIES`, `visit_properties` and `Default`, and markup can't create one. Its keys are generated once, so every control shares them, and `IsEnabled` inherits across control types.
+The properties every control has come in four groups, each in the field `#[element]` adds: `layout: LayoutProperties` (where the element sits and how big it is), `appearance: AppearanceProperties` (how it's drawn), `interaction: InteractionProperties` (how it takes input) and `identity: IdentityProperties` (what selectors and code find it by). Control code reads `self.layout.margin` or `self.interaction.is_enabled`, and what is special about a control stays in its own fields. Each group is a property group, not a XAML type: `#[derive(XamlProperties)]` gives it its keys, `PROPERTIES`, `visit_properties` and `Default`, and markup can't create one. Its keys are generated once, so every control shares them, and `IsEnabled` inherits across control types. `Visibility` is in `appearance`, where people look for showing and hiding, though `Collapsed` also changes layout: `LayoutProperties::measure` and `arrange` take it as an argument.
 
-| Property | Type | Default | Affects | Inherits |
-| --- | --- | --- | --- | --- |
-| `Width`, `Height` | `Option<f32>` | `None` (size to content) | layout | |
-| `MinWidth`, `MinHeight` | `f32` | `0` | layout | |
-| `MaxWidth`, `MaxHeight` | `f32` | infinity | layout | |
-| `Margin` | `Thickness` | zero | layout | |
-| `HorizontalAlignment`, `VerticalAlignment` | the #41 enums | `Stretch` | layout | |
-| `Visibility` | `Visibility` | `Visible` | layout, render | |
-| `IsEnabled` | `bool` | `true` | render | yes |
-| `Opacity` | `f32`; the property keeps any value, and composition clamps it (section 7) | `1` | render | |
-| `RenderTransform` | `Option<Transform>` | `None` | render | |
-| `ZIndex` | `i32`: draw and hit-test order among siblings | `0` | render | |
-| `Classes` | `Classes` (space-separated names) | empty | style, through its signal (#107) | |
-| `Name` | `Option<String>` | `None` | style, through its signal (#107) | |
-| `Cursor` | `Cursor` | `Arrow` | | |
-| `Focusable` | `bool` | `false` | render (clears cached hit tests: touch inflates focusable targets, §12) | |
-| `IsHitTestVisible` | `bool` | `true` | render (clears cached hit tests, §12) | |
-| `ToolTip` | `Option<String>` | `None` | | |
+| Group | Property | Type | Default | Affects | Inherits |
+| --- | --- | --- | --- | --- | --- |
+| `layout` | `Width`, `Height` | `Option<f32>` | `None` (size to content) | layout | |
+| `layout` | `MinWidth`, `MinHeight` | `f32` | `0` | layout | |
+| `layout` | `MaxWidth`, `MaxHeight` | `f32` | infinity | layout | |
+| `layout` | `Margin` | `Thickness` | zero | layout | |
+| `layout` | `HorizontalAlignment`, `VerticalAlignment` | the #41 enums | `Stretch` | layout | |
+| `appearance` | `Visibility` | `Visibility` | `Visible` | layout, render | |
+| `interaction` | `IsEnabled` | `bool` | `true` | render | yes |
+| `appearance` | `Opacity` | `f32`; the property keeps any value, and composition clamps it (section 7) | `1` | render | |
+| `appearance` | `RenderTransform` | `Option<Transform>` | `None` | render | |
+| `appearance` | `ZIndex` | `i32`: draw and hit-test order among siblings | `0` | render | |
+| `identity` | `Classes` | `Classes` (space-separated names) | empty | style, through its signal (#107) | |
+| `identity` | `Name` | `Option<String>` | `None` | style, through its signal (#107) | |
+| `interaction` | `Cursor` | `Cursor` | `Arrow` | | |
+| `interaction` | `Focusable` | `bool` | `false` | render (clears cached hit tests: touch inflates focusable targets, §12) | |
+| `interaction` | `IsHitTestVisible` | `bool` | `true` | render (clears cached hit tests, §12) | |
+| `interaction` | `ToolTip` | `Option<String>` | `None` | | |
 
 `DataContext` arrives with data binding (M5), whose `DataRef` is its type and which makes it inherit. An `Option<NodeId>` now would make it a child-element slot, since that's what a `NodeId` property means to the registry.
 
 `RenderTransform` is written as CSS transform functions: `translate(x, y)` or `translate(x)`, `rotate(degrees)`, `scale(s)` or `scale(x, y)`, such as `RenderTransform="translate(10, 0) rotate(45)"`. As in CSS, whitespace between functions is optional, none may come between a name and its parenthesis, and the rightmost function applies to the element first: that example rotates, then moves.
 
-The size properties and the alignments are what #41's `Sizing` holds; `CommonProperties` builds a `Sizing` from them for `measure_with` and `arrange_with`.
+The size properties and the alignments are what #41's `Sizing` holds; `LayoutProperties` builds a `Sizing` from them for `measure_with` and `arrange_with`.
+
+A control changes a default in `ElementImpl::defaults`, which the type's `Default` calls once:
+
+```rust
+impl ElementImpl for Button {
+  fn defaults(&self) {
+    self.interaction.focusable.set_default(true);
+    self.interaction.cursor.set_default(Cursor::Hand);
+  }
+}
+```
+
+`Property::set_default` sets the `Default` level, as Avalonia's `OverrideDefaultValue` does, so an inherited value, a style, a binding or markup all win over it. Overrides are plain code, one line each, for any value type, the control's own properties included.
 
 `Visibility`, `Cursor` and `Classes` live in `artic-element`, with `#[derive(XamlEnum)]` for the enums. The alignment enums already live in `artic-layout`, which is on the registry's layer (1) and so can't depend on it, nor on `artic-macros`'s registry output; they get `FromStr` the way `Thickness` does.
 
@@ -171,54 +192,58 @@ Whether an element and all its ancestors are visible is computed when needed, fo
 
 ## 6. Registry: flattened groups
 
-`#[derive(XamlType)]` skips fields without `#[xaml]`, so a plain `common: CommonProperties` would be missing from the registry and from `visit_properties`: `Margin` couldn't be set from markup, changing it wouldn't mark the node dirty, and `IsEnabled` wouldn't inherit. A control marks the field:
+`#[derive(XamlType)]` skips fields without `#[xaml]`, so a plain group field would be missing from the registry and from `visit_properties`: `Margin` couldn't be set from markup, changing it wouldn't mark the node dirty, and `IsEnabled` wouldn't inherit. The fields `#[element]` adds are marked `#[xaml(flatten)]`:
 
 ```rust
-#[derive(Debug, Element, XamlType)]
+#[element]
+#[derive(Debug)]
 #[xaml(namespace = "https://artic.rs/ui", content = child)]
 pub struct Border {
-  #[xaml(flatten)] pub common: CommonProperties,
+  // #[element] adds: #[xaml(flatten)] pub layout: LayoutProperties, and the other three groups
   #[xaml] pub child: Property<Option<NodeId>>,
 }
 ```
 
 For a flattened field, `derive(XamlType)`:
 
-- calls `self.common.visit_properties(visit)` from the struct's own `visit_properties`;
-- adds `PropertyGroupInfo { field: "common", properties: <CommonProperties as PropertyGroup>::PROPERTIES }` to the type's `TypeInfo.groups`.
+- calls `self.layout.visit_properties(visit)` from the struct's own `visit_properties`;
+- adds `PropertyGroupInfo { field: "layout", properties: <LayoutProperties as PropertyGroup>::PROPERTIES }` to the type's `TypeInfo.groups`.
+
+A control has one entry per group, in the order the fields are declared.
 
 A state struct that holds properties is flattened the same way.
 
-The loader's per-owner thunks (M2, [loader values](loader-values.md)) take a tree and a node and downcast the node to the property's owner, so one shared `CommonProperties` thunk couldn't reach a `Border`'s margin. They'll need descriptors generated per owner, through generics: `Flattened<G>`, which the derive implements to reach the group, and `GroupOf<G, O>`, whose associated `const` the compiler instantiates for each control. Both arrive with those thunks; until then, `PropertyInfo` holds no thunk, and one list per group serves every owner.
+The loader's per-owner thunks (M2, [loader values](loader-values.md)) take a tree and a node and downcast the node to the property's owner, so one shared `LayoutProperties` thunk couldn't reach a `Border`'s margin. They'll need descriptors generated per owner, through generics: `Flattened<G>`, which the derive implements to reach the group, and `GroupOf<G, O>`, whose associated `const` the compiler instantiates for each control. Both arrive with those thunks; until then, `PropertyInfo` holds no thunk, and one list per group serves every owner.
 
-Lookups search the type's own properties, then each group, and the compiler writes `node.common.margin.set(...)`. A name must be unique across a type and all its groups: a control property named `Margin` would otherwise hide `CommonProperties`'s, so markup would set a value that layout never reads. The derive can't see a group's names, which come from another crate, so the registry checks when it's built and reports a clash as a new `Duplicate::Property`, as it already does for duplicate type names. A slice of groups, not one merged list, because a `const` can't join two slices whose lengths come from different crates. Spec §3's `Border` gains the attribute.
+Lookups search the type's own properties, then each group, and the compiler writes `node.layout.margin.set(...)`. A name must be unique across a type and all its groups: a control property named `Margin` would otherwise hide `LayoutProperties`'s, so markup would set a value that layout never reads. The derive can't see a group's names, which come from another crate, so the registry checks when it's built and reports a clash as a new `Duplicate::Property`, as it already does for duplicate type names. A slice of groups, not one merged list, because a `const` can't join two slices whose lengths come from different crates. Spec §3's `Border` gains the attribute.
 
 ## 7. Accessibility and composition
 
-`CommonProperties` builds the default accesskit node: the arranged bounds, and disabled when `IsEnabled` is false. Only `Visible` elements get a node at all: like composition and hit testing, the accesskit walk skips a node that isn't `Visible` together with its whole subtree, so a `Visible` child of a hidden parent is never exposed. The tree is updated from render-dirty nodes, and a change of `Visibility` marks only the node that changed, so a node that becomes `Visible` again has its whole accessible subtree rebuilt, not just its own node; otherwise its unchanged descendants would stay missing. Layout moves nodes without marking them render-dirty, so the update also covers every node `LayoutManager` gave a new rectangle. Each node's bounds are in its parent's coordinates, placed with accesskit's per-node transform, so a moved node updates alone and its descendants don't change. Each control adds its role, name, value and actions in `ElementImpl::accessibility`, which the derive calls with that node (#161 adds the attached properties).
+The shared work builds the default accesskit node: the arranged bounds, and disabled when `IsEnabled` is false. Only `Visible` elements get a node at all: like composition and hit testing, the accesskit walk skips a node that isn't `Visible` together with its whole subtree, so a `Visible` child of a hidden parent is never exposed. The tree is updated from render-dirty nodes, and a change of `Visibility` marks only the node that changed, so a node that becomes `Visible` again has its whole accessible subtree rebuilt, not just its own node; otherwise its unchanged descendants would stay missing. Layout moves nodes without marking them render-dirty, so the update also covers every node `LayoutManager` gave a new rectangle. Each node's bounds are in its parent's coordinates, placed with accesskit's per-node transform, so a moved node updates alone and its descendants don't change. Each control adds its role, name, value and actions in `ElementImpl::accessibility`, which `#[element]` calls with that node (#161 adds the attached properties).
 
-`Opacity`, `RenderTransform`, `Visibility` and `ZIndex` feed #33's per-node layers, not each control's `render`. The derive writes `Element::layers` from `CommonProperties`, and the pipeline's render `Nodes` answers `layers(tree, node)` by casting the node with `ElementType::cast` and calling it with the node's arranged size from `LayoutManager`, so app-defined controls work the same way: opacity becomes the node's opacity layer, the transform its transform layer, and a control's `ElementImpl::clip`, such as a scroll viewer's viewport, its clip layer. Visibility needs a layer of its own: today the compositor's traversal, the private `Walk::visit` in `compose.rs`, always visits a node's visual children, so hiding only the node's own drawing would still draw its children. `Layers` gains `visible: bool`, default `true`, and `visit` skips a node with `visible: false` together with its whole subtree. `Hidden` and `Collapsed` answer `visible: false`.
+`Opacity`, `RenderTransform`, `Visibility` and `ZIndex` feed #33's per-node layers, not each control's `render`. `#[element]` writes `Element::layers` from `appearance`, and the pipeline's render `Nodes` answers `layers(tree, node)` by casting the node with `ElementType::cast` and calling it with the node's arranged size from `LayoutManager`, so app-defined controls work the same way: opacity becomes the node's opacity layer, the transform its transform layer, and a control's `ElementImpl::clip`, such as a scroll viewer's viewport, its clip layer. Visibility needs a layer of its own: today the compositor's traversal, the private `Walk::visit` in `compose.rs`, always visits a node's visual children, so hiding only the node's own drawing would still draw its children. `Layers` gains `visible: bool`, default `true`, and `visit` skips a node with `visible: false` together with its whole subtree. `Hidden` and `Collapsed` answer `visible: false`.
 
-`Opacity` is a plain `f32`, so a Rust write can set any value, while `Layers.opacity` must be from 0 to 1. The property itself keeps whatever was set, and reading it returns that value. Only `CommonProperties`'s building of the node's `Layers` clamps it to 0–1, with NaN counting as 1, so composition never sees an invalid value.
+`Opacity` is a plain `f32`, so a Rust write can set any value, while `Layers.opacity` must be from 0 to 1. The property itself keeps whatever was set, and reading it returns that value. Only the shared work's building of the node's `Layers` clamps it to 0–1, with NaN counting as 1, so composition never sees an invalid value.
 
 `ZIndex` orders siblings. `Layers` gains `z_index: i32`, default `0`, and `visit` draws a node's children sorted by it, stably, so equal values keep tree order. The hit-test walk (#74) uses the same order, reversed, so what is hit is what is drawn on top.
 
 `Classes` and `Name` decide which style selectors match (§8) and have no direct effect on layout or rendering. Like every property, each is a signal, and the style index (#107) learns of changes by depending on them and re-evaluates the selectors, so they need no `Affects` flag. A style that starts or stops matching changes properties such as `Width` or `Opacity`, and those changes carry their own invalidation.
 
-Hit testing follows the same rule: the derive's `hit_test` misses when the element isn't `Visible` or its `IsHitTestVisible` is false, and the hit-test walk (#74) doesn't descend into such a node. `IsHitTestVisible` is the drawn-but-click-through case that `Visibility` can't express, for overlays and decorations; spec §12 relies on it.
+Hit testing follows the same rule: `#[element]`'s `hit_test` misses when the element isn't `Visible` or its `IsHitTestVisible` is false, and the hit-test walk (#74) doesn't descend into such a node. `IsHitTestVisible` is the drawn-but-click-through case that `Visibility` can't express, for overlays and decorations; spec §12 relies on it.
 
-A disabled element is different: it gets no input, but it still blocks it. Hit testing finds it as usual, so a click on a disabled button lands on the button and doesn't fall through to what's behind it, as with HTML's `<button disabled>`. The derive's `on_event` then returns `Handled::No` without calling `ElementImpl::on_event` when `IsEnabled` is false, so no control has to check it. `IsEnabled` inherits, so a disabled panel disables everything inside it, for pointer, keyboard and every other input. Focus navigation (#78) skips disabled elements. Tooltips come from the pipeline's hover tracking rather than `on_event`, so a disabled control can still show one.
+A disabled element is different: it gets no input, but it still blocks it. Hit testing finds it as usual, so a click on a disabled button lands on the button and doesn't fall through to what's behind it, as with HTML's `<button disabled>`. `#[element]`'s `on_event` then returns `Handled::No` without calling `ElementImpl::on_event` when `IsEnabled` is false, so no control has to check it. `IsEnabled` inherits, so a disabled panel disables everything inside it, for pointer, keyboard and every other input. Focus navigation (#78) skips disabled elements. Tooltips come from the pipeline's hover tracking rather than `on_event`, so a disabled control can still show one.
 
 ## 8. Pull requests
 
 | PR | Contents | Done when |
 | --- | --- | --- |
 | A | `artic-element`: `Element`, `ElementImpl`, `HasState`, `ElementType` and `element_type!`, the placeholder contexts; `InputEvent` in `artic-core` | a hand-written element is laid out through `LayoutManager` by way of the cast table |
-| B | `CommonProperties` with its 20 properties and `#[derive(XamlProperties)]`, the enums, `FromStr` for the alignments and `Transform`, `#[xaml(flatten)]` in `derive(XamlType)`, `PropertyGroupInfo`, `LayoutCx::set_bounds`, `Duplicate::Property`, the measure and arrange outline, `LayoutManager` forgetting unmeasured children | `common_properties_registered`, `margin_and_alignment_layout`, `min_max_clamp_desired_size`, `collapsed_takes_no_space` (including a child made dirty after its parent collapsed), a registry test where a control property clashes with a group's |
-| C | `#[derive(Element)]`: the outline from section 3, the missing-`common` error, `#[element(state)]` and its duplicate-state error, `crate_root` taking each derive's candidate crates | the trybuild cases: missing `common`, two fields of one state type, and a test-only state giving a test trait through a blanket impl; a unit test that a disabled element's hook isn't called |
-| D | the default accesskit node; opacity, transform and visibility in composition, with `Layers.visible` | `common_accessibility_node`; a pixel test where opacity changes the drawn color; a hidden parent's child isn't drawn and isn't in the accesskit tree, and is back in both once the parent is `Visible` again; a layout-only change, such as a new `Margin`, updates the node's accesskit bounds; siblings drawn by `ZIndex`, ties in tree order; an out-of-range opacity clamped |
+| B | `ElementBase` (now the property groups) with its 20 properties and `#[derive(XamlProperties)]`, the enums, `FromStr` for the alignments and `Transform`, `#[xaml(flatten)]` in `derive(XamlType)`, `PropertyGroupInfo`, `LayoutCx::set_bounds`, `Duplicate::Property`, the measure and arrange outline, `LayoutManager` forgetting unmeasured children | `element_base_properties_registered` (now `groups_registered`), `margin_and_alignment_layout`, `min_max_clamp_desired_size`, `collapsed_takes_no_space` (including a child made dirty after its parent collapsed), a registry test where a control property clashes with a group's |
+| B2 | the four property groups in `artic-element`, replacing `CommonProperties`; `Property::set_default` | `groups_registered`, `set_default_loses_to_every_other_level` |
+| C | `#[element]`: the four fields and their reserved names, `#[derive(XamlType)]` added, `ElementImpl::defaults` called from `Default`, the outline from section 3, `#[element(state)]` and its duplicate-state error, `crate_root` taking each macro's candidate crates | the trybuild cases: a field with a reserved name, two fields of one state type, an unknown setting; a test-only state giving a test trait through a blanket impl; a control whose `defaults` makes it focusable, with a style setter winning over that default; a unit test that a disabled element's hook isn't called |
+| D | the default accesskit node; opacity, transform and visibility in composition, with `Layers.visible` | `default_accessibility_node`; a pixel test where opacity changes the drawn color; a hidden parent's child isn't drawn and isn't in the accesskit tree, and is back in both once the parent is `Visible` again; a layout-only change, such as a new `Margin`, updates the node's accesskit bounds; siblings drawn by `ZIndex`, ties in tree order; an out-of-range opacity clamped |
 
 ## 9. Spec changes
 
 - §7: `Element: Object + Layoutable` instead of `Element: XamlObject`; `ElementImpl` and `HasState` added; `IsVisible` replaced by `Visibility` and its table.
-- §3: `Border`'s `common` field gains `#[xaml(flatten)]`; `TypeInfo` gains `groups`.
+- §3: `Border` gains `#[element]`; `TypeInfo` gains `groups`.

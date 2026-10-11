@@ -151,7 +151,7 @@ mod tests {
     inherits: false,
   }];
   static GROUPS: [PropertyGroupInfo; 1] = [PropertyGroupInfo {
-    field: "common",
+    field: "layout",
     properties: &GROUP,
   }];
 
@@ -164,7 +164,7 @@ mod tests {
     };
 
     let found = info.property("Margin").expect("Margin, from the group");
-    assert_eq!(found.group, Some("common"));
+    assert_eq!(found.group, Some("layout"));
     assert!(info.property("Padding").is_none());
   }
 

@@ -11,7 +11,7 @@ use artic_render::SceneBuilder;
 use pretty_assertions::assert_eq;
 
 /// A panel that stacks its children vertically, written as a control would be: its own layout in
-/// `ElementImpl`, and the `Element` outline by hand, as `#[derive(Element)]` will write it.
+/// `ElementImpl`, and the `Element` outline by hand, as `#[element]` will write it.
 #[derive(Debug)]
 struct Column;
 
