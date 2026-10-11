@@ -22,9 +22,9 @@ All in `artic-platform`, which depends on `artic-element` to drive the tree as `
 | `Pipeline` | One surface, no host: `prepare` runs layout and composition for the surface's root and returns a `Frame`; `present` hands it to the renderer. Owns the surface's `LayoutManager` and `Compositor` |
 | `Frame` | The surface's `SurfaceId`, size and scale, the owned `Scene`, and the stats so far. `Send` |
 | `FrameStats` | `{ measured: u32, arranged: u32, recorded: u32, rendered: bool }`, `Copy + Eq + Default` |
-| `Hooks` | Per-stage lists of boxed closures: `before_layout`, `after_present`, `wants_frame` |
+| `Hooks` | Per-stage lists of boxed closures: `before_layout`, `after_present`, `wants_frame`, and `on_error` for a frame that failed |
 | `Runner<R: Renderer>` | `impl AppHandler`. Owns the `UiTree`, the renderer, the `Hooks` and the `ElementTypes` cast table, built once and lent to every pipeline, and per surface its root, latest `SurfaceInfo`, a `needs_frame` mark, its `Pipeline` and the last `FrameStats` |
-| `run(host, runner) -> Result<(), Error>` | Checks `renderer.accepts(host.targets())`, then `host.run(runner)`; returns the error a frame stored, if any |
+| `run(host, runner) -> Result<(), Error>` | Checks `renderer.accepts(host.targets())`, then `host.run(runner)`; returns the error a frame stored, if any, when the host's `run` returns after the loop ends |
 | `Error` | `Unsupported(TargetKind)`: the renderer can't draw on what the host offers; `Render(RenderError)`: a frame failed |
 
 ```rust
@@ -39,6 +39,7 @@ impl Hooks {
   pub fn before_layout(&mut self, hook: impl FnMut(&mut UiTree, NodeId, &SurfaceInfo) + 'static);
   pub fn after_present(&mut self, hook: impl FnMut(&UiTree, NodeId, &FrameStats) + 'static);
   pub fn wants_frame(&mut self, hook: impl FnMut() -> bool + 'static);
+  pub fn on_error(&mut self, hook: impl FnMut(&Error) + 'static);
 }
 ```
 
@@ -47,6 +48,8 @@ The runner owns the tree and lends it to each stage and hook in turn, so the tre
 Only stages that run inside a frame are hooks. Features that react to host events, such as the OS color scheme (#118), safe-area and keyboard insets (#147, #150) and platform defaults (#152, #156), arrive with their `HostEvent` variants and their own handlers.
 
 Each surface has a pipeline of its own because each cache is cleaned per root: `LayoutManager::run` drops what it knew about nodes outside the root it lays out, and `Compositor::compose` drops the fragments it didn't visit, so two windows sharing one would discard each other's work on every frame.
+
+Window roots are disjoint: a node has one visual parent, so it belongs to at most one window, and `Runner::window` panics when given a root that is already a window's root or inside one. Each pipeline therefore clears layout and render flags only on its own window's nodes, and one window's frame never consumes another's invalidation.
 
 ## 3. From a write to a request
 
@@ -107,7 +110,7 @@ A node that isn't an element gets default layers and records nothing.
 | `event(Suspended)`, `event(Resumed)` | nothing beyond settling; the surfaces come and go through `surface_lost` and `surface_changed` |
 | `woken` | settles; #79 connects the dispatcher's cross-thread `post` here |
 
-`AppHandler` calls can't return errors. On `RenderError::SurfaceLost` the runner calls `renderer.surface_lost(id)`, which drops what the renderer kept for the surface (`artic-vello`'s swapchain), then marks the surface and asks for a frame, so the next one rebuilds it. Any other render error is kept, the runner calls `cx.exit()`, and `run` returns it as `Error::Render` once the host returns, so a launcher whose `main` returns a `Result` reports it.
+`AppHandler` calls can't return errors. On `RenderError::SurfaceLost` the runner calls `renderer.surface_lost(id)`, which drops what the renderer kept for the surface (`artic-vello`'s swapchain), then marks the surface and asks for a frame, so the next one rebuilds it. Any other render error is passed to every `on_error` hook and kept, and the runner calls `cx.exit()`. A host whose `run` blocks until the loop ends, such as `artic-winit`, returns to `run`, which returns the kept error as `Error::Render`, so a launcher whose `main` returns a `Result` reports it. A host whose `run` returns at once, such as a browser's, has already returned when a frame fails, so `on_error` is how an app on it learns of the failure.
 
 ## 7. Stats
 
@@ -121,7 +124,7 @@ Each stage counts what it did: `LayoutManager::run` returns `LayoutStats { measu
 | `artic-layout` | `run_reports_measured_and_arranged`: a second run with nothing dirty reports zero; `run_reports_resized`: a node whose size changed is listed, one that only moved isn't |
 | `artic-render` | `compose_reports_recorded`: only render-dirty nodes count; `stale_node_is_recorded_again` |
 | `artic-platform` | `layout_offset_applies_after_render_transform`, `render_cx_has_the_arranged_size`, `frame_is_send` |
-| `artic-platform`, through `Runner`, a fake `HostContext` and a counting renderer on a `Pixels` target | `clean_frame_is_skipped`, `render_only_change_skips_layout`, `layout_change_remeasures_subtree`, `resize_invalidates_root`, `resized_node_is_recorded_again`, `windows_keep_their_own_caches`, `write_after_present_requests_one_frame`, `surface_lost_render_error_resets_the_renderer`, `style_write_lands_in_same_frame`, `wants_frame_requests_another`, `closing_last_window_exits`, `render_error_is_returned_from_run`, `mismatched_renderer_is_rejected` |
+| `artic-platform`, through `Runner`, a fake `HostContext` and a counting renderer on a `Pixels` target | `clean_frame_is_skipped`, `render_only_change_skips_layout`, `layout_change_remeasures_subtree`, `resize_invalidates_root`, `resized_node_is_recorded_again`, `windows_keep_their_own_caches`, `write_after_present_requests_one_frame`, `surface_lost_render_error_resets_the_renderer`, `style_write_lands_in_same_frame`, `wants_frame_requests_another`, `closing_last_window_exits`, `render_error_is_returned_from_run`, `render_error_reaches_on_error`, `window_root_inside_another_panics`, `mismatched_renderer_is_rejected` |
 
 An `artic-winit` example, `frames`, opens a window with one element through `Runner` and `artic_vello::Renderer`, changes a property once, and exits with an error if any frame runs in the last 500 ms of a 1.5 s run. The Windows and macOS CI jobs run it next to `smoke`. A quiet window, not a frame count, is what it asserts, so a transient resize at startup can't fail it.
 
