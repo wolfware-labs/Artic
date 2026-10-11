@@ -451,7 +451,7 @@ WPF two-pass measure/arrange with these rules:
 | `WrapPanel` | `Orientation`, `ItemWidth/ItemHeight` |
 | `Canvas` | `Canvas.Left/Top/Right/Bottom` |
 | `UniformGrid` | `Rows`, `Columns` |
-| `Panel` | common; `Children` collection, `Background` |
+| `Panel` | common properties; `Children` collection, `Background` |
 
 ### Control set (v1)
 

@@ -151,7 +151,7 @@ The pipeline builds a `TypeId → ElementType` map once. `cast` answers `LayoutN
 
 The size properties and the alignments are what #41's `Sizing` holds; `CommonProperties` builds a `Sizing` from them for `measure_with` and `arrange_with`.
 
-`Visibility`, `Cursor` and `Classes` live in `artic-controls`, with `#[derive(XamlEnum)]` for the enums. The alignment enums already live in `artic-layout`, which is on the registry's layer (1) and so can't depend on it, nor on `artic-macros`'s registry output; they get `FromStr` the way `Thickness` does.
+`Visibility`, `Cursor` and `Classes` live in `artic-element`, with `#[derive(XamlEnum)]` for the enums. The alignment enums already live in `artic-layout`, which is on the registry's layer (1) and so can't depend on it, nor on `artic-macros`'s registry output; they get `FromStr` the way `Thickness` does.
 
 ### Visibility
 
@@ -216,7 +216,7 @@ A disabled element is different: it gets no input, but it still blocks it. Hit t
 | A | `artic-element`: `Element`, `ElementImpl`, `HasState`, `ElementType` and `element_type!`, the placeholder contexts; `InputEvent` in `artic-core` | a hand-written element is laid out through `LayoutManager` by way of the cast table |
 | B | `CommonProperties` with its 20 properties and `#[derive(XamlProperties)]`, the enums, `FromStr` for the alignments and `Transform`, `#[xaml(flatten)]` in `derive(XamlType)`, `PropertyGroupInfo`, `LayoutCx::set_bounds`, `Duplicate::Property`, the measure and arrange outline, `LayoutManager` forgetting unmeasured children | `common_properties_registered`, `margin_and_alignment_layout`, `min_max_clamp_desired_size`, `collapsed_takes_no_space` (including a child made dirty after its parent collapsed), a registry test where a control property clashes with a group's |
 | C | `#[derive(Element)]`: the outline from section 3, the missing-`common` error, `#[element(state)]` and its duplicate-state error, `crate_root` taking each derive's candidate crates | the trybuild cases: missing `common`, two fields of one state type, and a test-only state giving a test trait through a blanket impl; a unit test that a disabled element's hook isn't called |
-| D | the default accesskit node; opacity, transform and visibility in composition, with `Layers.visible` | `base_accessibility_node`; a pixel test where opacity changes the drawn color; a hidden parent's child isn't drawn and isn't in the accesskit tree, and is back in both once the parent is `Visible` again; a layout-only change, such as a new `Margin`, updates the node's accesskit bounds; siblings drawn by `ZIndex`, ties in tree order; an out-of-range opacity clamped |
+| D | the default accesskit node; opacity, transform and visibility in composition, with `Layers.visible` | `common_accessibility_node`; a pixel test where opacity changes the drawn color; a hidden parent's child isn't drawn and isn't in the accesskit tree, and is back in both once the parent is `Visible` again; a layout-only change, such as a new `Margin`, updates the node's accesskit bounds; siblings drawn by `ZIndex`, ties in tree order; an out-of-range opacity clamped |
 
 ## 9. Spec changes
 

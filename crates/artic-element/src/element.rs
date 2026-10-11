@@ -45,8 +45,8 @@ pub trait Element: Object + Layoutable {
 ///
 /// `#[derive(Element)]` calls these from its [`Element`] implementation, after the shared work of
 /// [`CommonProperties`](crate::CommonProperties): margin, size limits and alignment around
-/// `measure_override` and `arrange_override`, visibility, opacity and transform around the rest. A control with nothing
-/// special writes `impl ElementImpl for Spacer {}`.
+/// `measure_override` and `arrange_override`, visibility, opacity and transform around the rest. A
+/// control with nothing special writes `impl ElementImpl for Spacer {}`.
 pub trait ElementImpl {
   /// The content's size within `available`, which already excludes the margin and is held within
   /// the element's limits. By default, nothing.
