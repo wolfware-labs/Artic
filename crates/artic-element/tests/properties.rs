@@ -363,6 +363,20 @@ fn transform_pivots_on_the_centre() {
   assert!((centre.x - 50.0).abs() < 1e-4 && (centre.y - 20.0).abs() < 1e-4, "{centre:?}");
 }
 
+// A scale grows the element away from its centre, so its top-left corner moves up and left.
+#[test]
+fn scale_grows_from_the_centre() {
+  let appearance = AppearanceProperties::default();
+  appearance.render_transform.set(Some(Transform::scale(2.0, 2.0)));
+
+  let transform = appearance
+    .layers(Size::new(100.0, 40.0), None)
+    .transform
+    .expect("a transform");
+
+  assert_eq!(transform.apply(Point::new(0.0, 0.0)), Point::new(-50.0, -20.0));
+}
+
 // Hidden and collapsed elements aren't visible in composition, and ZIndex reaches the layers.
 #[test]
 fn layers_carry_visibility_and_z_index() {
@@ -395,4 +409,25 @@ fn accessibility_node_is_disabled_with_the_element() {
   assert!(!interaction.accessibility(&cx).is_disabled());
   interaction.is_enabled.set(false);
   assert!(interaction.accessibility(&cx).is_disabled());
+}
+
+// An element under a disabled ancestor gets a disabled node, even with its own IsEnabled true.
+#[test]
+fn accessibility_node_is_disabled_under_a_disabled_ancestor() {
+  let mut tree = UiTree::new();
+  let parent = tree.alloc(Box::new(Probe::default()));
+  let child = tree.alloc(Box::new(Probe::default()));
+  tree.add_child(TreeKind::Logical, parent, child);
+  tree.get_as::<Probe>(child).unwrap().interaction.is_enabled.set(true);
+  tree.get_as::<Probe>(parent).unwrap().interaction.is_enabled.set(false);
+  let cx = AccessCx::new(&tree, child, Rect::new(0.0, 0.0, 1.0, 1.0));
+
+  assert!(
+    tree
+      .get_as::<Probe>(child)
+      .unwrap()
+      .interaction
+      .accessibility(&cx)
+      .is_disabled()
+  );
 }
