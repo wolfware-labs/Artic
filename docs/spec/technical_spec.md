@@ -143,7 +143,7 @@ The loader path needs a way to turn markup into typed property values. The origi
 1. XAML type names map 1:1 to Rust types; lookup is exact and case-sensitive (MS-XAML).
 2. Value types use std traits, not a custom converter API: `FromStr` for text (`Thickness`, `Brush`, `Color`, `GridLength`, `Duration`), `TryFrom` for typed conversions; `#[derive(XamlEnum)]` generates case-insensitive `FromStr` for enums.
 3. Property defaults live in `PropertyInfo` and in `Property::<T>::default()`, so a removed style setter reverts correctly.
-4. `inherits` marks properties (`FontSize`, `Foreground`, `IsEnabled`, `DataContext`) that flow down the logical tree when unset.
+4. `inherits` marks properties (`FontSize`, `Foreground`, `DataContext`) that flow down the logical tree when unset. `inherits = f` combines instead: the effective value is `f(own, inherited)`, so `IsEnabled` (`inherits = and`) is false under any disabled ancestor, whatever the element sets.
 5. Adding a type from any crate needs only the derive; no registration call.
 6. Nothing in the registry is required for a Rust-only view API (v2): the same structs and `Property<T>` fields are the API; XAML is one front end to them.
 7. Attached properties and markup extensions are declared with the same derive on their owner type (M0-30): `#[xaml(attached(name = "Row", ty = usize, target = children))]` on `Grid`, and `#[xaml(markup_extension(positional(key)))]` on an extension whose properties are its arguments. An attached value is a `Property<T>` the target node creates on first use, keyed by an `AttachedKey<T>` (`Grid::ROW`), so styles and local values compete as for any property. `const` and `static` items become visible to `x:Static` with `#[xaml_static]` (D23).
@@ -322,10 +322,10 @@ A `Property<T>` is a signal plus a value-precedence stack, so several sources ca
 | 2 | Local value (`Width="100"` in XAML, `.set()` in code) |
 | 3 | Binding |
 | 4 | Style setter (most specific matching selector wins, §8) |
-| 5 | Inherited value (`inherits` properties only) |
+| 5 | Inherited value (`inherits` properties only; an `inherits = f` property combines it with the level above instead) |
 | 6 | Default |
 
-The stack lives in one signal, and each write decides whether readers can see it: only a change of the effective value or of the level supplying it marks readers dirty, so a write below the winning level wakes nobody. `affects` metadata marks the node layout- or render-dirty when the effective value changes. Each property kind has a `static PropertyKey<T>` (name, `affects`, `inherits`) shared by every node type that has it. For `inherits` properties the Inherited level holds a link to the same kind of property on the nearest logical ancestor rather than a copy, so inherited values are never stale; the tree re-points the link when a node moves in the logical tree.
+The stack lives in one signal, and each write decides whether readers can see it: only a change of the effective value or of the level supplying it marks readers dirty, so a write below the winning level wakes nobody. `affects` metadata marks the node layout- or render-dirty when the effective value changes. Each property kind has a `static PropertyKey<T>` (name, `affects`, `Inheritance`: none, replace or combine) shared by every node type that has it. For `inherits` properties the Inherited level holds a link to the same kind of property on the nearest logical ancestor rather than a copy, so inherited values are never stale; the tree re-points the link when a node moves in the logical tree.
 
 ### Bindings
 

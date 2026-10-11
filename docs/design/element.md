@@ -69,7 +69,7 @@ pub trait ElementImpl {
 | `arrange` | `layout`, with `appearance.visibility`. `Collapsed`: returns, children not arranged, since `arrange_with` would stretch a zero size to the slot. Otherwise #41's `arrange_with`: margin, limits, alignment | `arrange_override` with the content's size |
 | `render` | | `ElementImpl::render`; a hidden subtree is skipped by composition (section 7) |
 | `hit_test` | `appearance.visibility` not `Visible`, or `interaction.is_hit_test_visible` false: a miss. Otherwise the trait default, `cx.bounds_test(point)` | |
-| `on_event` | `interaction.is_enabled` false (the inherited value): `Handled::No`, the control isn't called | `ElementImpl::on_event` |
+| `on_event` | `interaction.is_enabled` false (own AND ancestors'): `Handled::No`, the control isn't called | `ElementImpl::on_event` |
 | `accessibility` | builds the default node (section 7) | `ElementImpl::accessibility`, which adds to it |
 | `layers` | `appearance`: `Opacity` (clamped), `RenderTransform`, `Visibility` and `ZIndex` as a `Layers` (section 7) | `ElementImpl::clip`, for the clip layer |
 
@@ -145,7 +145,7 @@ The properties every control has come in four groups, each in the field `#[eleme
 | `appearance` | `Opacity` | `f32`; the property keeps any value, and composition clamps it (section 7) | `1` | render | |
 | `appearance` | `RenderTransform` | `Option<Transform>` | `None` | render | |
 | `appearance` | `ZIndex` | `i32`: draw and hit-test order among siblings | `0` | render | |
-| `interaction` | `IsEnabled` | `bool` | `true` | render | yes |
+| `interaction` | `IsEnabled` | `bool` | `true` | render | yes, ANDed with its ancestors' (`inherits = and`) |
 | `interaction` | `Cursor` | `Cursor` | `Arrow` | | |
 | `interaction` | `Focusable` | `bool` | `false` | render (clears cached hit tests: touch inflates focusable targets, §12) | |
 | `interaction` | `IsHitTestVisible` | `bool` | `true` | render (clears cached hit tests, §12) | |
@@ -231,7 +231,7 @@ The shared work builds the default accesskit node: the arranged bounds, and disa
 
 Hit testing follows the same rule: `#[element]`'s `hit_test` misses when the element isn't `Visible` or its `IsHitTestVisible` is false, and the hit-test walk (#74) doesn't descend into such a node. `IsHitTestVisible` is the drawn-but-click-through case that `Visibility` can't express, for overlays and decorations; spec §12 relies on it.
 
-A disabled element is different: it gets no input, but it still blocks it. Hit testing finds it as usual, so a click on a disabled button lands on the button and doesn't fall through to what's behind it, as with HTML's `<button disabled>`. `#[element]`'s `on_event` then returns `Handled::No` without calling `ElementImpl::on_event` when `IsEnabled` is false, so no control has to check it. `IsEnabled` inherits, so a disabled panel disables everything inside it, for pointer, keyboard and every other input. Focus navigation (#78) skips disabled elements. Tooltips come from the pipeline's hover tracking rather than `on_event`, so a disabled control can still show one.
+A disabled element is different: it gets no input, but it still blocks it. Hit testing finds it as usual, so a click on a disabled button lands on the button and doesn't fall through to what's behind it, as with HTML's `<button disabled>`. `#[element]`'s `on_event` then returns `Handled::No` without calling `ElementImpl::on_event` when `IsEnabled` is false, so no control has to check it. `IsEnabled` combines with its ancestors through `inherit::and`, so a disabled panel disables everything inside it, for pointer, keyboard and every other input. A child's own `true`, from markup or a binding, can't re-enable it: its effective value is its own AND its parent's, and `Property::own` still reads what it asks for. Focus navigation (#78) skips disabled elements. Tooltips come from the pipeline's hover tracking rather than `on_event`, so a disabled control can still show one.
 
 ## 8. Pull requests
 
