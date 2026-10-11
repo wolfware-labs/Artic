@@ -138,7 +138,6 @@ impl FromStr for Rect {
   }
 }
 
-/// Whether the values may be negative.
 impl FromStr for Transform {
   type Err = ParseGeometryError;
 
@@ -176,6 +175,7 @@ impl FromStr for Transform {
   }
 }
 
+/// Whether the values may be negative.
 #[derive(Clone, Copy, PartialEq)]
 enum Sign {
   Any,
