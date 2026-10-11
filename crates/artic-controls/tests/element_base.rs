@@ -20,6 +20,15 @@ struct Probe {
   base: ElementBase,
 }
 
+/// A second control type, to check inheritance across types.
+#[derive(Debug, XamlType)]
+#[xaml(namespace = "https://artic.rs/test")]
+struct Other {
+  #[xaml(flatten)]
+  base: ElementBase,
+}
+
+/// The markup names of `ElementBase`'s properties.
 const NAMES: [&str; 20] = [
   "Width",
   "Height",
@@ -206,4 +215,17 @@ fn collapsed_takes_no_space() {
   LayoutManager::invalidate_measure(&mut tree, child);
   layout.run(&mut tree, &Boxes, parent, available, 1.0, false);
   assert_eq!(tree.get_as::<Boxed>(child).unwrap().measured.get(), 1);
+}
+
+// IsEnabled inherits across control types, since every control flattens ElementBase's one key.
+#[test]
+fn is_enabled_inherits_across_control_types() {
+  let mut tree = UiTree::new();
+  let probe = tree.alloc(Box::new(Probe::default()));
+  let other = tree.alloc(Box::new(Other::default()));
+  tree.add_child(TreeKind::Logical, probe, other);
+
+  tree.get_as::<Probe>(probe).unwrap().base.is_enabled.set(false);
+
+  assert!(!tree.get_as::<Other>(other).unwrap().base.is_enabled.get());
 }
