@@ -86,10 +86,11 @@ The desktop adapter, at layer 5, depending on `artic-platform`, `artic-render`, 
 | winit | `artic-winit` | `AppHandler` |
 | --- | --- | --- |
 | first `resumed` | builds the `Waker` from the `EventLoopProxy` | `started(cx, waker)`; artic opens its first window through `cx.windows()`, and `surface_changed` follows |
-| `suspended` | (mobile: the GPU surfaces are destroyed) | `surface_lost` for each surface, in open order, then `event(Suspended)` |
+| `suspended` | (mobile: the GPU surfaces are destroyed) ignores frame requests and redraws until resumed | `surface_lost` for each surface, in open order, then `event(Suspended)` |
 | later `resumed` | (mobile: the surfaces are recreated) | `event(Resumed)`, then `surface_changed` for each surface |
 | `WindowEvent::Resized`, `ScaleFactorChanged`, `Moved` | rebuilds the surface's `SurfaceInfo`, with the current monitor as its `DisplayId` and its refresh rate | `surface_changed`, if anything differs from what was last reported |
 | `WindowEvent::CloseRequested` | | `event(CloseRequested { surface })` |
+| `WindowEvent::Destroyed` (the OS destroyed the window without a close request) | forgets the window | `surface_lost` |
 | `WindowEvent::RedrawRequested` | reads the current monitor again, then lends the window as `Target::Handles`, with the time since `run` started (winit doesn't expose present times) | `surface_changed` if any fact changed, then `frame(cx, surface, target, time)`, unless the handler closed the window in that `surface_changed` |
 | `user_event` (a `Waker` fired) | | `woken` |
 | `about_to_wait` | `ControlFlow::Wait`: sleep until the next event or wake-up | |

@@ -15,6 +15,7 @@ pub(crate) enum WindowEventFacts {
   CloseRequested,
   RedrawRequested,
   Moved,
+  Destroyed,
   Other,
 }
 
@@ -25,6 +26,7 @@ pub(crate) enum Translated {
   Close,
   Redraw,
   Moved,
+  Destroyed,
   Ignored,
 }
 
@@ -47,11 +49,13 @@ pub(crate) fn facts(event: &WindowEvent, window: &Window) -> WindowEventFacts {
     WindowEvent::CloseRequested => WindowEventFacts::CloseRequested,
     WindowEvent::RedrawRequested => WindowEventFacts::RedrawRequested,
     WindowEvent::Moved(_) => WindowEventFacts::Moved,
+    WindowEvent::Destroyed => WindowEventFacts::Destroyed,
     _ => WindowEventFacts::Other,
   }
 }
 
-/// What `facts` means: new surface facts, a close request, a frame, a move, or nothing.
+/// What `facts` means: new surface facts, a close request, a frame, a move, the window's
+/// destruction, or nothing.
 pub(crate) fn translate(facts: &WindowEventFacts) -> Translated {
   match *facts {
     WindowEventFacts::Resized { width, height } => Translated::Changed {
@@ -65,6 +69,7 @@ pub(crate) fn translate(facts: &WindowEventFacts) -> Translated {
     WindowEventFacts::CloseRequested => Translated::Close,
     WindowEventFacts::RedrawRequested => Translated::Redraw,
     WindowEventFacts::Moved => Translated::Moved,
+    WindowEventFacts::Destroyed => Translated::Destroyed,
     WindowEventFacts::Other => Translated::Ignored,
   }
 }
@@ -75,8 +80,8 @@ mod tests {
   use artic_render::PhysicalSize;
   use pretty_assertions::assert_eq;
 
-  // Resizes and scale changes become new surface facts; close, redraw and moves keep their
-  // meaning; anything else is ignored.
+  // Resizes and scale changes become new surface facts; close, redraw, moves and destruction keep
+  // their meaning; anything else is ignored.
   #[test]
   fn winit_event_translation() {
     let size = |width, height| PhysicalSize { width, height };
@@ -102,6 +107,7 @@ mod tests {
     assert_eq!(translate(&WindowEventFacts::CloseRequested), Translated::Close);
     assert_eq!(translate(&WindowEventFacts::RedrawRequested), Translated::Redraw);
     assert_eq!(translate(&WindowEventFacts::Moved), Translated::Moved);
+    assert_eq!(translate(&WindowEventFacts::Destroyed), Translated::Destroyed);
     assert_eq!(translate(&WindowEventFacts::Other), Translated::Ignored);
   }
 }

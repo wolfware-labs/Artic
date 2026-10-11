@@ -63,6 +63,7 @@ impl artic_platform::Host for Host {
       proxy: self.event_loop.create_proxy(),
       start: Instant::now(),
       started: false,
+      suspended: false,
     };
     self
       .event_loop
@@ -79,18 +80,24 @@ struct Driver<A> {
   proxy: EventLoopProxy<()>,
   start: Instant,
   started: bool,
+  suspended: bool,
 }
 
 impl<A: AppHandler> Driver<A> {
   /// Calls the handler with a context, then reports the surfaces the call opened or lost.
   fn call(&mut self, event_loop: &ActiveEventLoop, call: impl FnOnce(&mut A, &mut dyn HostContext)) {
     let Driver {
-      app, surfaces, opened, ..
+      app,
+      surfaces,
+      opened,
+      suspended,
+      ..
     } = self;
     let mut cx = Context {
       event_loop,
       surfaces,
       opened,
+      suspended: *suspended,
     };
     call(app, &mut cx);
     self.report(event_loop);
@@ -166,6 +173,7 @@ impl<A: AppHandler> ApplicationHandler for Driver<A> {
       self.call(event_loop, |app, cx| app.started(cx, waker));
       return;
     }
+    self.suspended = false;
     self.surfaces.forget_facts();
     self.call(event_loop, |app, cx| app.event(cx, HostEvent::Resumed));
     let surfaces: Vec<SurfaceId> = self.surfaces.windows().map(|(surface, _)| surface).collect();
@@ -175,6 +183,7 @@ impl<A: AppHandler> ApplicationHandler for Driver<A> {
   }
 
   fn suspended(&mut self, event_loop: &ActiveEventLoop) {
+    self.suspended = true;
     let surfaces: Vec<SurfaceId> = self.surfaces.windows().map(|(surface, _)| surface).collect();
     for surface in surfaces {
       self.call(event_loop, |app, cx| app.surface_lost(cx, surface));
@@ -193,6 +202,11 @@ impl<A: AppHandler> ApplicationHandler for Driver<A> {
       Translated::Changed { size, scale } => self.refresh(event_loop, surface, Some((size, scale))),
       Translated::Moved => self.refresh(event_loop, surface, None),
       Translated::Close => self.call(event_loop, |app, cx| app.event(cx, HostEvent::CloseRequested { surface })),
+      Translated::Destroyed => {
+        self.surfaces.close(surface);
+        self.report(event_loop);
+      }
+      Translated::Redraw if self.suspended => {}
       Translated::Redraw => {
         self.refresh(event_loop, surface, None);
         if self.surfaces.window(surface).is_none() {
@@ -232,10 +246,14 @@ struct Context<'a> {
   event_loop: &'a ActiveEventLoop,
   surfaces: &'a mut Surfaces<WindowId, Rc<Window>>,
   opened: &'a mut Vec<SurfaceId>,
+  suspended: bool,
 }
 
 impl HostContext for Context<'_> {
   fn request_frame(&mut self, surface: SurfaceId) {
+    if self.suspended {
+      return;
+    }
     if let Some(window) = self.surfaces.window(surface) {
       window.request_redraw();
     }
