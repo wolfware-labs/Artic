@@ -1,0 +1,5 @@
+error: `#[element]` takes no settings
+ --> tests/ui/element_settings.rs:3:11
+  |
+3 | #[element(state)]
+  |           ^^^^^

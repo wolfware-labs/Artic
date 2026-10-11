@@ -1,4 +1,4 @@
-use crate::crate_root::crate_root;
+use crate::crate_root::{REGISTRY, crate_root};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Data, DeriveInput, Error, Fields, Ident};
@@ -6,7 +6,7 @@ use syn::{Data, DeriveInput, Error, Fields, Ident};
 /// Writes a `FromStr` impl that matches the enum's variant names, ignoring ASCII case.
 pub fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
   let variants = unit_variants(input)?;
-  let root = crate_root(None, &input.ident)?;
+  let root = crate_root(None, &input.ident, REGISTRY)?;
   let ident = &input.ident;
   let type_name = ident.to_string();
   let names: Vec<String> = variants.iter().map(ToString::to_string).collect();

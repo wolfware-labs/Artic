@@ -7,4 +7,4 @@
 //! - `skia`: use the `skia-safe` rendering backend.
 
 #[doc(hidden)]
-pub use artic_registry::__private;
+pub use artic_element::__private;

@@ -1,4 +1,4 @@
-use crate::crate_root::crate_root;
+use crate::crate_root::{REGISTRY, crate_root};
 use crate::xaml_type::attributes::{Affects, Attached, Target, Whitespace};
 use crate::xaml_type::fields::{Analysis, Role, XamlField, generic_argument, snake_case, xaml_name};
 use proc_macro2::TokenStream;
@@ -9,7 +9,7 @@ use syn::spanned::Spanned;
 /// Writes the code for one derived struct: its property keys, `Default`, `Object` and `XamlType`
 /// impls, its registry descriptors and entry, and the checks on its field types.
 pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
-  let root = crate_root(analysis.attributes.crate_path.as_ref(), analysis.ident)?;
+  let root = crate_root(analysis.attributes.crate_path.as_ref(), analysis.ident, REGISTRY)?;
   let ident = analysis.ident;
   let properties: Vec<&XamlField> = analysis.xaml_fields.iter().filter(|f| is_property(f)).collect();
   let events: Vec<&XamlField> = analysis
@@ -91,6 +91,7 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
       (&&__artic::ValueCheck::<#value>(__artic::PhantomData)).value_must_implement_fromstr_or_derive_xamltype();
     )
   });
+  let after_default = &analysis.after_default;
   let whitespace = match analysis.attributes.whitespace {
     Whitespace::Collapse => quote!(__artic::Whitespace::Collapse),
     Whitespace::Significant => quote!(__artic::Whitespace::Significant),
@@ -104,10 +105,12 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
 
       impl ::core::default::Default for #ident {
         fn default() -> Self {
-          Self {
+          let __artic_value = Self {
             #(#default_fields,)*
             #(#other_fields: ::core::default::Default::default(),)*
-          }
+          };
+          #after_default
+          __artic_value
         }
       }
 

@@ -1,0 +1,5 @@
+error: `layout` is added by `#[element]`; remove this field
+ --> tests/ui/element_reserved_name.rs:7:3
+  |
+7 |   layout: u8,
+  |   ^^^^^^

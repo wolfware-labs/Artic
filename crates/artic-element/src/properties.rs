@@ -1,10 +1,11 @@
 //! The property groups every control has.
 
-use crate::{Classes, Cursor, Visibility};
+use crate::{AccessCx, Classes, Cursor, HitTestCx, HitTestResult, Visibility};
 use artic_core::property::Property;
-use artic_layout::geometry::{Rect, Size, Thickness, Transform};
+use artic_layout::geometry::{Point, Rect, Size, Thickness, Transform};
 use artic_layout::{HorizontalAlignment, LayoutCx, Sizing, VerticalAlignment, arrange_with, measure_with};
 use artic_macros::XamlProperties;
+use artic_render::{Clip, Layers};
 
 /// Where an element sits and how big it is: size, limits, margin and alignment.
 ///
@@ -144,5 +145,51 @@ impl LayoutProperties {
     let desired = cx.desired(cx.node());
     let bounds = cx.set_bounds(arrange_with(&self.sizing(), slot, desired));
     content(cx, bounds.size());
+  }
+}
+
+impl AppearanceProperties {
+  /// The element's layers in composition for its arranged `size`, with the control's `clip`.
+  #[must_use]
+  pub fn layers(&self, size: Size, clip: Option<Clip>) -> Layers {
+    let _ = size;
+    Layers {
+      clip,
+      ..Layers::default()
+    }
+  }
+}
+
+impl InteractionProperties {
+  /// Hit-tests the element at `point`: a miss when `visibility`, from the appearance group, isn't
+  /// `Visible` or `IsHitTestVisible` is false; otherwise whether `point` is inside its bounds.
+  #[must_use]
+  pub fn hit_test(&self, cx: &HitTestCx<'_>, visibility: Visibility, point: Point) -> HitTestResult {
+    if visibility != Visibility::Visible || !self.is_hit_test_visible.get() {
+      return HitTestResult::Miss;
+    }
+    cx.bounds_test(point)
+  }
+
+  /// Whether the element gets input: `IsEnabled`, which a disabled logical ancestor makes false.
+  #[must_use]
+  pub fn accepts_input(&self) -> bool {
+    self.is_enabled.get()
+  }
+
+  /// The element's default accessibility node, which the control's `ElementImpl::accessibility`
+  /// adds to: a generic container at its bounds. `visibility` comes from the appearance group.
+  #[must_use]
+  pub fn accessibility(&self, cx: &AccessCx<'_>, visibility: Visibility) -> accesskit::Node {
+    let _ = visibility;
+    let bounds = cx.bounds();
+    let mut node = accesskit::Node::new(accesskit::Role::GenericContainer);
+    node.set_bounds(accesskit::Rect::new(
+      f64::from(bounds.x),
+      f64::from(bounds.y),
+      f64::from(bounds.x + bounds.width),
+      f64::from(bounds.y + bounds.height),
+    ));
+    node
   }
 }

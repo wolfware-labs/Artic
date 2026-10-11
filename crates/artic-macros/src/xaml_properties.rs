@@ -1,4 +1,4 @@
-use crate::crate_root::crate_root;
+use crate::crate_root::{REGISTRY, crate_root};
 use crate::xaml_type::attributes::parse_field_attributes;
 use crate::xaml_type::fields::{Role, classify, reject_unmarked_member};
 use crate::xaml_type::generate::{default_field, key_static, property_info, value_check};
@@ -48,7 +48,7 @@ pub fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
       }
     }
   }
-  let root = crate_root(None, ident)?;
+  let root = crate_root(None, ident, REGISTRY)?;
   let keys = properties.iter().map(key_static);
   let defaults = properties.iter().map(default_field);
   let infos = properties.iter().map(property_info);
