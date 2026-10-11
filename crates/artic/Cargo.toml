@@ -17,6 +17,7 @@ skia = []
 [dependencies]
 artic-core.workspace = true
 artic-registry.workspace = true
+artic-element.workspace = true
 artic-macros.workspace = true
 artic-layout.workspace = true
 artic-render.workspace = true
