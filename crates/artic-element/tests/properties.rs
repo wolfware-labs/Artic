@@ -1,14 +1,18 @@
 // The property groups: their properties, registered through a control that flattens them, and
-// the layout helpers.
+// their shared work: layout, hit testing, input, accessibility and layers.
 
 use artic_core::Object;
 use artic_core::property::{Affects, AnyProperty};
 use artic_core::tree::{NodeId, TreeKind, UiTree};
-use artic_element::{AppearanceProperties, Classes, IdentityProperties, InteractionProperties, LayoutProperties, Visibility};
-use artic_layout::geometry::{Rect, Size, Thickness};
+use artic_element::{
+  AccessCx, AppearanceProperties, Classes, HitTestCx, HitTestResult, IdentityProperties, InteractionProperties,
+  LayoutProperties, Visibility,
+};
+use artic_layout::geometry::{Point, Rect, Size, Thickness};
 use artic_layout::{HorizontalAlignment, LayoutCx, LayoutManager, LayoutNodes, Layoutable, VerticalAlignment};
 use artic_macros::XamlType;
 use artic_registry::{PropertyGroup, Registry};
+use artic_render::{Clip, Layers};
 use pretty_assertions::assert_eq;
 use std::cell::Cell;
 
@@ -260,4 +264,68 @@ fn content_is_arranged_in_the_snapped_bounds() {
 
   let width = |node| layout.rect(node).expect("arranged").width;
   assert_eq!(width(child), width(parent));
+}
+
+// A visible, hit-testable element is hit inside its bounds; hidden, collapsed and click-through
+// elements are missed even there.
+#[test]
+fn hit_test_misses_hidden_and_click_through() {
+  let mut tree = UiTree::new();
+  let node = tree.alloc(Box::new(Probe::default()));
+  let cx = HitTestCx::new(&tree, node, Size::new(10.0, 10.0));
+  let inside = Point::new(5.0, 5.0);
+  let interaction = InteractionProperties::default();
+
+  assert_eq!(interaction.hit_test(&cx, Visibility::Visible, inside), HitTestResult::Hit);
+  assert_eq!(
+    interaction.hit_test(&cx, Visibility::Visible, Point::new(15.0, 5.0)),
+    HitTestResult::Miss
+  );
+  assert_eq!(interaction.hit_test(&cx, Visibility::Hidden, inside), HitTestResult::Miss);
+  assert_eq!(interaction.hit_test(&cx, Visibility::Collapsed, inside), HitTestResult::Miss);
+  interaction.is_hit_test_visible.set(false);
+  assert_eq!(interaction.hit_test(&cx, Visibility::Visible, inside), HitTestResult::Miss);
+}
+
+// An element accepts input until it's disabled, locally or by a logical ancestor.
+#[test]
+fn accepts_input_until_disabled() {
+  let mut tree = UiTree::new();
+  let parent = tree.alloc(Box::new(Probe::default()));
+  let child = tree.alloc(Box::new(Other::default()));
+  tree.add_child(TreeKind::Logical, parent, child);
+  let accepts = |tree: &UiTree| tree.get_as::<Other>(child).unwrap().interaction.accepts_input();
+
+  assert!(accepts(&tree));
+  tree.get_as::<Probe>(parent).unwrap().interaction.is_enabled.set(false);
+  assert!(!accepts(&tree));
+}
+
+// The default accessibility node is a generic container at the element's bounds.
+#[test]
+fn accessibility_node_has_bounds() {
+  let mut tree = UiTree::new();
+  let node = tree.alloc(Box::new(Probe::default()));
+  let cx = AccessCx::new(&tree, node, Rect::new(10.0, 20.0, 30.0, 40.0));
+
+  let built = InteractionProperties::default().accessibility(&cx, Visibility::Visible);
+
+  assert_eq!(built.role(), accesskit::Role::GenericContainer);
+  assert_eq!(built.bounds(), Some(accesskit::Rect::new(10.0, 20.0, 40.0, 60.0)));
+}
+
+// The layers carry the control's clip, and otherwise the defaults.
+#[test]
+fn layers_carry_the_clip() {
+  let clip = Some(Clip::Rect(Rect::new(0.0, 0.0, 5.0, 5.0)));
+
+  let layers = AppearanceProperties::default().layers(Size::new(10.0, 10.0), clip);
+
+  assert_eq!(
+    layers,
+    Layers {
+      clip,
+      ..Layers::default()
+    }
+  );
 }
