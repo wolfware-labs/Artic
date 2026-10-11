@@ -39,26 +39,20 @@ Every target provides four things:
 
 ```rust
 pub trait Host {
+  /// What kind of target the host offers, checked against the renderer before the loop starts.
+  fn targets(&self) -> TargetKind;
+
   /// Runs the loop, reporting surfaces, events and frame times to `app` until it quits. A host
   /// whose loop can't block (a browser) installs its callbacks and returns at once.
-  fn run(self, app: App);
-
-  // Capabilities: implement what the target has. `None` means "not available".
-  fn windows(&mut self) -> Option<&mut dyn Windows> { None }
-  fn displays(&self) -> Option<&dyn Displays> { None }
-  fn clipboard(&self) -> Option<&dyn Clipboard> { None }
-  fn text_input(&mut self) -> Option<&mut dyn TextInput> { None }
-  fn cursor(&mut self) -> Option<&mut dyn Cursor> { None }
-  fn accessibility(&mut self) -> Option<&mut dyn Accessibility> { None }
-  // … color scheme, safe area and keyboard inset, file dialogs, menus, haptics, open_url
+  fn run(self, app: impl AppHandler + 'static);
 }
 ```
 
-`App` is artic's side of the loop. The host calls `app.surface_changed(…)`, `app.surface_lost(…)`, `app.event(…)` and `app.frame(…)`; artic asks for frames and wake-ups through a small handle the host gives it when the loop starts.
+`AppHandler` is artic's side of the loop. The host calls its `started`, `woken`, `surface_changed`, `surface_lost`, `event` and `frame`, which carries the frame's time, each with a `HostContext` through which artic asks for frames, exits and reaches the capabilities; other threads wake the loop through a `Waker`. The [host design](host.md) (#39) fixes these traits; it moved the capabilities from `Host` to `HostContext`, since `run` consumes the host.
 
 ### Capabilities
 
-Everything beyond the core is optional. Each capability is a method whose default returns `None`, so:
+Everything beyond the core is optional. Each capability is a `HostContext` method whose default returns `None`, so:
 
 - a framebuffer adapter implements `run` and nothing else;
 - adding a capability later is a new default method, and no existing adapter breaks;
@@ -66,7 +60,7 @@ Everything beyond the core is optional. Each capability is a method whose defaul
 
 | Capability | What it does | Without it |
 | --- | --- | --- |
-| `windows` | open, close, title, size, full screen, on a chosen display | each `Window` takes one whole surface (below) |
+| `windows` | open and close (#39); title, size, full screen and the display a window opens on grow with the `Window` element (#48) | each `Window` takes one whole surface (below) |
 | `displays` | list displays (id, bounds, scale, refresh rate, primary); connect and disconnect | everything goes on the host's surfaces in order |
 | `clipboard` | read (async) and write text | Copy does nothing; Paste is disabled |
 | `text_input` | IME composition, soft keyboard, input mode (`InputMode`) | text comes only from `Key` and `Text` events |
@@ -197,7 +191,7 @@ The seams live in crates with no backend dependencies, and each backend is an ad
 | Crate | Holds | Doesn't depend on |
 | --- | --- | --- |
 | `artic-render` | `Renderer`, `Scene`, `Target`, `PixelBuffer`, text shaping (`parley`) | `vello`, `wgpu`, skia |
-| `artic-platform` | `Host`, its capabilities, `App`'s host-facing side, `artic::run`'s pairing check, the frame pipeline | `winit`, `muda`, `rfd`, `arboard` |
+| `artic-platform` | `Host`, `AppHandler` and `HostContext` with its capabilities, `artic::run`'s pairing check, the frame pipeline | `winit`, `muda`, `rfd`, `arboard` |
 | `artic-core` | raw input event types (controls see them without the platform, as today) | |
 | `artic-element` | the action mapping and directional focus, next to focus navigation | |
 | **`artic-winit`** (adapter) | the desktop `Host`: `winit`, `muda`, `rfd`, `arboard`, `accesskit_winit` | |
@@ -214,7 +208,7 @@ Compared with today's §2 and `docs/architecture.md`:
 
 | Before | After |
 | --- | --- |
-| `PlatformHost` with 14 required methods | `Host`: `run`, plus capabilities whose default is `None` |
+| `PlatformHost` with 14 required methods | `Host`: `targets` and `run`; capabilities on `HostContext`, defaulting to `None` |
 | `Renderer::begin_frame`, `render`, `resize`, `create_image`, `measure_text` | `Renderer::accepts`, `render(&Scene, Surface)` and `surface_lost` |
 | A "backend-neutral surface handle" | `Target::Handles`, `Pixels` or `Custom` |
 | `primary_input()` from the host | input mode tracked by artic |
