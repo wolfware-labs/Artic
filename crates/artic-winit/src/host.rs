@@ -101,7 +101,7 @@ impl<A: AppHandler> Driver<A> {
       surfaces,
       opened,
       suspended: *suspended,
-      exiting: *exiting,
+      exiting,
     };
     call(app, &mut cx);
     self.report(event_loop);
@@ -192,6 +192,9 @@ impl<A: AppHandler> ApplicationHandler for Driver<A> {
   }
 
   fn suspended(&mut self, event_loop: &ActiveEventLoop) {
+    if self.suspended {
+      return;
+    }
     self.suspended = true;
     let surfaces: Vec<SurfaceId> = self.surfaces.windows().map(|(surface, _)| surface).collect();
     self.surfaces.mark_lost();
@@ -258,7 +261,7 @@ struct Context<'a> {
   surfaces: &'a mut Surfaces<WindowId, Rc<Window>>,
   opened: &'a mut Vec<SurfaceId>,
   suspended: bool,
-  exiting: bool,
+  exiting: &'a mut bool,
 }
 
 impl HostContext for Context<'_> {
@@ -272,6 +275,7 @@ impl HostContext for Context<'_> {
   }
 
   fn exit(&mut self) {
+    *self.exiting = true;
     self.event_loop.exit();
   }
 
@@ -282,7 +286,7 @@ impl HostContext for Context<'_> {
 
 impl Windows for Context<'_> {
   fn open(&mut self, desc: &WindowDesc) -> SurfaceId {
-    if self.exiting {
+    if *self.exiting {
       return self.surfaces.reserve();
     }
     let attributes = Window::default_attributes()
