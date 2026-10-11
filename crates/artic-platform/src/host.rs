@@ -74,7 +74,8 @@ pub trait HostContext {
 pub trait Windows {
   /// Opens a window and returns its surface's id at once. The surface arrives through
   /// [`AppHandler::surface_changed`], or [`AppHandler::surface_lost`] if the window couldn't be
-  /// created; opening never fails here.
+  /// created; opening never fails here. While the loop is exiting, no window opens and the id is
+  /// never reported.
   fn open(&mut self, desc: &WindowDesc) -> SurfaceId;
 
   /// Closes the window, which then reports its surface lost.

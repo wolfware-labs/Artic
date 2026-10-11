@@ -64,6 +64,7 @@ impl artic_platform::Host for Host {
       start: Instant::now(),
       started: false,
       suspended: false,
+      exiting: false,
     };
     self
       .event_loop
@@ -81,6 +82,7 @@ struct Driver<A> {
   start: Instant,
   started: bool,
   suspended: bool,
+  exiting: bool,
 }
 
 impl<A: AppHandler> Driver<A> {
@@ -91,6 +93,7 @@ impl<A: AppHandler> Driver<A> {
       surfaces,
       opened,
       suspended,
+      exiting,
       ..
     } = self;
     let mut cx = Context {
@@ -98,6 +101,7 @@ impl<A: AppHandler> Driver<A> {
       surfaces,
       opened,
       suspended: *suspended,
+      exiting: *exiting,
     };
     call(app, &mut cx);
     self.report(event_loop);
@@ -178,6 +182,7 @@ impl<A: AppHandler> ApplicationHandler for Driver<A> {
       return;
     }
     self.suspended = false;
+    self.surfaces.clear_lost_marks();
     self.surfaces.forget_facts();
     self.call(event_loop, |app, cx| app.event(cx, HostEvent::Resumed));
     let surfaces: Vec<SurfaceId> = self.surfaces.windows().map(|(surface, _)| surface).collect();
@@ -189,6 +194,7 @@ impl<A: AppHandler> ApplicationHandler for Driver<A> {
   fn suspended(&mut self, event_loop: &ActiveEventLoop) {
     self.suspended = true;
     let surfaces: Vec<SurfaceId> = self.surfaces.windows().map(|(surface, _)| surface).collect();
+    self.surfaces.mark_lost();
     for surface in surfaces {
       self.call(event_loop, |app, cx| app.surface_lost(cx, surface));
     }
@@ -206,7 +212,6 @@ impl<A: AppHandler> ApplicationHandler for Driver<A> {
       Translated::Changed { size, scale } => self.refresh(event_loop, surface, Some((size, scale))),
       Translated::Moved => self.refresh(event_loop, surface, None),
       Translated::Close => self.call(event_loop, |app, cx| app.event(cx, HostEvent::CloseRequested { surface })),
-      Translated::Destroyed if self.suspended => self.surfaces.discard(surface),
       Translated::Destroyed => {
         self.surfaces.close(surface);
         self.report(event_loop);
@@ -233,6 +238,7 @@ impl<A: AppHandler> ApplicationHandler for Driver<A> {
   }
 
   fn exiting(&mut self, event_loop: &ActiveEventLoop) {
+    self.exiting = true;
     loop {
       let open = self.surfaces.drain();
       if open.is_empty() {
@@ -252,6 +258,7 @@ struct Context<'a> {
   surfaces: &'a mut Surfaces<WindowId, Rc<Window>>,
   opened: &'a mut Vec<SurfaceId>,
   suspended: bool,
+  exiting: bool,
 }
 
 impl HostContext for Context<'_> {
@@ -275,6 +282,9 @@ impl HostContext for Context<'_> {
 
 impl Windows for Context<'_> {
   fn open(&mut self, desc: &WindowDesc) -> SurfaceId {
+    if self.exiting {
+      return self.surfaces.reserve();
+    }
     let attributes = Window::default_attributes()
       .with_title(desc.title.clone())
       .with_inner_size(LogicalSize::new(f64::from(desc.width), f64::from(desc.height)));

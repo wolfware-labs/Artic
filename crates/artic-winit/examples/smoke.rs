@@ -51,8 +51,9 @@ impl AppHandler for Smoke {
     cx.request_frame(surface);
   }
 
-  fn surface_lost(&mut self, _cx: &mut dyn HostContext, surface: SurfaceId) {
+  fn surface_lost(&mut self, cx: &mut dyn HostContext, surface: SurfaceId) {
     println!("surface {} lost after {} frames", surface.get(), self.frames);
+    cx.exit();
   }
 
   fn event(&mut self, cx: &mut dyn HostContext, event: HostEvent) {

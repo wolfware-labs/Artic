@@ -11,6 +11,7 @@ struct Entry<K, W> {
   key: K,
   window: W,
   info: Option<SurfaceInfo>,
+  reported_lost: bool,
 }
 
 /// The open windows, keyed by the windowing library's id `K`, in the order they opened.
@@ -51,6 +52,7 @@ impl<K: PartialEq + Copy, W> Surfaces<K, W> {
       key,
       window,
       info: None,
+      reported_lost: false,
     });
     id
   }
@@ -62,18 +64,28 @@ impl<K: PartialEq + Copy, W> Surfaces<K, W> {
   }
 
   /// Closes surface `id`, keeping its window until its loss is reported, so the handles a renderer
-  /// holds stay valid until then.
+  /// holds stay valid until then. A surface already reported lost, on suspend, is only removed.
   pub(crate) fn close(&mut self, id: SurfaceId) {
     if let Some(index) = self.entries.iter().position(|entry| entry.id == id) {
       let entry = self.entries.remove(index);
-      self.lost.push((entry.id, Some(entry.window)));
+      if !entry.reported_lost {
+        self.lost.push((entry.id, Some(entry.window)));
+      }
     }
   }
 
-  /// Removes surface `id` without reporting it lost, for a surface already reported lost, such as
-  /// one destroyed while the app is suspended.
-  pub(crate) fn discard(&mut self, id: SurfaceId) {
-    self.entries.retain(|entry| entry.id != id);
+  /// Marks every surface as reported lost, on suspend.
+  pub(crate) fn mark_lost(&mut self) {
+    for entry in &mut self.entries {
+      entry.reported_lost = true;
+    }
+  }
+
+  /// Clears the marks, on resume, when every surface is reported again.
+  pub(crate) fn clear_lost_marks(&mut self) {
+    for entry in &mut self.entries {
+      entry.reported_lost = false;
+    }
   }
 
   /// The surfaces to report lost, oldest first, each with its window to drop once reported,
@@ -228,15 +240,36 @@ mod tests {
     assert_eq!(Rc::strong_count(&window), 1);
   }
 
-  // A discarded surface is gone without being reported lost again.
+  // While suspended, closing a surface already reported lost reports nothing more, and closing
+  // one opened during suspension, never announced, reports it lost once.
   #[test]
-  fn discarded_surface_is_not_reported() {
+  fn suspended_close_reports_each_loss_once() {
+    let mut surfaces = Surfaces::<u32, ()>::default();
+    let before = surfaces.insert(10, ());
+    surfaces.mark_lost();
+    let during = surfaces.insert(20, ());
+
+    surfaces.close(before);
+    surfaces.close(during);
+
+    assert_eq!(
+      surfaces.take_lost().into_iter().map(|(id, _)| id).collect::<Vec<_>>(),
+      [during]
+    );
+    assert_eq!((surfaces.id(10), surfaces.id(20)), (None, None));
+  }
+
+  // Resuming clears the marks, so a later close is reported again.
+  #[test]
+  fn resumed_surfaces_report_their_loss() {
     let mut surfaces = Surfaces::<u32, ()>::default();
     let id = surfaces.insert(10, ());
+    surfaces.mark_lost();
 
-    surfaces.discard(id);
+    surfaces.clear_lost_marks();
+    surfaces.close(id);
 
-    assert_eq!((surfaces.id(10), surfaces.take_lost().len()), (None, 0));
+    assert_eq!(surfaces.take_lost().len(), 1);
   }
 
   // Forgetting the facts makes the same facts count as a change again.

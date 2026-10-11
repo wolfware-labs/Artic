@@ -86,7 +86,7 @@ The desktop adapter, at layer 5, depending on `artic-platform`, `artic-render`, 
 | winit | `artic-winit` | `AppHandler` |
 | --- | --- | --- |
 | first `resumed` | builds the `Waker` from the `EventLoopProxy` | `started(cx, waker)`; artic opens its first window through `cx.windows()`, and `surface_changed` follows |
-| `suspended` | (mobile: the GPU surfaces are destroyed) until resumed, ignores frame requests, redraws and surface changes, and forgets a destroyed window without reporting it again | `surface_lost` for each surface, in open order, then `event(Suspended)` |
+| `suspended` | (mobile: the GPU surfaces are destroyed) until resumed, ignores frame requests, redraws and surface changes, and doesn't report a surface lost a second time | `surface_lost` for each surface, in open order, then `event(Suspended)` |
 | later `resumed` | (mobile: the surfaces are recreated) | `event(Resumed)`, then `surface_changed` for each surface |
 | `WindowEvent::Resized`, `ScaleFactorChanged`, `Moved` | rebuilds the surface's `SurfaceInfo`, with the current monitor as its `DisplayId` and its refresh rate | `surface_changed`, if anything differs from what was last reported |
 | `WindowEvent::CloseRequested` | | `event(CloseRequested { surface })` |
@@ -99,7 +99,8 @@ The desktop adapter, at layer 5, depending on `artic-platform`, `artic-render`, 
 - `cx.exit()` exits the loop; windows still open are reported through `surface_lost` before `run` returns.
 - `targets()` is `TargetKind::Handles`.
 - The monitor is read on every resize, scale change, move and frame, because Wayland sends no `Moved` and a move between monitors of equal scale sends no scale change; a display change on its own is still reported. A monitor's `DisplayId` follows its name (the connector, such as `DP-1`), and its position only when it has none, so rearranging displays doesn't change it.
-- A closed window is kept until its `surface_lost` has been delivered, and so is every window when the loop exits, so the handles a renderer holds stay valid until it's told they're gone. A window opened while the loop exits is reported lost too.
+- A closed window is kept until its `surface_lost` has been delivered, and so is every window when the loop exits, so the handles a renderer holds stay valid until it's told they're gone. While the loop exits, `open` creates no window and its id is never reported, so a handler that opens a window from `surface_lost` can't keep the loop alive.
+- Each surface's loss is reported once: a surface reported lost on suspend and then closed or destroyed isn't reported again, while one opened during suspension and destroyed before resume is reported lost.
 - On Windows, a scale change reports the new scale with the window's old size, and the `Resized` that follows corrects it.
 - A window opened during a handler call reports its first `surface_changed` right after that call returns, since the context can't call the handler while it's in a call. A window that couldn't be created reports `surface_lost` the same way.
 - `run` panics if winit's loop ends with an error, such as a lost connection to the display server, after the surfaces have been reported lost: the seam's `run` returns nothing, and a silent failure would hide it.
