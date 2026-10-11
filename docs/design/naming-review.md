@@ -21,7 +21,7 @@ them up as each API is built.
 | `Watermark` | §7 `TextBox` | hint text shown in an empty box | `Placeholder` | HTML `placeholder` and WinUI `PlaceholderText`; a watermark means something else in imaging | Renamed |
 | `Holding` | §9 Input | the touch long-press gesture | `LongPressed` | The term iOS and Android use, in the past tense like `Tapped` | Renamed |
 | `ExtendClientAreaToDecorations` | §10 Windows | draws content under a custom title bar | `ExtendIntoTitleBar` | WinUI's `ExtendsContentIntoTitleBar`, shorter; "client area" is Win32 jargon | Renamed |
-| `Visibility` beside `IsVisible` | §7 `ElementBase` | WPF's `Visible` / `Hidden` / `Collapsed` | removed; `IsVisible` stays | Two properties for one thing; "hidden but keeps its space" is `Opacity = 0`, as in Avalonia | Removed |
+| `Visibility` beside `IsVisible` | §7 `ElementBase` | `Visible` / `Hidden` / `Collapsed` | `Visibility` stays; `IsVisible` removed | Two properties for one thing. First decided the other way (keep `IsVisible`, hide with `Opacity = 0`, as in Avalonia); reversed in the elements design (#42): the three states are also CSS's and Android's, so the name isn't WPF-specific, and `Opacity = 0` still takes clicks and is still read by screen readers | `IsVisible` removed |
 | `subscribe_all(…)`, for WPF's `HandledEventsToo` | §9 Routed events | also receives events already handled | `subscribe_including_handled(…)` | `subscribe_all` reads as "every event" | Renamed |
 
 ## Kept
