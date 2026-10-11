@@ -146,6 +146,8 @@ dependencies = [
  "accesskit",
  "artic-core",
  "artic-layout",
+ "artic-macros",
+ "artic-registry",
  "artic-render",
  "linkme",
  "pretty_assertions",

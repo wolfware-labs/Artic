@@ -8,12 +8,12 @@ use artic_macros::XamlProperties;
 
 /// The properties every control has: size, margin, alignment, visibility and the rest.
 ///
-/// A control embeds it in a field named `base`, marked `#[xaml(flatten)]`, so its properties are
-/// the control's in markup: `<Border Margin="8"/>`. Its layout helpers,
-/// [`measure`](ElementBase::measure) and [`arrange`](ElementBase::arrange), apply the margin, size
-/// limits, alignment and visibility around the control's own layout.
+/// A control embeds it in a field named `common`, marked `#[xaml(flatten)]`, so its properties
+/// are the control's in markup: `<Border Margin="8"/>`. Its layout helpers,
+/// [`measure`](CommonProperties::measure) and [`arrange`](CommonProperties::arrange), apply the
+/// margin, size limits, alignment and visibility around the control's own layout.
 #[derive(Debug, XamlProperties)]
-pub struct ElementBase {
+pub struct CommonProperties {
   /// An explicit width, or `None` to size to the content.
   #[xaml(affects = layout)]
   pub width: Property<Option<f32>>,
@@ -76,7 +76,7 @@ pub struct ElementBase {
   pub tool_tip: Property<Option<String>>,
 }
 
-impl ElementBase {
+impl CommonProperties {
   /// The size properties and alignments, for [`measure_with`] and [`arrange_with`].
   #[must_use]
   pub fn sizing(&self) -> Sizing {
