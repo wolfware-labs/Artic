@@ -1,8 +1,8 @@
 name: CI
 
-# Minutes on private repositories are billed per job rounded up to the minute, with macOS at 10×
-# and Windows at 2× the Linux rate. So pull requests run only the Linux jobs, Windows and macOS run
-# after merging to main (or by hand), and the Rust jobs skip changes that touch no Rust.
+# The repository is public, so GitHub's standard runners cost nothing: pull requests run the same
+# jobs as main, on Linux, Windows and macOS. The Rust jobs still skip changes that touch no Rust,
+# since they'd only repeat main's result.
 #
 # If the change filter itself fails, every job runs: a broken filter must cost minutes, never skip
 # a check, since a skipped job satisfies a required one.
@@ -76,7 +76,7 @@ jobs:
   test-windows:
     name: Test (windows-latest)
     needs: changes
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && (needs.changes.result != 'success' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.rust == 'true') }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.rust == 'true') }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -89,7 +89,7 @@ jobs:
   test-macos:
     name: Test (macos-latest)
     needs: changes
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && (needs.changes.result != 'success' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.rust == 'true') }}
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.rust == 'true') }}
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
