@@ -94,6 +94,7 @@ impl LayoutManager {
       snap,
       current: None,
       measured: Vec::new(),
+      arranging: None,
     };
 
     // Upward: a dirty node measures again in the size it had. If its desired size is unchanged,
@@ -191,6 +192,8 @@ pub struct LayoutCx<'a> {
   current: Option<NodeId>,
   /// The children measured so far by each node being measured, innermost last.
   measured: Vec<HashSet<NodeId>>,
+  /// The node being arranged, which only [`set_bounds`](LayoutCx::set_bounds) needs.
+  arranging: Option<NodeId>,
 }
 
 impl<'a> LayoutCx<'a> {
@@ -255,8 +258,10 @@ impl<'a> LayoutCx<'a> {
     let desired = match self.nodes.layoutable(self.tree, child) {
       Some(layoutable) => {
         let parent = self.current.replace(child);
+        let arranging = self.arranging.take();
         self.measured.push(HashSet::new());
         let desired = layoutable.measure(self, available);
+        self.arranging = arranging;
         let measured = self.measured.pop().expect("pushed above");
         self.current = parent;
         self.forget_unmeasured(child, &measured);
@@ -299,7 +304,9 @@ impl<'a> LayoutCx<'a> {
     slot.arrange_dirty = false;
     if let Some(layoutable) = self.nodes.layoutable(self.tree, child) {
       let parent = self.current.replace(child);
+      let arranging = self.arranging.replace(child);
       layoutable.arrange(self, rect);
+      self.arranging = arranging;
       self.current = parent;
     }
   }
@@ -312,7 +319,7 @@ impl<'a> LayoutCx<'a> {
   ///
   /// Panics outside a node's `arrange`.
   pub fn set_bounds(&mut self, bounds: Rect) {
-    let node = self.node();
+    let node = self.arranging.expect("called from a node's arrange");
     let bounds = self.snap(self.checked_rect(node, bounds));
     self.slots.entry(node).or_default().rect = Some(bounds);
   }

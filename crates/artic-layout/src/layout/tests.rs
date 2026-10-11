@@ -437,6 +437,42 @@ mod misuse {
     }
   }
 
+  /// Calls `set_bounds` while measuring, which only `arrange` may.
+  #[derive(Debug)]
+  struct EarlyBounds;
+
+  impl Object for EarlyBounds {
+    fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  }
+
+  impl Layoutable for EarlyBounds {
+    fn measure(&self, cx: &mut LayoutCx<'_>, _available: Size) -> Size {
+      cx.set_bounds(Rect::new(0.0, 0.0, 1.0, 1.0));
+      Size::ZERO
+    }
+
+    fn arrange(&self, _cx: &mut LayoutCx<'_>, _rect: Rect) {}
+  }
+
+  /// Lays out `EarlyBounds` nodes.
+  struct EarlyBoundsNodes;
+
+  impl LayoutNodes for EarlyBoundsNodes {
+    fn layoutable<'a>(&self, tree: &'a UiTree, node: NodeId) -> Option<&'a dyn Layoutable> {
+      tree.get_as::<EarlyBounds>(node).map(|node| node as &dyn Layoutable)
+    }
+  }
+
+  // set_bounds belongs to arrange: calling it while measuring panics.
+  #[test]
+  #[should_panic(expected = "called from a node's arrange")]
+  fn set_bounds_while_measuring_panics() {
+    let mut tree = UiTree::new();
+    let node = tree.alloc(Box::new(EarlyBounds));
+
+    LayoutManager::default().run(&mut tree, &EarlyBoundsNodes, node, Size::new(10.0, 10.0), 1.0, false);
+  }
+
   // Measuring a node that isn't one of the current node's visual children is a bug, caught in
   // debug builds: its results would be forgotten right after.
   #[test]
