@@ -1,0 +1,117 @@
+# Design: the host seam
+
+Issue: #39. Builds on: the [backend seams](backends.md) (#240), `artic-render`'s `Target` and `Renderer` (#33, #34), the `Dispatcher` (#16). Unblocks: #40 (frame pipeline), #48 (`Window` roots), #73 (input), #79 (cross-thread posting), #101 (`TestHost`), #141 and #142 (mobile hosts).
+
+A **host** drives the screen: it owns the event loop, reports surfaces and events to artic, draws frames when artic asks, and wakes up when work is posted from another thread. The [backend design](backends.md) fixed the roles; this document fixes the traits a host adapter implements and calls, and the first adapter, `artic-winit`, which opens real windows on Windows, macOS and Linux.
+
+## 1. Who sees what
+
+| Who | Writes | Sees |
+| --- | --- | --- |
+| App authors | `pub fn app() -> artic::App`, and a launcher: `artic::run(artic_winit::Host::new()?, artic_vello::Renderer::new()?, my_app::app())` | `artic::App`, `artic::run`, a host and a renderer |
+| Host adapter authors (winit, SDL, a framebuffer, a browser) | `impl Host for MyHost`, calling an `AppHandler` from their loop | `Host`, `AppHandler`, `HostContext`, `SurfaceInfo`, `HostEvent`, `Waker` |
+| artic (#40) | `impl AppHandler` for the frame pipeline | the same seam, from the other side |
+
+`App` stays the app author's type. The seam is named `AppHandler`, after winit's `ApplicationHandler`, which plays the same role one level down, so adapter authors recognize it and the two never share a name.
+
+## 2. The traits
+
+All in `artic-platform`, which has no backend dependencies.
+
+```rust
+pub trait Host {
+  /// What kind of target the host offers, so `artic::run` can reject a renderer that can't draw
+  /// on it before the loop starts.
+  fn targets(&self) -> TargetKind;
+
+  /// Runs the loop, calling `app` until it exits. A host whose loop can't block, such as a
+  /// browser, installs its callbacks and returns at once; the callbacks keep calling `app`.
+  fn run(self, app: impl AppHandler + 'static);
+}
+
+pub trait AppHandler {
+  fn started(&mut self, cx: &mut dyn HostContext, waker: Waker);
+  fn woken(&mut self, cx: &mut dyn HostContext);
+  fn surface_changed(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, info: SurfaceInfo);
+  fn surface_lost(&mut self, cx: &mut dyn HostContext, surface: SurfaceId);
+  fn event(&mut self, cx: &mut dyn HostContext, event: HostEvent);
+  fn frame(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, target: Target<'_>);
+}
+
+pub trait HostContext {
+  fn request_frame(&mut self, surface: SurfaceId);
+  fn exit(&mut self);
+  fn windows(&mut self) -> Option<&mut dyn Windows> { None }
+  // clipboard, text input, cursor, accessibility, …: added by their issues, each defaulting to None
+}
+
+pub trait Windows {
+  /// Opens a window; its surface arrives through `surface_changed`, or `surface_lost` if it
+  /// couldn't be created.
+  fn open(&mut self, desc: &WindowDesc) -> SurfaceId;
+  fn close(&mut self, surface: SurfaceId);
+}
+```
+
+- **A context on every call.** artic acts on the host only through the `cx` it's handed: asking for a frame, exiting, opening a window. This is winit's own rule (windows are created from `&ActiveEventLoop`, inside callbacks), and it needs no shared mutable state between artic and the host. `run` consumes the host, so the capabilities live on the context, not on `Host`.
+- **Capabilities default to `None`.** A host implements what its target has; artic decides the fallback at each use ([backends §2](backends.md#capabilities)). A new capability is a new default method on `HostContext`, so existing adapters keep compiling. #39 implements `windows`; clipboard (#91), IME (#90), color scheme (#118) and OS services (#172) arrive with their issues.
+- **The target is lent only in `frame`.** `surface_changed` reports facts; `frame` is the moment to draw, with the window's handles or a pixel buffer borrowed for that call. A renderer keys its swapchain on the `SurfaceId`, creates it the first time it sees the handles, and drops it on `surface_lost`, as `artic-vello` already does. A `Pixels` host hands a fresh buffer each frame and presents it after the call.
+- **`open` doesn't fail synchronously.** It returns the new id at once; the surface follows through `surface_changed`, or `surface_lost` if the window couldn't be created. A browser host, whose canvas may appear later, works the same way.
+
+## 3. The data
+
+| Type | Crate | Holds |
+| --- | --- | --- |
+| `WindowDesc` | `artic-core` | `title: String`, `width: f32`, `height: f32` in logical units. Plain data, so the `Window` element (#48) describes itself without naming the platform; `artic-core` sits below `artic-layout`, so it uses plain fields rather than `Size`. #48 adds placement and the rest. |
+| `SurfaceInfo` | `artic-platform` | `size: PhysicalSize`, `scale: f32` (device pixels per logical unit), `display: DisplayId`, `refresh_rate: Option<f32>` (some platforms don't report it) |
+| `DisplayId` | `artic-platform` | an opaque id the host assigns per display |
+| `HostEvent` | `artic-platform` | `#[non_exhaustive]`: `CloseRequested { surface }`, `Suspended`, `Resumed` |
+| `Waker` | `artic-platform` | `Clone + Send + Sync`; `wake()` makes the host call `AppHandler::woken` on its loop. It wraps an `Arc<dyn Fn() + Send + Sync>` the host supplies. |
+
+`SurfaceId`, `PhysicalSize`, `Target` and `TargetKind` are `artic-render`'s, shared with the renderer seam.
+
+`HostEvent` holds only what a desktop host reports today. Raw input arrives with #73 (its payload types in `artic-core`, so controls see them without the platform), `ColorSchemeChanged` with #118, `Back` and `MemoryWarning` with the mobile hosts. `#[non_exhaustive]` lets each land without breaking an adapter or a handler. Surface facts (size, scale, display, refresh rate) aren't events: they arrive through `surface_changed`.
+
+`CloseRequested` asks; it doesn't close. artic decides, by closing the window through `Windows::close` (then `surface_lost` follows) or by exiting.
+
+## 4. Waking and the dispatcher
+
+`Waker` is the only part of the seam other threads touch. A host builds it in its loop (`artic-winit` from winit's `EventLoopProxy`), and `wake()` from any thread makes the loop call `AppHandler::woken`. artic, not the host, runs posted work: it drains the `Dispatcher` (#16) in `woken` and after each event, so adapters never depend on the dispatcher; they only implement "wake me". #79 connects the dispatcher's cross-thread `post` to the `Waker` artic receives in `started`.
+
+## 5. `artic-winit`
+
+The desktop adapter, at layer 5, depending on `artic-platform`, `artic-render`, `artic-core` and `winit`. It exports `Host`, whose `new()` fails if the event loop can't be created, and no `winit` type appears in a public item. Inside, `Host` implements winit's `ApplicationHandler` and keeps a map from winit's `WindowId` to artic's `SurfaceId`.
+
+| winit | `artic-winit` | `AppHandler` |
+| --- | --- | --- |
+| first `resumed` | builds the `Waker` from the `EventLoopProxy` | `started(cx, waker)`; artic opens its first window through `cx.windows()`, and `surface_changed` follows |
+| later `resumed`, `suspended` | (mobile) | `event(Resumed)`, `event(Suspended)` |
+| `WindowEvent::Resized`, `ScaleFactorChanged`, `Moved` | rebuilds the surface's `SurfaceInfo`, with the current monitor as its `DisplayId` and its refresh rate | `surface_changed` |
+| `WindowEvent::CloseRequested` | | `event(CloseRequested { surface })` |
+| `WindowEvent::RedrawRequested` | lends the window as `Target::Handles` | `frame(cx, surface, target)` |
+| `user_event` (a `Waker` fired) | | `woken` |
+| `about_to_wait` | `ControlFlow::Wait`: sleep until the next event or wake-up | |
+
+- `cx.request_frame(id)` calls the window's `request_redraw()`. winit merges requests and delivers one `RedrawRequested` per window at the platform's pace (`DwmFlush`, the display link on macOS, Wayland frame callbacks), so each surface is paced by its own display (§10).
+- `cx.exit()` exits the loop; windows still open are reported through `surface_lost` before `run` returns.
+- `targets()` is `TargetKind::Handles`.
+
+The translation from a winit `WindowEvent` to a `SurfaceInfo`, a `HostEvent` or a frame is a pure function over values pulled out of the event, so tests construct its inputs without a display (winit's `ScaleFactorChanged` carries a writer tests can't build).
+
+## 6. Testing
+
+- `winit_event_translation`: resize, scale change and close map to the right `SurfaceInfo` or `HostEvent`, without a window.
+- The `WindowId` → `SurfaceId` map gives distinct ids and maps each back.
+- `artic-platform`: `Waker` is `Clone + Send + Sync` and `wake()` runs the host's hook; a minimal fake host drives a recording `AppHandler`, showing a host can be written against the seam alone, as `TestHost` (#101) will be.
+- `artic-platform` has no `winit` dependency, and no `winit` type appears in `artic-winit`'s public items.
+- A smoke example, `artic-winit/examples/smoke.rs`: an `AppHandler` that opens one window in `started` and asks for a frame after each frame; with `ARTIC_SMOKE_FRAMES=N` it exits after N frames, otherwise it runs until the window closes. It calls only `Host::new()` and `run`, with no target-specific code, and draws nothing (rendering is #40). #53 runs it in CI; the PR records manual runs on Windows, macOS and Linux.
+
+## 7. What this changes
+
+| Before (§10, [backends](backends.md)) | After |
+| --- | --- |
+| `Host::run(self, app: App)` | `Host::run(self, app: impl AppHandler + 'static)`; `App` stays the app author's type |
+| Capabilities as methods on `Host` | Capabilities on `HostContext`, reached inside callbacks; `Host` keeps `targets()` and `run` |
+| "artic asks for frames and wake-ups through a small handle" | `HostContext::request_frame` and `exit` on every call; `Waker` for other threads |
+| The host drains the dispatcher | artic drains it in `woken` and after events |
+| `PlatformHost` stubs that must not panic (#39's first text) | absent capabilities return `None` |

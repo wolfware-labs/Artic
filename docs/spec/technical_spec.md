@@ -626,20 +626,29 @@ fn main() {
 
 ```rust
 pub trait Host {
-    fn run(self, app: App);                                           // may return at once (browser)
+    fn targets(&self) -> TargetKind;                                  // checked against the renderer before run
+    fn run(self, app: impl AppHandler + 'static);                     // may return at once (browser)
+}
+pub trait AppHandler {                                                // artic's side, called by the host
+    fn started(&mut self, cx: &mut dyn HostContext, waker: Waker);
+    fn woken(&mut self, cx: &mut dyn HostContext);
+    fn surface_changed(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, info: SurfaceInfo);
+    fn surface_lost(&mut self, cx: &mut dyn HostContext, surface: SurfaceId);
+    fn event(&mut self, cx: &mut dyn HostContext, event: HostEvent);
+    fn frame(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, target: Target<'_>);
+}
+pub trait HostContext {                                               // handed to every call
+    fn request_frame(&mut self, surface: SurfaceId);
+    fn exit(&mut self);
     fn windows(&mut self) -> Option<&mut dyn Windows> { None }        // capabilities: None = not available
-    fn displays(&self) -> Option<&dyn Displays> { None }
-    fn clipboard(&self) -> Option<&dyn Clipboard> { None }
-    fn text_input(&mut self) -> Option<&mut dyn TextInput> { None }   // IME, soft keyboard, InputMode
-    fn cursor(&mut self) -> Option<&mut dyn Cursor> { None }
-    fn accessibility(&mut self) -> Option<&mut dyn Accessibility> { None }
-    // … color scheme, safe area and keyboard inset, file dialogs, menus, haptics, open_url
+    // … displays, clipboard, text input, cursor, accessibility, color scheme, insets, dialogs, menus
 }
 ```
 
 - Core, required of every host: surfaces, each reporting `SurfaceInfo { size, scale, display, refresh_rate }` when it appears or changes and when it's lost; raw events (§9, plus gamepads); frames per surface; waking the loop when another thread posts to the `Dispatcher`.
 - Everything else is a capability whose default is `None`; artic decides the fallback at each use (no `clipboard`: Copy does nothing; no `windows`: each `Window` takes one whole surface). A new capability is a new default method, so existing adapters keep compiling.
 - Several displays: a windowed host reports one surface per window, moving between displays with its scale and refresh rate; a host without `windows` reports one full-screen surface per display. The app's `Window`s are assigned to OS windows (on the display their `Display` property names) or to display surfaces in order, so a multi-screen app runs unchanged on both.
+- The [host design](../design/host.md) (#39) fixes these traits: artic acts on the host only through the context it's handed, the target is lent only in `frame`, and a `Waker` lets other threads wake the loop, after which artic drains the `Dispatcher`.
 - `run` doesn't have to block: a host whose loop can't block, such as a web host, installs its callbacks and returns, and app code can't tell the difference (D24).
 
 Implementation of `artic-winit`: `winit` provides windows, input, DPI and lifecycle on all five targets, plus per-OS crates (`muda`, `rfd`, `arboard`, `accesskit_winit`, `jni`/`ndk` on Android, `objc2` on iOS/macOS).

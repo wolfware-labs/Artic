@@ -39,26 +39,20 @@ Every target provides four things:
 
 ```rust
 pub trait Host {
+  /// What kind of target the host offers, checked against the renderer before the loop starts.
+  fn targets(&self) -> TargetKind;
+
   /// Runs the loop, reporting surfaces, events and frame times to `app` until it quits. A host
   /// whose loop can't block (a browser) installs its callbacks and returns at once.
-  fn run(self, app: App);
-
-  // Capabilities: implement what the target has. `None` means "not available".
-  fn windows(&mut self) -> Option<&mut dyn Windows> { None }
-  fn displays(&self) -> Option<&dyn Displays> { None }
-  fn clipboard(&self) -> Option<&dyn Clipboard> { None }
-  fn text_input(&mut self) -> Option<&mut dyn TextInput> { None }
-  fn cursor(&mut self) -> Option<&mut dyn Cursor> { None }
-  fn accessibility(&mut self) -> Option<&mut dyn Accessibility> { None }
-  // … color scheme, safe area and keyboard inset, file dialogs, menus, haptics, open_url
+  fn run(self, app: impl AppHandler + 'static);
 }
 ```
 
-`App` is artic's side of the loop. The host calls `app.surface_changed(…)`, `app.surface_lost(…)`, `app.event(…)` and `app.frame(…)`; artic asks for frames and wake-ups through a small handle the host gives it when the loop starts.
+`AppHandler` is artic's side of the loop. The host calls its `started`, `woken`, `surface_changed`, `surface_lost`, `event` and `frame`, each with a `HostContext` through which artic asks for frames, exits and reaches the capabilities; other threads wake the loop through a `Waker`. The [host design](host.md) (#39) fixes these traits; it moved the capabilities from `Host` to `HostContext`, since `run` consumes the host.
 
 ### Capabilities
 
-Everything beyond the core is optional. Each capability is a method whose default returns `None`, so:
+Everything beyond the core is optional. Each capability is a `HostContext` method whose default returns `None`, so:
 
 - a framebuffer adapter implements `run` and nothing else;
 - adding a capability later is a new default method, and no existing adapter breaks;
@@ -214,7 +208,7 @@ Compared with today's §2 and `docs/architecture.md`:
 
 | Before | After |
 | --- | --- |
-| `PlatformHost` with 14 required methods | `Host`: `run`, plus capabilities whose default is `None` |
+| `PlatformHost` with 14 required methods | `Host`: `targets` and `run`; capabilities on `HostContext`, defaulting to `None` |
 | `Renderer::begin_frame`, `render`, `resize`, `create_image`, `measure_text` | `Renderer::accepts`, `render(&Scene, Surface)` and `surface_lost` |
 | A "backend-neutral surface handle" | `Target::Handles`, `Pixels` or `Custom` |
 | `primary_input()` from the host | input mode tracked by artic |
