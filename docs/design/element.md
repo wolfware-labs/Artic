@@ -62,7 +62,7 @@ pub trait ElementImpl {
 | `arrange` | `Collapsed`: returns, children not arranged, since `arrange_with` would stretch a zero size to the slot. Otherwise #41's `arrange_with`: margin, limits, alignment | `arrange_override` with the content's size |
 | `render` | | `ElementImpl::render`; a hidden subtree is skipped by composition (section 7) |
 | `hit_test` | not `Visible`, or `IsHitTestVisible` false: a miss. Otherwise the trait default, `cx.bounds_test(point)` | |
-| `on_event` | | `ElementImpl::on_event` |
+| `on_event` | `IsEnabled` false (the inherited value): `Handled::No`, the control isn't called | `ElementImpl::on_event` |
 | `accessibility` | builds the default node (section 7) | `ElementImpl::accessibility`, which adds to it |
 | `layers` | `Opacity` (clamped), `RenderTransform`, `Visibility` and `ZIndex` as a `Layers` (section 7) | `ElementImpl::clip`, for the clip layer |
 
@@ -216,13 +216,15 @@ Lookups search the type's own properties, then each group, and the compiler writ
 
 Hit testing follows the same rule: the derive's `hit_test` misses when the element isn't `Visible` or its `IsHitTestVisible` is false, and the hit-test walk (#74) doesn't descend into such a node. `IsHitTestVisible` is the drawn-but-click-through case that `Visibility` can't express, for overlays and decorations; spec §12 relies on it.
 
+A disabled element is different: it gets no input, but it still blocks it. Hit testing finds it as usual, so a click on a disabled button lands on the button and doesn't fall through to what's behind it, as with HTML's `<button disabled>`. The derive's `on_event` then returns `Handled::No` without calling `ElementImpl::on_event` when `IsEnabled` is false, so no control has to check it. `IsEnabled` inherits, so a disabled panel disables everything inside it, for pointer, keyboard and every other input. Focus navigation (#78) skips disabled elements. Tooltips come from the pipeline's hover tracking rather than `on_event`, so a disabled control can still show one.
+
 ## 8. Pull requests
 
 | PR | Contents | Done when |
 | --- | --- | --- |
 | A | `artic-element`: `Element`, `ElementImpl`, `HasState`, `ElementType` and `element_type!`, the placeholder contexts; `InputEvent` in `artic-core` | a hand-written element is laid out through `LayoutManager` by way of the cast table |
 | B | `ElementBase` with `#[derive(XamlProperties)]`, the enums, `#[xaml(flatten)]` in `derive(XamlType)` with `Flattened` and the per-owner `GroupOf` descriptors, `PropertyGroupInfo`, `Duplicate::Property`, the measure and arrange outline, `LayoutManager` forgetting unmeasured children | `element_base_properties_registered`, `margin_and_alignment_layout`, `min_max_clamp_desired_size`, `collapsed_takes_no_space` (including a child made dirty after its parent collapsed), a registry test where a control property clashes with a group's |
-| C | `#[derive(Element)]`: the outline from section 3, the missing-`base` error, `#[element(state)]` and its duplicate-state error | the trybuild cases: missing `base`, two fields of one state type, and a test-only state giving a test trait through a blanket impl |
+| C | `#[derive(Element)]`: the outline from section 3, the missing-`base` error, `#[element(state)]` and its duplicate-state error | the trybuild cases: missing `base`, two fields of one state type, and a test-only state giving a test trait through a blanket impl; a unit test that a disabled element's hook isn't called |
 | D | the default accesskit node; opacity, transform and visibility in composition, with `Layers.visible` | `base_accessibility_node`; a pixel test where opacity changes the drawn color; a hidden parent's child isn't drawn and isn't in the accesskit tree; siblings drawn by `ZIndex`, ties in tree order; an out-of-range opacity clamped |
 
 ## 9. Spec changes

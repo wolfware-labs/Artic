@@ -399,7 +399,7 @@ pub trait ElementImpl {                           // what a control writes; the 
     fn measure_override(&self, cx: &mut LayoutCx, available: Size) -> Size { Size::ZERO }
     fn arrange_override(&self, cx: &mut LayoutCx, size: Size) {}
     fn render(&self, cx: &mut RenderCx, scene: &mut SceneBuilder) {}
-    fn on_event(&mut self, cx: &mut EventCx, event: &InputEvent) -> Handled { Handled::No }
+    fn on_event(&mut self, cx: &mut EventCx, event: &InputEvent) -> Handled { Handled::No }   // not called while disabled
     fn accessibility(&self, cx: &AccessCx, node: &mut accesskit::Node) {}   // adds to ElementBase's node
     fn clip(&self, size: Size) -> Option<Clip> { None }                    // clips the descendants
     fn on_apply_template(&mut self, cx: &mut TemplateCx) {}   // per-control hooks live here, defaulted; added with TemplateCx in #84
