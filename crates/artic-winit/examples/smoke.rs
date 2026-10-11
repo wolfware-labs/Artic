@@ -1,5 +1,6 @@
 // Opens one empty window through the artic-winit host, asks for a frame after each frame, and
 // exits after `ARTIC_SMOKE_FRAMES` frames, or when the window is closed if the variable isn't set.
+// A window lost before that many frames, such as one that couldn't be created, exits with code 1.
 // It draws nothing: rendering comes with the frame pipeline (#40).
 //
 // Run with `ARTIC_SMOKE_FRAMES=120 cargo run -p artic-winit --example smoke`.
@@ -53,6 +54,10 @@ impl AppHandler for Smoke {
 
   fn surface_lost(&mut self, cx: &mut dyn HostContext, surface: SurfaceId) {
     println!("surface {} lost after {} frames", surface.get(), self.frames);
+    if self.limit.is_some_and(|limit| self.frames < limit) {
+      eprintln!("the window was lost before {} frames", self.limit.unwrap_or_default());
+      std::process::exit(1);
+    }
     cx.exit();
   }
 
