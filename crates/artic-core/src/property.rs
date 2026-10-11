@@ -205,6 +205,12 @@ where
     self.set_at(Precedence::Local, value);
   }
 
+  /// Sets the `Default` level: the value the property has while no other level holds one. A
+  /// control uses it in `ElementImpl::defaults` to change a default of its own.
+  pub fn set_default(&self, value: T) {
+    self.set_at(Precedence::Default, value);
+  }
+
   /// Sets `level` to `value`.
   ///
   /// If a higher level holds a value, the effective value doesn't change and readers aren't marked
@@ -412,6 +418,20 @@ mod tests {
 
     property.clear(Precedence::StyleSetter);
     assert_eq!(property.get(), 0);
+  }
+
+  // A value set as the default shows only while no other level holds one.
+  #[test]
+  fn set_default_loses_to_every_other_level() {
+    for level in &LEVELS[1..] {
+      let property = Property::new(&TEST, 0);
+
+      property.set_default(5);
+      assert_eq!(property.get(), 5);
+      put(property, *level, 9);
+
+      assert_eq!(property.get(), 9, "{level:?} over the default");
+    }
   }
 
   // An effect reading the property reruns once per change of the effective value, and not for a

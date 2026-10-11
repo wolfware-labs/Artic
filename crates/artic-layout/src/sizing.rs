@@ -301,7 +301,7 @@ mod tests {
     });
   }
 
-  /// An element using the helpers, as `ElementBase` will: it records the rectangle its own
+  /// An element using the helpers, as `LayoutProperties` does: it records the rectangle its own
   /// arranging gets.
   #[derive(Debug)]
   struct Element {

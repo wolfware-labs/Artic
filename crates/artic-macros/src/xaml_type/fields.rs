@@ -271,7 +271,7 @@ mod tests {
     let input: DeriveInput = parse_quote! {
       #[xaml(namespace = "https://artic.rs/ui", content = child)]
       struct Border {
-        base: ElementBase,
+        layout: LayoutProperties,
         #[xaml] child: Property<Option<NodeId>>,
         #[xaml(default = Thickness::ZERO)] padding: artic::Property<Thickness>,
         #[xaml] pointer_pressed: Event<PointerEvent>,
@@ -295,7 +295,7 @@ mod tests {
       roles,
       ["property NodeId", "property Thickness", "event PointerEvent", "collection"]
     );
-    assert_eq!(analysis.other_fields, ["base"]);
+    assert_eq!(analysis.other_fields, ["layout"]);
   }
 
   // `#[xaml(flatten)]` makes a field a group, whatever its type looks like.
@@ -303,7 +303,7 @@ mod tests {
   fn flatten_makes_a_group() {
     let input: DeriveInput = parse_quote! {
       #[xaml(namespace = "https://artic.rs/ui")]
-      struct Border { #[xaml(flatten)] base: ElementBase }
+      struct Border { #[xaml(flatten)] layout: LayoutProperties }
     };
 
     let analysis = analyze(&input).expect("valid struct");

@@ -12,8 +12,8 @@ use artic_render::{Clip, Layers, SceneBuilder};
 /// assistive technology.
 ///
 /// [`Layoutable`] brings `measure` and `arrange`. Controls don't implement this trait by hand:
-/// `#[derive(Element)]` writes it around their [`ElementImpl`], with the shared work of
-/// `ElementBase`.
+/// `#[element]` writes it around their [`ElementImpl`], with the shared work of the property
+/// groups.
 pub trait Element: Object + Layoutable {
   /// Records the element's own drawing, in its own coordinates, without its descendants.
   fn render(&self, cx: &mut RenderCx<'_>, scene: &mut SceneBuilder);
@@ -43,10 +43,11 @@ pub trait Element: Object + Layoutable {
 
 /// What a control writes: only what is special about it. Every method has a default.
 ///
-/// `#[derive(Element)]` calls these from its [`Element`] implementation, after `ElementBase`'s
-/// shared work: margin, size limits and alignment around `measure_override` and
-/// `arrange_override`, visibility, opacity and transform around the rest. A control with nothing
-/// special writes `impl ElementImpl for Spacer {}`.
+/// `#[element]` calls these from its [`Element`] implementation, after the shared work of the
+/// property groups: margin, size limits and alignment around `measure_override` and
+/// `arrange_override`, from [`LayoutProperties`](crate::LayoutProperties); visibility, opacity and
+/// transform around the rest. A control with nothing special writes
+/// `impl ElementImpl for Spacer {}`.
 pub trait ElementImpl {
   /// The content's size within `available`, which already excludes the margin and is held within
   /// the element's limits. By default, nothing.
@@ -72,8 +73,8 @@ pub trait ElementImpl {
     Handled::No
   }
 
-  /// Adds the control's role, name, value and actions to the node `ElementBase` built. By default,
-  /// nothing.
+  /// Adds the control's role, name, value and actions to the default node built from the property
+  /// groups. By default, nothing.
   fn accessibility(&self, cx: &AccessCx<'_>, node: &mut accesskit::Node) {
     let _ = (cx, node);
   }
@@ -88,7 +89,7 @@ pub trait ElementImpl {
 
 /// Gives a control's state struct of type `S` to the traits built on it.
 ///
-/// `#[derive(Element)]` implements it for each field marked `#[element(state)]`, and a blanket
+/// `#[element]` implements it for each field marked `#[element(state)]`, and a blanket
 /// impl gives the matching trait, such as `HasContent` for `HasState<ContentState>`. A struct has
 /// at most one field per state type.
 pub trait HasState<S> {
