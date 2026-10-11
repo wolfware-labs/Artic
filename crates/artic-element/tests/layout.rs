@@ -159,3 +159,17 @@ fn stale_ids_have_no_element() {
 
   assert!(types.layoutable(&tree, block).is_none());
 }
+
+/// Calls `element_type!` where `Element`, `Any` and `linkme` are other items and there is no
+/// prelude, so it compiles only if the macro names everything by its full path.
+#[no_implicit_prelude]
+mod hygiene {
+  #[allow(dead_code)]
+  struct Element;
+  #[allow(dead_code)]
+  struct Any;
+  #[allow(dead_code)]
+  mod linkme {}
+
+  ::artic_element::element_type!(super::Block);
+}
