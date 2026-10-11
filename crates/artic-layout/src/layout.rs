@@ -233,9 +233,17 @@ impl<'a> LayoutCx<'a> {
   ///
   /// # Panics
   ///
-  /// In debug builds, panics if `available` has a negative or NaN axis, or if the child returns
-  /// an infinite, NaN or negative size; release builds treat such an axis as zero.
+  /// In debug builds, panics if `child` isn't a visual child of the node being measured (its
+  /// results would be forgotten right after), if `available` has a negative or NaN axis, or if the
+  /// child returns an infinite, NaN or negative size; release builds treat such an axis as zero.
   pub fn measure(&mut self, child: NodeId, available: Size) -> Size {
+    debug_assert!(
+      self
+        .current
+        .is_none_or(|parent| self.tree.parent(TreeKind::Visual, child) == Some(parent)),
+      "{} measured node {child:?}, which isn't a visual child of it; measure only visual children",
+      self.describe_parent(),
+    );
     let available = self.checked_available(child, available);
     if let Some(siblings) = self.measured.last_mut() {
       siblings.insert(child);

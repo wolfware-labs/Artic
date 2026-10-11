@@ -399,3 +399,55 @@ mod skipped {
     assert_eq!(tree.get_as::<Toggle>(child).unwrap().measured.get(), 1);
   }
 }
+
+mod misuse {
+  use crate::geometry::{Rect, Size};
+  use crate::{LayoutCx, LayoutManager, LayoutNodes, Layoutable};
+  use artic_core::Object;
+  use artic_core::property::AnyProperty;
+  use artic_core::tree::{NodeId, TreeKind, UiTree};
+
+  /// Measures its first grandchild directly, skipping the child in between.
+  #[derive(Debug)]
+  struct Skipper;
+
+  impl Object for Skipper {
+    fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  }
+
+  impl Layoutable for Skipper {
+    fn measure(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size {
+      let tree = cx.tree();
+      let grandchild = cx.children().find_map(|child| tree.children(TreeKind::Visual, child).next());
+      if let Some(grandchild) = grandchild {
+        cx.measure(grandchild, available);
+      }
+      Size::ZERO
+    }
+
+    fn arrange(&self, _cx: &mut LayoutCx<'_>, _rect: Rect) {}
+  }
+
+  /// Lays out `Skipper` nodes.
+  struct Skippers;
+
+  impl LayoutNodes for Skippers {
+    fn layoutable<'a>(&self, tree: &'a UiTree, node: NodeId) -> Option<&'a dyn Layoutable> {
+      tree.get_as::<Skipper>(node).map(|skipper| skipper as &dyn Layoutable)
+    }
+  }
+
+  // Measuring a node that isn't one of the current node's visual children is a bug, caught in
+  // debug builds: its results would be forgotten right after.
+  #[test]
+  #[cfg(debug_assertions)]
+  #[should_panic(expected = "isn't a visual child of")]
+  fn measuring_a_grandchild_panics() {
+    let mut tree = UiTree::new();
+    let [root, child, grandchild] = [(); 3].map(|()| tree.alloc(Box::new(Skipper)));
+    tree.add_child(TreeKind::Visual, root, child);
+    tree.add_child(TreeKind::Visual, child, grandchild);
+
+    LayoutManager::default().run(&mut tree, &Skippers, root, Size::new(10.0, 10.0), 1.0, false);
+  }
+}
