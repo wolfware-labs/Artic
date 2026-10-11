@@ -65,6 +65,7 @@ impl artic_platform::Host for Host {
       started: false,
       suspended: false,
       exiting: false,
+      reporting: false,
     };
     self
       .event_loop
@@ -83,10 +84,12 @@ struct Driver<A> {
   started: bool,
   suspended: bool,
   exiting: bool,
+  reporting: bool,
 }
 
 impl<A: AppHandler> Driver<A> {
-  /// Calls the handler with a context, then reports the surfaces the call opened or lost.
+  /// Calls the handler with a context, then reports the surfaces the call opened or lost. A call
+  /// made while reporting leaves its surfaces to that report, so reporting never nests.
   fn call(&mut self, event_loop: &ActiveEventLoop, call: impl FnOnce(&mut A, &mut dyn HostContext)) {
     let Driver {
       app,
@@ -104,7 +107,11 @@ impl<A: AppHandler> Driver<A> {
       exiting,
     };
     call(app, &mut cx);
-    self.report(event_loop);
+    if !self.reporting {
+      self.reporting = true;
+      self.report(event_loop);
+      self.reporting = false;
+    }
   }
 
   /// Reports newly opened surfaces and lost ones until a call opens or loses no more.
