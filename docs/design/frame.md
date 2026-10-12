@@ -49,7 +49,7 @@ Only stages that run inside a frame are hooks. Features that react to host event
 
 Each surface has a pipeline of its own because each cache is cleaned per root: `LayoutManager::run` drops what it knew about nodes outside the root it lays out, and `Compositor::compose` drops the fragments it didn't visit, so two windows sharing one would discard each other's work on every frame.
 
-Window roots are disjoint: a node has one visual parent, so it belongs to at most one window, and `Runner::window` panics when given a root that is already a window's root or inside one. Each pipeline therefore clears layout and render flags only on its own window's nodes, and one window's frame never consumes another's invalidation.
+Window roots are disjoint: a node has one visual parent, so it belongs to at most one window, and `Runner::window` panics when given a root that overlaps an existing window's root in either direction: the same node, a node inside it, or a node that contains it. Each pipeline therefore clears layout and render flags only on its own window's nodes, and one window's frame never consumes another's invalidation.
 
 ## 3. From a write to a request
 
@@ -87,7 +87,7 @@ Pacing comes from the host and the renderer: a surface asks for its next frame o
 
 ### The scene boundary
 
-v1 renders on the UI thread, but a render thread must stay possible without changing the API (D6, spec §11). What makes it possible is data that moves by value: `prepare` reads the tree, `present` reads only the `Frame`, which owns its `Scene` and is `Send`. A render thread turns `present` into sending the `Frame`. A test asserts `Frame: Send`, so the boundary can't silently break.
+v1 renders on the UI thread, but a render thread must stay possible without changing the API (D6, spec §11). What makes it possible is data that moves by value: `prepare` reads the tree, `present` reads only the `Frame`, which owns its `Scene` and is `Send`. A test asserts `Frame: Send`, so the boundary can't silently break. The scene is half of what a render thread needs; the other half is a target it can keep. `present` takes the `Target` the host lends for one `frame` call, and its `Handles`, `Pixels` and `Custom` variants all borrow from the host, so a render thread also needs the host to hand the renderer a presentation target it owns, such as the window's raw handles kept for the window's lifetime. That is the render thread's own change, at the host seam, and it leaves `prepare`, `Frame` and the tree side of the pipeline as they are.
 
 ## 5. The render `Nodes`
 
@@ -124,7 +124,7 @@ Each stage counts what it did: `LayoutManager::run` returns `LayoutStats { measu
 | `artic-layout` | `run_reports_measured_and_arranged`: a second run with nothing dirty reports zero; `run_reports_resized`: a node whose size changed is listed, one that only moved isn't |
 | `artic-render` | `compose_reports_recorded`: only render-dirty nodes count; `stale_node_is_recorded_again` |
 | `artic-platform` | `layout_offset_applies_after_render_transform`, `render_cx_has_the_arranged_size`, `frame_is_send` |
-| `artic-platform`, through `Runner`, a fake `HostContext` and a counting renderer on a `Pixels` target | `clean_frame_is_skipped`, `render_only_change_skips_layout`, `layout_change_remeasures_subtree`, `resize_invalidates_root`, `resized_node_is_recorded_again`, `windows_keep_their_own_caches`, `write_after_present_requests_one_frame`, `surface_lost_render_error_resets_the_renderer`, `style_write_lands_in_same_frame`, `wants_frame_requests_another`, `closing_last_window_exits`, `render_error_is_returned_from_run`, `render_error_reaches_on_error`, `window_root_inside_another_panics`, `mismatched_renderer_is_rejected` |
+| `artic-platform`, through `Runner`, a fake `HostContext` and a counting renderer on a `Pixels` target | `clean_frame_is_skipped`, `render_only_change_skips_layout`, `layout_change_remeasures_subtree`, `resize_invalidates_root`, `resized_node_is_recorded_again`, `windows_keep_their_own_caches`, `write_after_present_requests_one_frame`, `surface_lost_render_error_resets_the_renderer`, `style_write_lands_in_same_frame`, `wants_frame_requests_another`, `closing_last_window_exits`, `render_error_is_returned_from_run`, `render_error_reaches_on_error`, `overlapping_window_roots_panic`, `mismatched_renderer_is_rejected` |
 
 An `artic-winit` example, `frames`, opens a window with one element through `Runner` and `artic_vello::Renderer`, changes a property once, and exits with an error if any frame runs in the last 500 ms of a 1.5 s run. The Windows and macOS CI jobs run it next to `smoke`. A quiet window, not a frame count, is what it asserts, so a transient resize at startup can't fail it.
 
