@@ -48,7 +48,7 @@ Only stages that run inside a frame are hooks. Features that react to host event
 
 Each surface has a pipeline of its own because each cache is cleaned per root: `LayoutManager::run` drops what it knew about nodes outside the root it lays out, and `Compositor::compose` drops the fragments it didn't visit, so two windows sharing one would discard each other's work on every frame.
 
-Window roots are disjoint: a node has one visual parent, so it belongs to at most one window, and `Runner::window` panics when given a root that overlaps an existing window's root in either direction: the same node, a node inside it, or a node that contains it. Hooks can still move nodes after that, so before preparing a surface the runner walks every window root's visual ancestors and panics if one is another window's root. That covers both directions, a root moved inside another and another moved inside it, and costs the windows times the tree's depth per frame. Each pipeline therefore clears layout and render flags only on its own window's nodes, and one window's frame never consumes another's invalidation.
+Surface roots are disjoint: each `Surface` is a child of the `Application` and a `Surface` is accepted nowhere else ([surface design](surface.md) §2), and a node has one visual parent, so it belongs to at most one surface. Each pipeline therefore clears layout and render flags only on its own surface's nodes, and one surface's frame never consumes another's invalidation.
 
 ## 3. From a write to a request
 

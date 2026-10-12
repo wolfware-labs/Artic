@@ -1,6 +1,6 @@
 # Design: the host seam
 
-Issue: #39. Builds on: the [backend seams](backends.md) (#240), `artic-render`'s `Target` and `Renderer` (#33, #34), the `Dispatcher` (#16). Unblocks: #40 (frame pipeline), #48 (`Window` roots), #73 (input), #79 (cross-thread posting), #101 (`TestHost`), #141 and #142 (mobile hosts).
+Issue: #39. Builds on: the [backend seams](backends.md) (#240), `artic-render`'s `Target` and `Renderer` (#33, #34), the `Dispatcher` (#16). Unblocks: #40 (frame pipeline), #48 (surface roots), #73 (input), #79 (cross-thread posting), #101 (`TestHost`), #141 and #142 (mobile hosts).
 
 A **host** drives the screen: it owns the event loop, reports surfaces and events to artic, draws frames when artic asks, and wakes up when work is posted from another thread. The [backend design](backends.md) fixed the roles; this document fixes the traits a host adapter implements and calls, and the first adapter, `artic-winit`, which opens real windows on Windows, macOS and Linux.
 
