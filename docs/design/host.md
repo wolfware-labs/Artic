@@ -10,7 +10,7 @@ A **host** drives the screen: it owns the event loop, reports surfaces and event
 | --- | --- | --- |
 | App authors | `pub fn app() -> artic::App`, and a launcher: `artic::run(artic_winit::Host::new()?, artic_vello::Renderer::new()?, my_app::app())`, from a `main` that returns a `Result` | `artic::App`, `artic::run`, a host and a renderer |
 | Host adapter authors (winit, SDL, a framebuffer, a browser) | `impl Host for MyHost`, calling an `AppHandler` from their loop | `Host`, `AppHandler`, `HostContext`, `SurfaceInfo`, `HostEvent`, `Waker` |
-| artic (#40) | `impl AppHandler` for the frame pipeline | the same seam, from the other side |
+| artic (#40) | `Runner`, the frame pipeline's `impl AppHandler` ([frame design](frame.md)) | the same seam, from the other side |
 
 `App` stays the app author's type. The seam is named `AppHandler`, after winit's `ApplicationHandler`, which plays the same role one level down, so adapter authors recognize it and the two never share a name.
 
@@ -95,7 +95,7 @@ The desktop adapter, at layer 5, depending on `artic-platform`, `artic-render`, 
 | `user_event` (a `Waker` fired) | | `woken` |
 | `about_to_wait` | `ControlFlow::Wait`: sleep until the next event or wake-up | |
 
-- `cx.request_frame(id)` calls the window's `request_redraw()`, which schedules one `RedrawRequested` for that window; winit merges repeated requests. Scheduling isn't pacing: a handler that asks for the next frame from inside `frame` runs as fast as rendering allows unless something waits for the display. Pacing each surface to its display's refresh (§10) is #40's, through the renderer's vsync'd presentation and the platform's frame callbacks.
+- `cx.request_frame(id)` calls the window's `request_redraw()`, which schedules one `RedrawRequested` for that window; winit merges repeated requests. Scheduling isn't pacing: a handler that asks for the next frame from inside `frame` runs as fast as rendering allows unless something waits for the display. Pacing each surface to its display's refresh (§10) comes from the renderer's vsync'd presentation and the platform's frame callbacks ([frame design](frame.md) §4).
 - `cx.exit()` exits the loop; windows still open are reported through `surface_lost` before `run` returns.
 - `targets()` is `TargetKind::Handles`.
 - The monitor is read on every resize, scale change, move and frame, because Wayland sends no `Moved` and a move between monitors of equal scale sends no scale change; a display change on its own is still reported. A monitor's `DisplayId` follows its name (the connector, such as `DP-1`), and its position only when it has none, so rearranging displays doesn't change it.
