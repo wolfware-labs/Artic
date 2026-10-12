@@ -555,3 +555,27 @@ fn suspended_window_is_kept() {
   assert_eq!(fixture.cx.frames, [FIRST]);
   assert!(stats.rendered);
 }
+
+// A hook that moves another window's root under the root being drawn is caught before this frame
+// draws both.
+#[test]
+#[should_panic(expected = "inside another window")]
+fn reparenting_another_root_under_this_one_panics() {
+  let mut tree = UiTree::new();
+  let (first_root, _) = panel(&mut tree, &[]);
+  let (second_root, _) = panel(&mut tree, &[]);
+  let mut runner = Runner::new(tree, Counter::default())
+    .window(desc("first"), first_root)
+    .window(desc("second"), second_root);
+  runner.hooks().before_layout(move |tree, root, _, _| {
+    if root == first_root && tree.parent(TreeKind::Visual, second_root).is_none() {
+      tree.add_child(TreeKind::Visual, first_root, second_root);
+    }
+  });
+  let mut cx = Context::default();
+  let mut buffer = pixels();
+  runner.started(&mut cx, Waker::new(|| {}));
+  runner.surface_changed(&mut cx, FIRST, info(64, 64, 1.0));
+
+  runner.frame(&mut cx, FIRST, target(&mut buffer), Duration::ZERO);
+}

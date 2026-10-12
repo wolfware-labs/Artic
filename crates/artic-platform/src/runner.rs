@@ -132,12 +132,14 @@ impl<R: Renderer> Runner<R> {
   }
 
   #[track_caller]
-  fn check_root(&self, root: NodeId) {
-    for ancestor in self.tree.ancestors(TreeKind::Visual, root) {
-      assert!(
-        !self.surfaces.iter().any(|window| window.root == ancestor),
-        "the root {root:?} is inside another window's root {ancestor:?}"
-      );
+  fn check_roots(&self) {
+    for root in self.surfaces.iter().map(|window| window.root) {
+      for ancestor in self.tree.ancestors(TreeKind::Visual, root) {
+        assert!(
+          !self.surfaces.iter().any(|window| window.root == ancestor),
+          "the root {root:?} is inside another window's root {ancestor:?}"
+        );
+      }
     }
   }
 
@@ -251,7 +253,7 @@ impl<R: Renderer> AppHandler for Runner<R> {
     if self.tree.take_pending() {
       self.mark_all(cx, Some(surface));
     }
-    self.check_root(root);
+    self.check_roots();
     let window = &mut self.surfaces[index];
     let result = if window.needs_frame {
       window.needs_frame = false;
