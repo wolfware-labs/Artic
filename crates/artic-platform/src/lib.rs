@@ -5,16 +5,19 @@
 //!   such as [`Windows`], each `None` on hosts without it.
 //! - [`SurfaceInfo`], [`DisplayId`] and [`HostEvent`] are what a host reports, and [`Waker`] wakes
 //!   its loop from other threads.
+//! - [`Pipeline`] draws one surface's frames.
 //!
 //! This crate has no backend dependencies; adapter crates such as `artic-winit` implement it. The
 //! design is `docs/design/host.md`.
 
 mod event;
 mod host;
+mod pipeline;
 mod surface;
 mod waker;
 
 pub use event::HostEvent;
 pub use host::{AppHandler, Host, HostContext, Windows};
+pub use pipeline::{Frame, FrameStats, Pipeline};
 pub use surface::{DisplayId, SurfaceInfo};
 pub use waker::Waker;

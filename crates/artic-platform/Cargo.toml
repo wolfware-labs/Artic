@@ -10,10 +10,13 @@ repository.workspace = true
 
 [dependencies]
 artic-core.workspace = true
+artic-element.workspace = true
 artic-layout.workspace = true
 artic-render.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
+accesskit.workspace = true
 pretty_assertions.workspace = true
 static_assertions.workspace = true
 

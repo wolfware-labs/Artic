@@ -1,0 +1,259 @@
+// Elements, a renderer and a host context shared by the pipeline and runner tests.
+#![allow(dead_code)]
+
+use artic_core::Object;
+use artic_core::property::{Affects, AnyProperty, Inheritance, Property, PropertyKey};
+use artic_core::tree::{NodeId, TreeKind, UiTree};
+use artic_core::window::WindowDesc;
+use artic_element::{AccessCx, Element, RenderCx};
+use artic_layout::geometry::{Rect, Size, Transform};
+use artic_layout::{LayoutCx, Layoutable};
+use artic_platform::{DisplayId, HostContext, SurfaceInfo, Windows};
+use artic_render::{
+  Color, Layers, PhysicalSize, PixelBuffer, PixelFormat, RenderError, Renderer, Scene, SceneBuilder, Surface, SurfaceId,
+  Target, TargetKind,
+};
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+
+static VISIBLE: PropertyKey<bool> = PropertyKey::new("Visible", Affects::RENDER, Inheritance::None);
+static HEIGHT: PropertyKey<f32> = PropertyKey::new("Height", Affects::LAYOUT, Inheritance::None);
+static COLOR: PropertyKey<u32> = PropertyKey::new("Color", Affects::RENDER, Inheritance::None);
+static TURN: PropertyKey<bool> = PropertyKey::new("Turn", Affects::RENDER, Inheritance::None);
+
+/// Stacks its children from top to bottom, each as wide as itself; draws nothing.
+#[derive(Debug)]
+pub struct Panel {
+  visible: Property<bool>,
+}
+
+impl Object for Panel {
+  fn visit_properties(&self, visit: &mut dyn FnMut(&dyn AnyProperty)) {
+    visit(&self.visible);
+  }
+}
+
+impl Layoutable for Panel {
+  fn measure(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size {
+    let children: Vec<NodeId> = cx.children().collect();
+    children.iter().fold(Size::ZERO, |total, child| {
+      let size = cx.measure(*child, Size::new(available.width, f32::INFINITY));
+      Size::new(total.width.max(size.width), total.height + size.height)
+    })
+  }
+
+  fn arrange(&self, cx: &mut LayoutCx<'_>, rect: Rect) {
+    let children: Vec<NodeId> = cx.children().collect();
+    let mut y = 0.0;
+    for child in children {
+      let height = cx.desired(child).height;
+      cx.arrange(child, Rect::new(0.0, y, rect.width, height));
+      y += height;
+    }
+  }
+}
+
+impl Element for Panel {
+  fn render(&self, _cx: &mut RenderCx<'_>, _scene: &mut SceneBuilder) {}
+
+  fn accessibility(&self, _cx: &AccessCx<'_>) -> accesskit::Node {
+    accesskit::Node::new(accesskit::Role::GenericContainer)
+  }
+
+  fn layers(&self, _size: Size) -> Layers {
+    Layers {
+      visible: self.visible.get(),
+      ..Layers::default()
+    }
+  }
+}
+
+artic_element::element_type!(Panel);
+
+/// A block `height` tall that fills its box with `color`, turned by a scale of 2 when `turn` is set.
+#[derive(Debug)]
+pub struct Leaf {
+  height: Property<f32>,
+  color: Property<u32>,
+  turn: Property<bool>,
+  pub seen: Cell<Option<Size>>,
+}
+
+impl Object for Leaf {
+  fn visit_properties(&self, visit: &mut dyn FnMut(&dyn AnyProperty)) {
+    visit(&self.height);
+    visit(&self.color);
+    visit(&self.turn);
+  }
+}
+
+impl Layoutable for Leaf {
+  fn measure(&self, _cx: &mut LayoutCx<'_>, _available: Size) -> Size {
+    Size::new(10.0, self.height.get())
+  }
+
+  fn arrange(&self, _cx: &mut LayoutCx<'_>, _rect: Rect) {}
+}
+
+impl Element for Leaf {
+  fn render(&self, cx: &mut RenderCx<'_>, scene: &mut SceneBuilder) {
+    self.seen.set(Some(cx.size()));
+    let color = self.color.get();
+    let [_, r, g, b] = color.to_be_bytes();
+    scene.fill_rect(Rect::new(0.0, 0.0, cx.size().width, cx.size().height), Color::rgb(r, g, b));
+  }
+
+  fn accessibility(&self, _cx: &AccessCx<'_>) -> accesskit::Node {
+    accesskit::Node::new(accesskit::Role::GenericContainer)
+  }
+
+  fn layers(&self, _size: Size) -> Layers {
+    Layers {
+      transform: self.turn.get().then(|| Transform::scale(2.0, 2.0)),
+      ..Layers::default()
+    }
+  }
+}
+
+artic_element::element_type!(Leaf);
+
+/// A leaf's id and the properties a test changes.
+#[derive(Debug, Clone, Copy)]
+pub struct LeafHandles {
+  pub id: NodeId,
+  pub height: Property<f32>,
+  pub color: Property<u32>,
+  pub turn: Property<bool>,
+}
+
+/// Allocates a visible panel holding `children`, and returns it with its visibility.
+pub fn panel(tree: &mut UiTree, children: &[NodeId]) -> (NodeId, Property<bool>) {
+  let visible = Property::new(&VISIBLE, true);
+  let id = tree.alloc(Box::new(Panel { visible }));
+  for child in children {
+    tree.add_child(TreeKind::Visual, id, *child);
+  }
+  (id, visible)
+}
+
+/// Allocates a black leaf `height` tall.
+pub fn leaf(tree: &mut UiTree, height: f32) -> LeafHandles {
+  let (height, color, turn) = (
+    Property::new(&HEIGHT, height),
+    Property::new(&COLOR, 0),
+    Property::new(&TURN, false),
+  );
+  let id = tree.alloc(Box::new(Leaf {
+    height,
+    color,
+    turn,
+    seen: Cell::new(None),
+  }));
+  LeafHandles { id, height, color, turn }
+}
+
+/// A renderer for pixel buffers that counts renders and lost surfaces, and fails once on demand.
+#[derive(Debug, Clone, Default)]
+pub struct Counter {
+  pub rendered: Rc<Cell<u32>>,
+  pub lost: Rc<RefCell<Vec<SurfaceId>>>,
+  pub fail: Rc<RefCell<Option<RenderError>>>,
+}
+
+impl Renderer for Counter {
+  fn accepts(&self, kind: TargetKind) -> bool {
+    kind == TargetKind::Pixels
+  }
+
+  fn render(&mut self, _scene: &Scene, _surface: Surface<'_>) -> Result<(), RenderError> {
+    if let Some(error) = self.fail.borrow_mut().take() {
+      return Err(error);
+    }
+    self.rendered.set(self.rendered.get() + 1);
+    Ok(())
+  }
+
+  fn surface_lost(&mut self, surface: SurfaceId) {
+    self.lost.borrow_mut().push(surface);
+  }
+}
+
+/// A host context that logs what the runner asks for and opens windows numbered from 1.
+#[derive(Debug, Default)]
+pub struct Context {
+  pub frames: Vec<SurfaceId>,
+  pub exited: bool,
+  pub opened: Vec<String>,
+  pub closed: Vec<SurfaceId>,
+  pub windowless: bool,
+}
+
+impl Context {
+  /// Forgets the frames asked for so far.
+  pub fn clear(&mut self) {
+    self.frames.clear();
+  }
+}
+
+impl HostContext for Context {
+  fn request_frame(&mut self, surface: SurfaceId) {
+    self.frames.push(surface);
+  }
+
+  fn exit(&mut self) {
+    self.exited = true;
+  }
+
+  fn windows(&mut self) -> Option<&mut dyn Windows> {
+    if self.windowless { None } else { Some(self) }
+  }
+}
+
+impl Windows for Context {
+  fn open(&mut self, desc: &WindowDesc) -> SurfaceId {
+    self.opened.push(desc.title.clone());
+    SurfaceId::new(self.opened.len() as u64)
+  }
+
+  fn close(&mut self, surface: SurfaceId) {
+    self.closed.push(surface);
+  }
+}
+
+/// A window description titled `title`.
+pub fn desc(title: &str) -> WindowDesc {
+  WindowDesc {
+    title: title.into(),
+    width: 64.0,
+    height: 64.0,
+  }
+}
+
+/// A surface `width` by `height` device pixels at `scale`.
+pub fn info(width: u32, height: u32, scale: f32) -> SurfaceInfo {
+  SurfaceInfo {
+    size: PhysicalSize { width, height },
+    scale,
+    display: DisplayId::new(1),
+    refresh_rate: Some(60.0),
+  }
+}
+
+/// A 64 by 64 RGBA buffer.
+pub fn pixels() -> Vec<u8> {
+  vec![0; 64 * 64 * 4]
+}
+
+/// `pixels` as a frame target.
+pub fn target(pixels: &mut [u8]) -> Target<'_> {
+  Target::Pixels(PixelBuffer {
+    data: pixels,
+    stride: 64 * 4,
+    format: PixelFormat::Rgba8,
+  })
+}
+
+/// Sets `property`, for hooks that capture a property handle.
+pub fn set_color(property: Property<u32>, color: u32) {
+  property.set(color);
+}
