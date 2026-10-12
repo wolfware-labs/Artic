@@ -41,7 +41,7 @@ The vocabulary splits by layer. App code says `Surface`, with platform settings 
 | Type | Crate | Shape |
 | --- | --- | --- |
 | `Application` | `artic-element` | An `#[element]`, the root of the tree. Its content is the collection of its `Surface`s. #122 adds `Resources` and `Styles` to it |
-| `Surface` | `artic-element` | An `#[element]` with `Title: String` and `IsOpen: bool` (default `true`), both `affects = surface`, and a single content. Allowed only as a child of `Application`. Accesskit role `Window`, named by `Title` |
+| `Surface` | `artic-element` | An `#[element]` with `Title: String` (`affects = surface | render`, so a change also rebuilds the accesskit node) and `IsOpen: bool` (default `true`, `affects = surface`), and a single content. Allowed only as a child of `Application`. Accesskit role `Window`, named by `Title` |
 | `Desktop` | `artic-element` | An attached-property owner with no instances. `Width: Option<f32>`, `Height: Option<f32>`, `SizeToContent`, `Chrome`, all `inherits`, `affects = surface`, `target = any` |
 | `SizeToContent` | `artic-element` | `XamlEnum`: `Manual` (default), `Width`, `Height`, `WidthAndHeight` |
 | `Chrome` | `artic-element` | `XamlEnum`: `System` (default: the OS draws the title bar and borders), `None` (the app draws everything) |
@@ -121,7 +121,7 @@ The user can't resize a `SizeToContent` axis: `WindowDesc.resizable` leaves it o
 | Crate | Tests |
 | --- | --- |
 | `artic-layout` | `scale_change_arranges_without_measuring` (`LayoutStats.measured == 0`), `measure_cx_has_no_scale` (a compile-fail doctest) |
-| `artic-element` | `surface_accesskit_node` (role `Window`, named by `Title`), `desktop_chrome_inherits_from_application`, `attached_property_inherits` |
+| `artic-element` | `surface_accesskit_node` (role `Window`, named by `Title`, renamed when `Title` changes), `desktop_chrome_inherits_from_application`, `attached_property_inherits` |
 | `artic-controls` | `user_control_accesskit_node` (role `GenericContainer`), `user_control_lays_out_its_content` |
 | `artic-platform`, through `Runner` and the fake host | `surface_opens_measured_to_content`, `surface_opens_at_desktop_size`, `title_change_updates_once`, `unchanged_surface_is_not_updated`, `size_to_content_settles` (the OS clamps, and no second request follows), `os_close_writes_is_open_and_reopens`, `failed_open_is_not_retried`, `content_growth_resizes_window`, `last_surface_closing_exits`, `removed_surface_closes`, `windowless_host_binds_in_tree_order`, `windowless_surface_ignores_size_to_content` |
 
@@ -133,7 +133,7 @@ The `smoke` and `frames` examples build an `Application` with one `Surface` and 
 | --- | --- | --- |
 | A | this document; spec §6, §7 and §10, `architecture.md`, and pointers in the host and frame designs; #267 for `Desktop.State` and `Desktop.Display` | approved |
 | B | `MeasureCx` and `ArrangeCx`, and a scale change that arranges without measuring | the `artic-layout` tests in section 7 |
-| C | `Affects::SURFACE`; attached properties that inherit; `Application`, `Surface`, `Desktop`, `SizeToContent`, `Chrome`, `UserControl`; reconcile, `WindowDesc` in `artic-platform`, `SurfaceView`, `Windows::update`, the `artic-winit` mapping; both examples ported | the `artic-element`, `artic-controls` and `artic-platform` tests in section 7, and `smoke` and `frames` passing in CI |
+| C | `Affects::SURFACE`; attached properties that inherit; `Application`, `Surface`, `Desktop`, `SizeToContent`, `Chrome`, `UserControl`; reconcile, `WindowDesc` in `artic-platform`, `SurfaceView`, `Windows::update`, the `artic-winit` mapping; both examples ported; the overlapping-root checks and their tests removed, since surfaces under `Application` are disjoint | the `artic-element`, `artic-controls` and `artic-platform` tests in section 7, and `smoke` and `frames` passing in CI |
 
 ## 9. Later
 
