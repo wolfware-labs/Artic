@@ -103,7 +103,7 @@ Writing `Local` shadows a binding: after the OS closes a surface whose `IsOpen` 
 
 `Layoutable::measure` and `ElementImpl::measure_override` take `&mut MeasureCx`; `arrange` and `arrange_override` take `&mut ArrangeCx`. A desired size is in logical pixels and can't depend on the display, which spec §7 (layout protocol, rule 5) already intends and the types now enforce: a `measure_override` that reads the scale doesn't compile.
 
-That's what makes a surface measurable before it has a window, and it makes a scale change cheap. `LayoutManager::run` remembers the scale it last arranged at. When the scale changes, as when a window moves to a monitor with a different scale, it arranges from the root again, with every measure answered from its cache since no logical size changed. `surface_changed` stops marking the whole subtree `LAYOUT` on a scale change.
+That's what makes a surface measurable before it has a window, and it makes a scale change cheap. `LayoutManager::run` remembers the scale it last arranged at. When the scale changes, as when a window moves to a monitor with a different scale, it arranges from the root again. The root is offered the surface's logical size, its device size over the scale: if that is unchanged, every measure answers from its cache; if not, as when a host reports the new scale before the size that matches it (Windows does), the root is measured again like on any resize, and only the children offered a different size follow. `surface_changed` stops marking the whole subtree `LAYOUT` on a scale change.
 
 ## 6. Sizing
 
