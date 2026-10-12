@@ -170,6 +170,7 @@ impl<R: Renderer> AppHandler for Runner<R> {
       for (surface, root) in opened {
         self.bind(surface, root);
       }
+      self.exit_without_windows(cx);
     }
     self.settle(cx);
   }

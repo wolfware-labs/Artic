@@ -592,3 +592,23 @@ fn destroyed_window_exits() {
   assert!(fixture.cx.exited);
   assert_eq!(fixture.runner.stats(FIRST), None);
 }
+
+// A runner with no window to open, on a host that opens windows, exits instead of waiting for
+// one.
+#[test]
+fn no_windows_to_open_exits() {
+  let mut runner = Runner::new(UiTree::new(), Counter::default());
+  let mut cx = Context::default();
+
+  runner.started(&mut cx, Waker::new(|| {}));
+
+  assert!(cx.exited);
+}
+
+// A failed frame's error says what the renderer reported.
+#[test]
+fn render_error_message_names_the_cause() {
+  let error = Error::Render(RenderError::Backend("no device".into()));
+
+  assert_eq!(error.to_string(), "a frame failed to render: no device");
+}
