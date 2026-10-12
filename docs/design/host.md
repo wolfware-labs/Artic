@@ -49,6 +49,7 @@ pub trait Windows {
   /// Opens a window; its surface arrives through `surface_changed`, or `surface_lost` if it
   /// couldn't be created.
   fn open(&mut self, desc: &WindowDesc) -> SurfaceId;
+  fn update(&mut self, surface: SurfaceId, desc: &WindowDesc);
   fn close(&mut self, surface: SurfaceId);
 }
 ```

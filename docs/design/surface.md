@@ -31,7 +31,7 @@ A **surface** is a root the app asks the host to present: an OS window on a desk
 | --- | --- | --- |
 | App code | an `Application` holding `Surface`s, each holding a view, usually a `UserControl`; `IsOpen` to open and close one | `Application`, `Surface`, `Desktop`, `UserControl` |
 | The facade (#55) | builds the tree from the views, then `Runner::new(tree, renderer, application)` and `artic_platform::run(host, runner)` | `Runner`, `run` |
-| Control authors | `measure_override(&MeasureCx, …)` and `arrange_override(&mut ArrangeCx, …)` | `MeasureCx`, `ArrangeCx` |
+| Control authors | `measure_override(&mut MeasureCx, …)` and `arrange_override(&mut ArrangeCx, …)` | `MeasureCx`, `ArrangeCx` |
 | Host adapters | `Windows::open`, `update` and `close` | `WindowDesc`, `Windows` |
 
 The vocabulary splits by layer. App code says `Surface`, with platform settings as attached properties of a family owner such as `Desktop`. `artic-platform` and the hosts say surface too, and "window" appears only in `Windows`, the capability of hosts whose surfaces are OS windows.

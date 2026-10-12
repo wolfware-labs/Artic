@@ -110,14 +110,14 @@ pub trait Renderer {
   fn accepts(&self, kind: TargetKind) -> bool;
 
   /// Draws `scene` on `surface`.
-  fn render(&mut self, scene: &Scene, surface: Surface<'_>) -> Result<(), RenderError>;
+  fn render(&mut self, scene: &Scene, surface: SurfaceView<'_>) -> Result<(), RenderError>;
 
   /// Releases what the renderer holds for a surface that's gone, such as its swapchain.
   fn surface_lost(&mut self, surface: SurfaceId) {}
 }
 
 /// One surface to draw on this frame.
-pub struct Surface<'a> {
+pub struct SurfaceView<'a> {
   pub id: SurfaceId,        // which surface: a renderer keeps a swapchain per surface
   pub size: PhysicalSize,   // in device pixels: a swapchain needs it, and handles don't carry it
   pub scale: f32,           // device pixels per logical unit
@@ -125,7 +125,7 @@ pub struct Surface<'a> {
 }
 ```
 
-(The [surface design](surface.md) (#48) renames `Surface` to `SurfaceView`, freeing the name for the element a host presents.)
+(First named `Surface`; the [surface design](surface.md) (#48) renamed it `SurfaceView`, freeing the name for the element a host presents.)
 
 (Implementing #33 refined the first sketch, `render(&Scene, Target, scale)`: a renderer with several windows needs to know which surface it draws on and at what size, and `artic::run`'s pairing check needs `accepts`.)
 
@@ -213,7 +213,7 @@ Compared with today's §2 and `docs/architecture.md`:
 | Before | After |
 | --- | --- |
 | `PlatformHost` with 14 required methods | `Host`: `targets` and `run`; capabilities on `HostContext`, defaulting to `None` |
-| `Renderer::begin_frame`, `render`, `resize`, `create_image`, `measure_text` | `Renderer::accepts`, `render(&Scene, Surface)` and `surface_lost` |
+| `Renderer::begin_frame`, `render`, `resize`, `create_image`, `measure_text` | `Renderer::accepts`, `render(&Scene, SurfaceView)` and `surface_lost` |
 | A "backend-neutral surface handle" | `Target::Handles`, `Pixels` or `Custom` |
 | `primary_input()` from the host | input mode tracked by artic |
 | `Focus` moves in `Tab` order | actions, with directional focus from geometry |
