@@ -46,12 +46,12 @@ use crate::arena::SlotId;
 use crate::property::{Affects, AnyProperty, AttachedKey, KeyId, Property};
 use attached::AttachedValues;
 use dirty::DirtyFlags;
+pub use dirty::DirtyHandle;
 use hierarchy::Tree;
 use objects::Objects;
 use std::any::Any;
 use std::collections::HashSet;
 use std::fmt::Debug;
-use std::rc::Rc;
 
 const TREES: [TreeKind; 2] = [TreeKind::Logical, TreeKind::Visual];
 
@@ -173,7 +173,7 @@ impl UiTree {
     self
       .objects
       .object(id)
-      .visit_properties(&mut |property| property.attach(Rc::clone(&dirty)));
+      .visit_properties(&mut |property| property.attach(dirty.clone()));
     id
   }
 
@@ -213,10 +213,10 @@ impl UiTree {
   /// ```
   pub fn free(&mut self, node_id: NodeId) -> Option<Box<dyn Object>> {
     let object = self.objects.free(node_id)?;
+    self.dirty_flags.remove(node_id);
     object.visit_properties(&mut |property| property.inherit_from(None));
     self.logical.remove(node_id);
     self.visual.remove(node_id);
-    self.dirty_flags.remove(node_id);
     self.attached_values.remove(node_id);
     Some(object)
   }
@@ -553,6 +553,17 @@ impl UiTree {
   pub fn clear_dirty(&mut self, id: NodeId, stages: Affects) {
     self.check(id);
     self.dirty_flags.clear(id, stages);
+  }
+
+  /// Returns whether any node was marked dirty since the last call, and clears that.
+  ///
+  /// Every path that marks a node dirty sets it: a property change, [`mark_dirty`](Self::mark_dirty),
+  /// a new node and a change to a node's visual children. Clearing flags doesn't. The frame
+  /// pipeline asks after each change it handles, so it needn't walk the tree to know a frame is
+  /// needed.
+  #[must_use = "the flag is cleared, so a caller that ignores it loses the request for a frame"]
+  pub fn take_pending(&self) -> bool {
+    self.dirty_flags.take_pending()
   }
 
   /// Returns `node`'s value of the attached property `key`, or the key's default when nothing has

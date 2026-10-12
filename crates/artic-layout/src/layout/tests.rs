@@ -399,6 +399,26 @@ mod skipped {
     assert_eq!(tree.get_as::<Toggle>(child).unwrap().measured.get(), 1);
   }
 
+  // A child whose parent stopped measuring it, as a collapsed parent does, keeps its last size,
+  // so when the parent shows it again at another size the child is listed as resized.
+  #[test]
+  fn child_shown_again_at_another_size_is_resized() {
+    let mut tree = UiTree::new();
+    let [parent, child] = [(); 2].map(|()| tree.alloc(Box::<Toggle>::default()));
+    tree.add_child(TreeKind::Visual, parent, child);
+    let mut layout = LayoutManager::default();
+    layout.run(&mut tree, &Toggles, parent, Size::new(100.0, 100.0), 1.0, false);
+    tree.get_as::<Toggle>(parent).unwrap().skip.set(true);
+    LayoutManager::invalidate_measure(&mut tree, parent);
+    layout.run(&mut tree, &Toggles, parent, Size::new(200.0, 200.0), 1.0, false);
+
+    tree.get_as::<Toggle>(parent).unwrap().skip.set(false);
+    LayoutManager::invalidate_measure(&mut tree, parent);
+    let stats = layout.run(&mut tree, &Toggles, parent, Size::new(200.0, 200.0), 1.0, false);
+
+    assert_eq!(stats.resized, [child]);
+  }
+
   /// A root, a middle node and a leaf, laid out once.
   fn three_levels() -> (UiTree, LayoutManager, [NodeId; 3]) {
     let mut tree = UiTree::new();
@@ -530,4 +550,38 @@ mod misuse {
 
     LayoutManager::default().run(&mut tree, &Skippers, root, Size::new(10.0, 10.0), 1.0, false);
   }
+}
+
+// A run reports the nodes it measured and arranged, lists none as resized the first time, and a
+// run with nothing changed reports nothing.
+#[test]
+fn run_reports_measured_and_arranged() {
+  let mut tree = UiTree::new();
+  let child = leaf(&mut tree, 100.0, 20.0);
+  let root = stack(&mut tree, &[child]);
+  let mut manager = LayoutManager::default();
+
+  let first = manager.run(&mut tree, &Nodes, root, WINDOW, 1.0, false);
+  let second = manager.run(&mut tree, &Nodes, root, WINDOW, 1.0, false);
+
+  assert_eq!((first.measured, first.arranged), (2, 2));
+  assert!(first.resized.is_empty());
+  assert_eq!(second, LayoutStats::default());
+}
+
+// A node whose arranged size changes is listed as resized; a sibling that only moves isn't.
+#[test]
+fn run_reports_resized() {
+  let mut tree = UiTree::new();
+  let grows = leaf(&mut tree, 100.0, 20.0);
+  let moves = leaf(&mut tree, 100.0, 20.0);
+  let root = stack(&mut tree, &[grows, moves]);
+  let mut manager = LayoutManager::default();
+  run(&mut manager, &mut tree, root, WINDOW);
+
+  node(&tree, grows).size.set(Size::new(100.0, 40.0));
+  LayoutManager::invalidate_measure(&mut tree, grows);
+  let stats = manager.run(&mut tree, &Nodes, root, WINDOW, 1.0, false);
+
+  assert_eq!(stats.resized, [grows]);
 }

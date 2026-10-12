@@ -1,6 +1,6 @@
 use crate::Object;
-use crate::property::{Affects, AnyProperty, Inheritance, Precedence, Property, PropertyKey};
-use crate::tree::{NodeId, UiTree};
+use crate::property::{Affects, AnyProperty, AttachedKey, Inheritance, Precedence, Property, PropertyKey};
+use crate::tree::{NodeId, TreeKind, UiTree};
 use pretty_assertions::assert_eq;
 
 static FONT_SIZE: PropertyKey<i32> = PropertyKey::new("FontSize", Affects::LAYOUT, Inheritance::None);
@@ -102,4 +102,115 @@ fn freed_node_properties_do_not_mark_the_next_node() {
   font_size.set(24);
 
   assert_eq!(tree.dirty(next), Affects::NONE);
+}
+
+// A write to a freed node's property, through a copy kept outside the tree, doesn't set the
+// pending flag: no live node changed.
+#[test]
+fn freed_node_property_write_sets_no_pending() {
+  let mut tree = UiTree::new();
+  let (old, font_size, _) = clean_label(&mut tree);
+  let row = tree.attached_property(old, &ROW);
+  tree.free(old);
+  let _ = tree.take_pending();
+
+  font_size.set(24);
+  row.set(2);
+
+  assert!(!tree.take_pending());
+}
+
+static NAME: PropertyKey<i32> = PropertyKey::new("Name", Affects::NONE, Inheritance::None);
+static ROW: AttachedKey<i32> = AttachedKey::new("Row", Affects::LAYOUT, || 0);
+
+#[derive(Debug)]
+struct Named {
+  name: Property<i32>,
+}
+
+impl Object for Named {
+  fn visit_properties(&self, visit: &mut dyn FnMut(&dyn AnyProperty)) {
+    visit(&self.name);
+  }
+}
+
+// A new node needs a frame, so allocating it sets the tree's pending flag.
+#[test]
+fn new_node_sets_pending() {
+  let mut tree = UiTree::new();
+  assert!(!tree.take_pending());
+
+  let _ = clean_label(&mut tree);
+
+  assert!(tree.take_pending());
+}
+
+// A property write that marks its node dirty sets the pending flag, and taking it clears it.
+#[test]
+fn property_write_sets_pending() {
+  let mut tree = UiTree::new();
+  let (_, font_size, _) = clean_label(&mut tree);
+  let _ = tree.take_pending();
+
+  font_size.set(24);
+
+  assert!(tree.take_pending());
+  assert!(!tree.take_pending());
+}
+
+// `mark_dirty` sets the pending flag.
+#[test]
+fn mark_dirty_sets_pending() {
+  let mut tree = UiTree::new();
+  let (id, _, _) = clean_label(&mut tree);
+  let _ = tree.take_pending();
+
+  tree.mark_dirty(id, Affects::RENDER);
+
+  assert!(tree.take_pending());
+}
+
+// Adding a visual child marks the parent for layout, which sets the pending flag.
+#[test]
+fn child_change_sets_pending() {
+  let mut tree = UiTree::new();
+  let (parent, _, _) = clean_label(&mut tree);
+  let (child, _, _) = clean_label(&mut tree);
+  let _ = tree.take_pending();
+
+  tree.add_child(TreeKind::Visual, parent, child);
+
+  assert!(tree.take_pending());
+}
+
+// A write to an attached property sets the pending flag like any other property.
+#[test]
+fn attached_property_write_sets_pending() {
+  let mut tree = UiTree::new();
+  let (id, _, _) = clean_label(&mut tree);
+  let row = tree.attached_property(id, &ROW);
+  let _ = tree.take_pending();
+
+  row.set(2);
+
+  assert!(tree.take_pending());
+}
+
+// A write that changes nothing, a change to a property affecting no stage, and clearing flags
+// leave the pending flag unset.
+#[test]
+fn change_affecting_nothing_sets_no_pending() {
+  let mut tree = UiTree::new();
+  let (id, font_size, _) = clean_label(&mut tree);
+  let name = Property::new(&NAME, 0);
+  let named = tree.alloc(Box::new(Named { name }));
+  font_size.set(24);
+  let _ = tree.take_pending();
+
+  font_size.set(24);
+  name.set(1);
+  tree.clear_dirty(id, Affects::LAYOUT);
+  tree.clear_dirty(named, Affects::LAYOUT | Affects::RENDER);
+
+  assert!(!tree.take_pending());
 }

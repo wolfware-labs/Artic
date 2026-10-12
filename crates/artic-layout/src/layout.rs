@@ -57,6 +57,21 @@ struct Slot {
 #[derive(Debug, Default)]
 pub struct LayoutManager {
   slots: HashMap<NodeId, Slot>,
+  sizes: HashMap<NodeId, Size>,
+}
+
+/// What a [`LayoutManager::run`] did.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LayoutStats {
+  /// The nodes measured, rather than answered from their cache.
+  pub measured: u32,
+  /// The nodes arranged, rather than skipped as unchanged.
+  pub arranged: u32,
+  /// The nodes whose arranged size differs from the last time they were arranged, in the order
+  /// their arrangement finished. A node arranged for the first time isn't listed, and neither is
+  /// one that only moved; one shown again after its parent stopped laying it out is compared with
+  /// its size from before.
+  pub resized: Vec<NodeId>,
 }
 
 impl LayoutManager {
@@ -64,8 +79,16 @@ impl LayoutManager {
   ///
   /// With `snap`, every arranged rectangle has its edges on the device-pixel grid. The root's
   /// rectangle is `available` where it's finite, and its desired size where it isn't. Results of
-  /// nodes no longer in the subtree are dropped.
-  pub fn run(&mut self, tree: &mut UiTree, nodes: &impl LayoutNodes, root: NodeId, available: Size, scale: f32, snap: bool) {
+  /// nodes no longer in the subtree are dropped. Returns what it measured, arranged and resized.
+  pub fn run(
+    &mut self,
+    tree: &mut UiTree,
+    nodes: &impl LayoutNodes,
+    root: NodeId,
+    available: Size,
+    scale: f32,
+    snap: bool,
+  ) -> LayoutStats {
     let mut depths = HashMap::new();
     let mut dirty = HashSet::new();
     let mut pending = vec![(root, 0_usize)];
@@ -80,6 +103,7 @@ impl LayoutManager {
       tree.clear_dirty(*node, Affects::LAYOUT);
     }
     self.slots.retain(|node, _| depths.contains_key(node));
+    self.sizes.retain(|node, _| depths.contains_key(node));
 
     let mut nested = HashSet::new();
     let mut between = Vec::new();
@@ -106,12 +130,14 @@ impl LayoutManager {
       tree,
       nodes,
       slots: &mut self.slots,
+      sizes: &mut self.sizes,
       dirty,
       scale,
       snap,
       current: None,
       measured: Vec::new(),
       arranging: None,
+      stats: LayoutStats::default(),
     };
 
     // Upward: a dirty node measures again in the size it had. If its desired size is unchanged,
@@ -165,6 +191,7 @@ impl LayoutManager {
         cx.arrange(node, rect);
       }
     }
+    cx.stats
   }
 
   /// Marks `node` to be measured again in the next [`run`](LayoutManager::run).
@@ -201,6 +228,7 @@ pub struct LayoutCx<'a> {
   tree: &'a UiTree,
   nodes: &'a dyn LayoutNodes,
   slots: &'a mut HashMap<NodeId, Slot>,
+  sizes: &'a mut HashMap<NodeId, Size>,
   /// The nodes to measure again, whatever their parent offers.
   dirty: HashSet<NodeId>,
   scale: f32,
@@ -211,6 +239,7 @@ pub struct LayoutCx<'a> {
   measured: Vec<HashSet<NodeId>>,
   /// The node being arranged, which only [`set_bounds`](LayoutCx::set_bounds) needs.
   arranging: Option<NodeId>,
+  stats: LayoutStats,
 }
 
 impl<'a> LayoutCx<'a> {
@@ -272,6 +301,7 @@ impl<'a> LayoutCx<'a> {
     if !self.dirty.contains(&child) && slot.available == Some(available) {
       return slot.desired;
     }
+    self.stats.measured += 1;
     let desired = match self.nodes.layoutable(self.tree, child) {
       Some(layoutable) => {
         let parent = self.current.replace(child);
@@ -319,12 +349,18 @@ impl<'a> LayoutCx<'a> {
     slot.offered = Some(rect);
     slot.rect = Some(rect);
     slot.arrange_dirty = false;
+    self.stats.arranged += 1;
     if let Some(layoutable) = self.nodes.layoutable(self.tree, child) {
       let parent = self.current.replace(child);
       let arranging = self.arranging.replace(child);
       layoutable.arrange(self, rect);
       self.arranging = arranging;
       self.current = parent;
+    }
+    if let Some(after) = self.slots.get(&child).and_then(|slot| slot.rect).map(Rect::size)
+      && self.sizes.insert(child, after).is_some_and(|before| before != after)
+    {
+      self.stats.resized.push(child);
     }
   }
 
