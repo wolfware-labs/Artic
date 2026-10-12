@@ -76,9 +76,10 @@ Settle, which the runner runs after every callback ([frame design](frame.md) §3
 
 | A surface that is | Reconcile |
 | --- | --- |
-| open (`IsOpen`) and unbound | measures it (section 6), builds its `WindowDesc`, calls `Windows::open` and binds the returned `SurfaceId` to it |
+| open (`IsOpen`) and unbound, on a host with `Windows` | measures it (section 6), builds its `WindowDesc`, calls `Windows::open` and binds the returned `SurfaceId` to it |
+| open and unbound, on a host without `Windows` | binds it to the next host surface no `Surface` holds, in tree order; with none left it stays unbound (see windowless hosts below) |
 | bound and `SURFACE`-dirty | rebuilds its `WindowDesc`; when it differs from the last one applied, calls `Windows::update` |
-| bound, and closed (`IsOpen` false) or no longer in the tree | calls `Windows::close` and unbinds it |
+| bound, and closed (`IsOpen` false) or no longer in the tree | calls `Windows::close` where the host has it, and unbinds it |
 
 `SURFACE` is cleared when reconcile reads the surface. A change to an inherited `Desktop` value on `Application` marks each surface whose effective value changed, through the same inheritance path as `LAYOUT` and `RENDER`.
 

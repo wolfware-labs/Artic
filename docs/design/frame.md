@@ -60,6 +60,7 @@ The runner ends every `AppHandler` call by **settling**:
 
 1. **Drain**: `Dispatcher::run_pending()`, then `flush_effects()`, repeated until the queue is empty. `run_pending` flushes effects only after each task it runs, so a write made directly in a callback or a hook, with no task queued, needs the explicit flush; an effect can post a task, hence the repeat.
 2. If `tree.take_pending()` is true, every live surface gets `needs_frame` and a `cx.request_frame`.
+3. **Reconcile**: the host is made to match the `Application`'s surfaces, opening, updating and closing them ([surface design](surface.md) §4), so an `IsOpen` or `Desktop` write from any call reaches the host in the same settle.
 
 Every change happens inside some call (an event, a wake-up, a task run from one), so settling catches it. The flag is tree-wide, so a change in one window also redraws the others: each one composes again and presents, but records nothing that didn't change. A flag per surface would avoid that and can replace this one behind `take_pending`.
 
@@ -76,7 +77,7 @@ Pending work never keeps the loop awake by itself: the queue is empty after each
 5. Clear the mark and `pipeline.prepare(tree, root, info, &types)`, lending the runner's `ElementTypes`, from which the pipeline builds the `LayoutNodes` and render `Nodes` for this frame:
    - `LayoutManager::run` at `size / scale` in logical units, with pixel snapping. It measures only layout-dirty nodes and those whose desired size a change reached, and reports the nodes whose arranged size changed.
    - `Compositor::compose` through the pipeline's render `Nodes` (section 5). It records only render-dirty nodes and the nodes layout resized, and reuses every other fragment.
-6. `pipeline.present(renderer, frame, target)` builds the renderer's `Surface` from the frame's id, size and scale and the lent target, and renders; then the `after_present` hooks run and the surface's `FrameStats` are kept.
+6. `pipeline.present(renderer, frame, target)` builds the renderer's `SurfaceView` from the frame's id, size and scale and the lent target, and renders; then the `after_present` hooks run and the surface's `FrameStats` are kept.
 7. If any `wants_frame` hook returns true, mark the surface and request its next frame.
 8. Settle (section 3). A write made in steps 5 to 7, such as by an `after_present` hook, sets the pending flag after step 3 read it; settling marks the surfaces and asks for exactly one more frame.
 
@@ -104,7 +105,7 @@ A node that isn't an element gets default layers and records nothing.
 
 | Call | The runner |
 | --- | --- |
-| `started` | reconciles: opens each open `Surface` through `cx.windows()` and binds its `SurfaceId` to it ([surface design](surface.md) §4). A host without `Windows`, such as a framebuffer, gets the open surfaces bound in tree order to the surfaces `surface_changed` reports |
+| `started` | settles, so the first reconcile opens each open `Surface` through `cx.windows()` and binds its `SurfaceId` to it ([surface design](surface.md) §4). A host without `Windows`, such as a framebuffer, gets the open surfaces bound in tree order to the surfaces `surface_changed` reports |
 | `surface_changed` | keeps the new `SurfaceInfo`, marks the surface and requests a frame for it, even when nothing differs from the last report: a surface reported again after `surface_lost`, such as on resume, has lost what the renderer kept for it and must be drawn again. A size change marks the root layout-dirty. A scale change arranges the surface again from its root, snapped to the new device-pixel grid, with every measure answered from its cache ([surface design](surface.md) §5) |
 | `surface_lost` | calls `renderer.surface_lost`. A `Suspended` loss flags the surface lost and keeps its root, since a resume reports it again; a `Gone` loss forgets it, and when no window but closing ones is left, the runner exits |
 | `event(CloseRequested)` | closes the window and flags the surface closing, so it gets no more frames; the `Gone` loss the host reports after a close releases the renderer's resources and forgets it. The last window closing exits |

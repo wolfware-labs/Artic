@@ -64,7 +64,7 @@ pub trait Windows {
 
 | Type | Crate | Holds |
 | --- | --- | --- |
-| `WindowDesc` | `artic-platform` | `title: String`, `width: f32`, `height: f32` in logical units. The [surface design](surface.md) (#48) moved it from `artic-core`, where only the runner builds it from a `Surface`, adds its chrome and resizable axes, and adds `Windows::update`. |
+| `WindowDesc` | `artic-platform` | `title: String`, `size: LogicalSize` with `Option<f32>` axes (`None`: the host picks), `chrome: Chrome`, `resizable: Axes`. Only the runner builds it, from a `Surface` ([surface design](surface.md), #48, which moved it from `artic-core` and added `Windows::update`). |
 | `SurfaceInfo` | `artic-platform` | `size: PhysicalSize`, `scale: f32` (device pixels per logical unit), `display: DisplayId`, `refresh_rate: Option<f32>` (some platforms don't report it) |
 | `SurfaceLoss` | `artic-platform` | why a surface went away: `Suspended`, reported again after `Resumed`, or `Gone`, closed, destroyed, never created or the loop exiting |
 | `DisplayId` | `artic-platform` | an opaque id the host assigns per display |

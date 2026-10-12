@@ -36,9 +36,9 @@ pub trait ElementImpl {
   fn defaults(&self) {}
   /// The content's size within `available`, which already excludes the margin and is held within
   /// the element's limits.
-  fn measure_override(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size { Size::ZERO }
+  fn measure_override(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size { Size::ZERO }
   /// Places the children within `size`, in the element's own coordinates.
-  fn arrange_override(&self, cx: &mut LayoutCx<'_>, size: Size) {}
+  fn arrange_override(&self, cx: &mut ArrangeCx<'_>, size: Size) {}
   fn render(&self, cx: &mut RenderCx<'_>, scene: &mut SceneBuilder) {}
   fn on_event(&mut self, cx: &mut EventCx<'_>, event: &InputEvent) -> Handled { Handled::No }
   /// Adds the control's role, name, value and actions to the default node built from the groups.
@@ -73,7 +73,7 @@ pub trait ElementImpl {
 | `accessibility` | builds the default node (section 7) | `ElementImpl::accessibility`, which adds to it |
 | `layers` | `appearance`: `Opacity` (clamped), `RenderTransform`, `Visibility` and `ZIndex` as a `Layers` (section 7) | `ElementImpl::clip`, for the clip layer |
 
-An element doesn't always fill the slot its parent offers: a margin or an alignment makes its box smaller. `LayoutProperties::arrange` reports that box, the slot less the margin, sized and aligned, with `LayoutCx::set_bounds`, so `LayoutManager::rect` is the element's box rather than its slot, and its children are placed relative to it. Each node keeps the offered slot separately, so being offered the same slot still skips arranging.
+An element doesn't always fill the slot its parent offers: a margin or an alignment makes its box smaller. `LayoutProperties::arrange` reports that box, the slot less the margin, sized and aligned, with `ArrangeCx::set_bounds`, so `LayoutManager::rect` is the element's box rather than its slot, and its children are placed relative to it. Each node keeps the offered slot separately, so being offered the same slot still skips arranging.
 
 A struct that declares a field named `layout`, `appearance`, `interaction` or `identity` fails to compile with an error that says `#[element]` adds it.
 
@@ -240,7 +240,7 @@ A disabled element is different: it gets no input, but it still blocks it. Hit t
 | PR | Contents | Done when |
 | --- | --- | --- |
 | A | `artic-element`: `Element`, `ElementImpl`, `HasState`, `ElementType` and `element_type!`, the placeholder contexts; `InputEvent` in `artic-core` | a hand-written element is laid out through `LayoutManager` by way of the cast table |
-| B | `ElementBase` (now the property groups) with its 20 properties and `#[derive(XamlProperties)]`, the enums, `FromStr` for the alignments and `Transform`, `#[xaml(flatten)]` in `derive(XamlType)`, `PropertyGroupInfo`, `LayoutCx::set_bounds`, `Duplicate::Property`, the measure and arrange outline, `LayoutManager` forgetting unmeasured children | `element_base_properties_registered` (now `groups_registered`), `margin_and_alignment_layout`, `min_max_clamp_desired_size`, `collapsed_takes_no_space` (including a child made dirty after its parent collapsed), a registry test where a control property clashes with a group's |
+| B | `ElementBase` (now the property groups) with its 20 properties and `#[derive(XamlProperties)]`, the enums, `FromStr` for the alignments and `Transform`, `#[xaml(flatten)]` in `derive(XamlType)`, `PropertyGroupInfo`, `LayoutCx::set_bounds` (now `ArrangeCx`'s, [surface design](surface.md)), `Duplicate::Property`, the measure and arrange outline, `LayoutManager` forgetting unmeasured children | `element_base_properties_registered` (now `groups_registered`), `margin_and_alignment_layout`, `min_max_clamp_desired_size`, `collapsed_takes_no_space` (including a child made dirty after its parent collapsed), a registry test where a control property clashes with a group's |
 | B2 | the four property groups in `artic-element`, replacing `CommonProperties`; `Property::set_default` | `groups_registered`, `set_default_loses_to_every_other_level` |
 | C | `#[element]`: the four fields and their reserved names, the `XamlType` output with `ElementImpl::defaults` called from `Default`, `__private` in `artic-element` re-exporting what that output names, the outline from section 3, `#[element(state)]` and its duplicate-state error, `crate_root` taking each macro's candidate crates | the trybuild cases: a field with a reserved name, a struct that also derives `XamlType`, a tuple struct, two fields of one state type, an unknown setting in a field's `#[element(...)]`; a control built by `Default` and by `TypeInfo.new` has run `defaults`; a test-only state giving a test trait through a blanket impl; a control whose `defaults` makes it focusable, with a style setter winning over that default; a unit test that a disabled element's hook isn't called |
 | D | `Layers.visible` and `Layers.z_index`, the compositor skipping hidden subtrees and drawing siblings by `ZIndex`; `AppearanceProperties::layers` filling opacity, the centred transform, visibility and z-index; the disabled flag on the default accesskit node | `hidden_node_skips_its_subtree`, `subtree_returns_when_visible_again`, `children_draw_by_z_index`, `layers_clamp_opacity`, `transform_pivots_on_the_centre`, `layers_carry_visibility_and_z_index`, `accessibility_node_is_disabled_with_the_element` |
