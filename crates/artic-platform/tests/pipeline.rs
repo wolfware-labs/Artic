@@ -103,3 +103,23 @@ fn redraw_presents_the_last_scene() {
   );
   assert_eq!(renderer.rendered.get(), 2);
 }
+
+// A scene the renderer failed to draw isn't kept for redraws: only a presented scene is.
+#[test]
+fn failed_present_keeps_no_scene() {
+  let mut tree = UiTree::new();
+  let (root, _) = panel(&mut tree, &[]);
+  let mut pipeline = Pipeline::new();
+  let mut renderer = Counter::default();
+  *renderer.fail.borrow_mut() = Some(artic_render::RenderError::SurfaceLost);
+  let mut buffer = pixels();
+  let frame = pipeline.prepare(&mut tree, root, SURFACE, &info(64, 64, 1.0), &ElementTypes::from_link_time());
+
+  assert!(pipeline.present(&mut renderer, frame, target(&mut buffer)).is_err());
+
+  assert!(
+    pipeline
+      .redraw(&mut renderer, SURFACE, &info(64, 64, 1.0), target(&mut buffer))
+      .is_none()
+  );
+}

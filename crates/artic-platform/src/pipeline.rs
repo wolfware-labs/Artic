@@ -108,7 +108,8 @@ impl Pipeline {
     }
   }
 
-  /// Renders `frame` on `target` and keeps its scene for a later [`redraw`](Pipeline::redraw).
+  /// Renders `frame` on `target` and, once it's drawn, keeps its scene for a later
+  /// [`redraw`](Pipeline::redraw).
   ///
   /// # Errors
   ///
@@ -121,7 +122,7 @@ impl Pipeline {
       scene,
       mut stats,
     } = frame;
-    let result = renderer.render(
+    renderer.render(
       &scene,
       Surface {
         id: surface,
@@ -129,9 +130,8 @@ impl Pipeline {
         scale,
         target,
       },
-    );
+    )?;
     self.last = Some(scene);
-    result?;
     stats.rendered = true;
     Ok(stats)
   }
