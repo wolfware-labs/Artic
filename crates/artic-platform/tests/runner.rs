@@ -12,6 +12,8 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
 
+use artic_platform::{Error, Host, HostEvent, run};
+use artic_render::{RenderError, TargetKind};
 const FIRST: SurfaceId = SurfaceId::new(1);
 
 /// A runner with one window holding two leaves, started, sized and drawn once.
@@ -363,4 +365,144 @@ fn reparenting_a_root_under_another_window_panics() {
   runner.surface_changed(&mut cx, SurfaceId::new(2), info(64, 64, 1.0));
 
   runner.frame(&mut cx, SurfaceId::new(2), target(&mut buffer), Duration::ZERO);
+}
+
+// Closing the last window closes it through the host and exits.
+#[test]
+fn closing_last_window_exits() {
+  let mut fixture = Fixture::new(|_| {});
+
+  fixture
+    .runner
+    .event(&mut fixture.cx, HostEvent::CloseRequested { surface: FIRST });
+
+  assert_eq!(fixture.cx.closed, [FIRST]);
+  assert!(fixture.cx.exited);
+}
+
+// A closed window's loss, which the host reports after the close, releases what the renderer kept
+// for it, and the runner forgets the window.
+#[test]
+fn closed_window_is_released_from_the_renderer() {
+  let mut fixture = Fixture::new(|_| {});
+
+  fixture
+    .runner
+    .event(&mut fixture.cx, HostEvent::CloseRequested { surface: FIRST });
+  fixture.runner.surface_lost(&mut fixture.cx, FIRST);
+
+  assert_eq!(*fixture.renderer.lost.borrow(), [FIRST]);
+  assert_eq!(fixture.runner.stats(FIRST), None);
+}
+
+// A lost surface makes the renderer drop what it kept and asks for a frame that rebuilds it.
+#[test]
+fn surface_lost_render_error_resets_the_renderer() {
+  let mut fixture = Fixture::new(|_| {});
+  *fixture.renderer.fail.borrow_mut() = Some(RenderError::SurfaceLost);
+
+  fixture.frame();
+
+  assert_eq!(*fixture.renderer.lost.borrow(), [FIRST]);
+  assert_eq!(fixture.cx.frames, [FIRST]);
+}
+
+// A host without windows binds the declared roots to surfaces in the order it reports them.
+#[test]
+fn windowless_host_binds_roots_in_report_order() {
+  let mut tree = UiTree::new();
+  let first_leaf = leaf(&mut tree, 20.0);
+  let second_leaf = leaf(&mut tree, 30.0);
+  let (first_root, _) = panel(&mut tree, &[first_leaf.id]);
+  let (second_root, _) = panel(&mut tree, &[second_leaf.id]);
+  let mut runner = Runner::new(tree, Counter::default())
+    .window(desc("first"), first_root)
+    .window(desc("second"), second_root);
+  let drawn = Rc::new(Cell::new(None));
+  let hook_drawn = Rc::clone(&drawn);
+  runner.hooks().after_present(move |_, root, _| hook_drawn.set(Some(root)));
+  let mut cx = Context {
+    windowless: true,
+    ..Context::default()
+  };
+  let mut buffer = pixels();
+  runner.started(&mut cx, Waker::new(|| {}));
+  runner.surface_changed(&mut cx, SurfaceId::new(9), info(64, 64, 1.0));
+
+  runner.frame(&mut cx, SurfaceId::new(9), target(&mut buffer), Duration::ZERO);
+
+  assert!(cx.opened.is_empty());
+  assert_eq!(drawn.get(), Some(first_root));
+}
+
+/// A host whose surface is a pixel buffer and whose loop runs one frame.
+struct OneFrame;
+
+impl Host for OneFrame {
+  fn targets(&self) -> TargetKind {
+    TargetKind::Pixels
+  }
+
+  fn run(self, mut app: impl AppHandler + 'static) {
+    let mut cx = Context::default();
+    let mut buffer = pixels();
+    app.started(&mut cx, Waker::new(|| {}));
+    app.surface_changed(&mut cx, FIRST, info(64, 64, 1.0));
+    app.frame(&mut cx, FIRST, target(&mut buffer), Duration::ZERO);
+  }
+}
+
+/// A host that offers only window handles.
+struct HandlesOnly;
+
+impl Host for HandlesOnly {
+  fn targets(&self) -> TargetKind {
+    TargetKind::Handles
+  }
+
+  fn run(self, _app: impl AppHandler + 'static) {
+    panic!("a host with a mismatched renderer must not start");
+  }
+}
+
+/// A runner over a one-window tree drawing with `renderer`.
+fn one_window(renderer: Counter) -> Runner<Counter> {
+  let mut tree = UiTree::new();
+  let (root, _) = panel(&mut tree, &[]);
+  Runner::new(tree, renderer).window(desc("main"), root)
+}
+
+// A frame that fails to render ends the loop, and `run` returns the error.
+#[test]
+fn render_error_is_returned_from_run() {
+  let renderer = Counter::default();
+  *renderer.fail.borrow_mut() = Some(RenderError::Backend("no device".into()));
+
+  let result = run(OneFrame, one_window(renderer));
+
+  assert!(matches!(result, Err(Error::Render(RenderError::Backend(_)))));
+}
+
+// A failed frame reaches the error hooks, the way an app on a host whose `run` returns at once
+// learns of it.
+#[test]
+fn render_error_reaches_on_error() {
+  let renderer = Counter::default();
+  *renderer.fail.borrow_mut() = Some(RenderError::Backend("no device".into()));
+  let seen = Rc::new(Cell::new(0));
+  let hook_seen = Rc::clone(&seen);
+  let mut runner = one_window(renderer);
+  runner.hooks().on_error(move |_| hook_seen.set(hook_seen.get() + 1));
+
+  let _ = run(OneFrame, runner);
+
+  assert_eq!(seen.get(), 1);
+}
+
+// A renderer that can't draw on what the host offers is rejected before the host starts.
+#[test]
+fn mismatched_renderer_is_rejected() {
+  let result = run(HandlesOnly, one_window(Counter::default()));
+
+  assert!(matches!(result, Err(Error::Unsupported(TargetKind::Handles))));
 }
