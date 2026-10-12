@@ -1,9 +1,8 @@
-use crate::property::{Affects, Property, PropertyKey};
+use crate::property::{Property, PropertyKey};
 use crate::reactive::Change;
+use crate::tree::DirtyHandle;
 use std::any::Any;
-use std::cell::Cell;
 use std::fmt::{self, Debug, Formatter};
-use std::rc::Rc;
 
 /// The identity of a property kind: the address of its [`PropertyKey`] static.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
@@ -31,8 +30,8 @@ pub trait AnyProperty {
   fn inherits(&self) -> bool;
 
   /// Connects the property to its node's dirty flags. After this, a change to the effective value
-  /// adds the key's [`Affects`] to them.
-  fn attach(&self, dirty: Rc<Cell<Affects>>);
+  /// adds the key's [`Affects`](super::Affects) to them and sets the tree's pending flag.
+  fn attach(&self, dirty: DirtyHandle);
 
   /// Makes the property's `Inherited` level follow `source`, a property of the same kind on a
   /// logical ancestor, or stop following anything when `source` is `None`. The tree calls it when
@@ -61,7 +60,7 @@ where
     self.key().inherits()
   }
 
-  fn attach(&self, dirty: Rc<Cell<Affects>>) {
+  fn attach(&self, dirty: DirtyHandle) {
     self.0.update_with(|state| {
       state.attach(dirty);
       Change::Hidden

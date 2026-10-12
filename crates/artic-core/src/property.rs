@@ -344,6 +344,7 @@ where
 mod tests {
   use super::*;
   use crate::reactive::{Scope, effect, flush_effects};
+  use crate::tree::DirtyHandle;
   use pretty_assertions::assert_eq;
   use static_assertions::{assert_impl_all, assert_not_impl_any};
   use std::cell::Cell;
@@ -653,23 +654,23 @@ mod tests {
   #[test]
   fn visible_change_marks_inheriting_followers_dirty() {
     let [root, middle, leaf, blocked] = [(); 4].map(|_| Property::new(&TEST, 0));
-    let [middle_dirty, leaf_dirty, blocked_dirty] = [(); 3].map(|_| Rc::new(Cell::new(Affects::NONE)));
-    middle.attach(Rc::clone(&middle_dirty));
-    leaf.attach(Rc::clone(&leaf_dirty));
-    blocked.attach(Rc::clone(&blocked_dirty));
+    let [middle_dirty, leaf_dirty, blocked_dirty] = [(); 3].map(|_| DirtyHandle::default());
+    middle.attach(middle_dirty.clone());
+    leaf.attach(leaf_dirty.clone());
+    blocked.attach(blocked_dirty.clone());
     middle.follow(Some(root));
     leaf.follow(Some(middle));
     blocked.follow(Some(middle));
     blocked.set(5);
     for dirty in [&middle_dirty, &leaf_dirty, &blocked_dirty] {
-      dirty.set(Affects::NONE);
+      dirty.clear(Affects::LAYOUT | Affects::RENDER);
     }
 
     root.set(1);
 
-    assert_eq!(middle_dirty.get(), Affects::LAYOUT);
-    assert_eq!(leaf_dirty.get(), Affects::LAYOUT);
-    assert_eq!(blocked_dirty.get(), Affects::NONE);
+    assert_eq!(middle_dirty.stages(), Affects::LAYOUT);
+    assert_eq!(leaf_dirty.stages(), Affects::LAYOUT);
+    assert_eq!(blocked_dirty.stages(), Affects::NONE);
   }
 
   // A follower whose scope was disposed is skipped and dropped from the followers list.
@@ -711,19 +712,19 @@ mod tests {
   fn following_or_unfollowing_a_source_is_visible() {
     let parent = Property::new(&TEST, 20);
     let child = Property::new(&TEST, 0);
-    let dirty = Rc::new(Cell::new(Affects::NONE));
-    child.attach(Rc::clone(&dirty));
+    let dirty = DirtyHandle::default();
+    child.attach(dirty.clone());
     let seen = Rc::new(Cell::new(-1));
     let seen_in_effect = Rc::clone(&seen);
     effect(move || seen_in_effect.set(child.get()));
 
     child.follow(Some(parent));
     flush_effects();
-    assert_eq!((seen.get(), dirty.get()), (20, Affects::LAYOUT));
+    assert_eq!((seen.get(), dirty.stages()), (20, Affects::LAYOUT));
 
-    dirty.set(Affects::NONE);
+    dirty.clear(Affects::LAYOUT | Affects::RENDER);
     child.follow(None);
     flush_effects();
-    assert_eq!((seen.get(), dirty.get()), (0, Affects::LAYOUT));
+    assert_eq!((seen.get(), dirty.stages()), (0, Affects::LAYOUT));
   }
 }

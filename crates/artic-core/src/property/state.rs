@@ -1,7 +1,6 @@
 use crate::property::levels::Levels;
-use crate::property::{Affects, Property, PropertyKey};
-use std::cell::Cell;
-use std::rc::Rc;
+use crate::property::{Property, PropertyKey};
+use crate::tree::DirtyHandle;
 
 #[derive(Debug)]
 pub struct PropertyState<T>
@@ -10,7 +9,7 @@ where
 {
   pub levels: Levels<T>,
   key: &'static PropertyKey<T>,
-  dirty: Option<Rc<Cell<Affects>>>,
+  dirty: Option<DirtyHandle>,
   followers: Vec<Property<T>>,
 }
 
@@ -31,13 +30,13 @@ where
     self.key
   }
 
-  pub fn attach(&mut self, dirty: Rc<Cell<Affects>>) {
+  pub fn attach(&mut self, dirty: DirtyHandle) {
     self.dirty = Some(dirty);
   }
 
   pub fn mark_dirty(&self) {
     if let Some(dirty) = &self.dirty {
-      dirty.set(dirty.get() | self.key.affects());
+      dirty.mark(self.key.affects());
     }
   }
 
