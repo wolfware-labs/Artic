@@ -16,16 +16,18 @@ use std::rc::Rc;
 /// A node's dirty flags as its properties hold them, together with its tree's pending flag.
 ///
 /// Marking the node dirty through it also sets the pending flag, so the frame pipeline learns that
-/// a frame is needed without walking the tree.
+/// a frame is needed without walking the tree. Once the node is freed, marking through it does
+/// nothing.
 #[derive(Debug, Clone, Default)]
 pub struct DirtyHandle {
   stages: Rc<Cell<Affects>>,
   pending: Rc<Cell<bool>>,
+  freed: Rc<Cell<bool>>,
 }
 
 impl DirtyHandle {
   pub(crate) fn mark(&self, stages: Affects) {
-    if stages.is_empty() {
+    if stages.is_empty() || self.freed.get() {
       return;
     }
     self.stages.set(self.stages.get() | stages);
@@ -63,15 +65,19 @@ impl DirtyFlags {
     let handle = DirtyHandle {
       stages: Rc::new(Cell::new(Affects::NONE)),
       pending: Rc::clone(pending),
+      freed: Rc::new(Cell::new(false)),
     };
     handle.mark(Affects::LAYOUT | Affects::RENDER);
     self.flags.insert(node.0, handle.clone());
     handle
   }
 
-  /// Drops `node`'s flags. Its properties keep their own handle to them.
+  /// Drops `node`'s flags. Its properties keep their own handle to them, which marks nothing from
+  /// then on.
   pub(super) fn remove(&mut self, node: NodeId) {
-    self.flags.remove(node.0);
+    if let Some(handle) = self.flags.remove(node.0) {
+      handle.freed.set(true);
+    }
   }
 
   pub(super) fn get(&self, node: NodeId) -> Affects {

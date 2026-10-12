@@ -104,6 +104,22 @@ fn freed_node_properties_do_not_mark_the_next_node() {
   assert_eq!(tree.dirty(next), Affects::NONE);
 }
 
+// A write to a freed node's property, through a copy kept outside the tree, doesn't set the
+// pending flag: no live node changed.
+#[test]
+fn freed_node_property_write_sets_no_pending() {
+  let mut tree = UiTree::new();
+  let (old, font_size, _) = clean_label(&mut tree);
+  let row = tree.attached_property(old, &ROW);
+  tree.free(old);
+  let _ = tree.take_pending();
+
+  font_size.set(24);
+  row.set(2);
+
+  assert!(!tree.take_pending());
+}
+
 static NAME: PropertyKey<i32> = PropertyKey::new("Name", Affects::NONE, Inheritance::None);
 static ROW: AttachedKey<i32> = AttachedKey::new("Row", Affects::LAYOUT, || 0);
 
