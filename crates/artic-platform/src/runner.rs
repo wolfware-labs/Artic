@@ -25,6 +25,7 @@ pub struct Runner<R> {
   hooks: Hooks,
   declared: Vec<(WindowDesc, NodeId)>,
   surfaces: Vec<Window>,
+  suspended: bool,
   error: Rc<RefCell<Option<Error>>>,
 }
 
@@ -51,6 +52,7 @@ impl<R: Renderer> Runner<R> {
       hooks: Hooks::default(),
       declared: Vec::new(),
       surfaces: Vec::new(),
+      suspended: false,
       error: Rc::new(RefCell::new(None)),
     }
   }
@@ -210,7 +212,7 @@ impl<R: Renderer> AppHandler for Runner<R> {
     self.renderer.surface_lost(surface);
     if let Some(index) = self.surfaces.iter().position(|window| window.id == surface) {
       let window = &mut self.surfaces[index];
-      if window.closing || window.info.is_none() {
+      if window.closing || window.info.is_none() || !self.suspended {
         self.surfaces.remove(index);
         self.exit_without_windows(cx);
       } else {
@@ -221,6 +223,11 @@ impl<R: Renderer> AppHandler for Runner<R> {
   }
 
   fn event(&mut self, cx: &mut dyn HostContext, event: HostEvent) {
+    match event {
+      HostEvent::Suspended => self.suspended = true,
+      HostEvent::Resumed => self.suspended = false,
+      _ => {}
+    }
     if let HostEvent::CloseRequested { surface } = event
       && let Some(window) = self.surfaces.iter_mut().find(|window| window.id == surface)
     {

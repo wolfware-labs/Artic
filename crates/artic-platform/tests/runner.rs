@@ -547,7 +547,9 @@ fn closing_the_last_open_window_exits_past_a_failed_one() {
 fn suspended_window_is_kept() {
   let mut fixture = Fixture::new(|_| {});
 
+  fixture.runner.event(&mut fixture.cx, HostEvent::Suspended);
   fixture.runner.surface_lost(&mut fixture.cx, FIRST);
+  fixture.runner.event(&mut fixture.cx, HostEvent::Resumed);
   fixture.runner.surface_changed(&mut fixture.cx, FIRST, info(64, 64, 1.0));
   let stats = fixture.frame();
 
@@ -578,4 +580,15 @@ fn reparenting_another_root_under_this_one_panics() {
   runner.surface_changed(&mut cx, FIRST, info(64, 64, 1.0));
 
   runner.frame(&mut cx, FIRST, target(&mut buffer), Duration::ZERO);
+}
+
+// A window the OS destroyed outside a suspend is gone for good, so with none left the app exits.
+#[test]
+fn destroyed_window_exits() {
+  let mut fixture = Fixture::new(|_| {});
+
+  fixture.runner.surface_lost(&mut fixture.cx, FIRST);
+
+  assert!(fixture.cx.exited);
+  assert_eq!(fixture.runner.stats(FIRST), None);
 }
