@@ -107,6 +107,8 @@ That's what makes a surface measurable before it has a window, and it makes a sc
 
 ## 6. Sizing
 
+This section is about surfaces the runner opens through `Windows`. A surface bound to a host surface it didn't open, on a phone or a framebuffer, is laid out at that host surface's logical size, its device size over its scale, on both axes; `Desktop` settings, `SizeToContent` included, don't apply to it.
+
 Before opening a surface, the runner measures it with a `MeasureCx`. Each axis gets `∞` when `SizeToContent` covers it, `Desktop.Width` or `Height` when set, and otherwise `∞` with the host picking the size. `WindowDesc.size` carries the measured size on the `SizeToContent` axes, the set value on the others, and `None` where the host picks. The window opens at that logical size, and the OS converts it to device pixels for whichever monitor it lands on, so there is no hidden first frame and no visible jump.
 
 While a surface is open, each frame lays it out with `∞` on its `SizeToContent` axes, so its root takes its desired size `D` there ([frame design](frame.md): a root's rectangle is its desired size on an infinite axis). When `D` differs from the last size the runner *requested*, it calls `Windows::update`. The OS resizes, `surface_changed` arrives, and the next layout measures at `∞` again and gets `D` again, so it settles in one round. The comparison is with the request, not with the window's actual size, so a window the OS clamps, such as one larger than the screen, settles too: `D` is requested once and never again.
@@ -120,7 +122,7 @@ The user can't resize a `SizeToContent` axis: `WindowDesc.resizable` leaves it o
 | `artic-layout` | `scale_change_arranges_without_measuring` (`LayoutStats.measured == 0`), `measure_cx_has_no_scale` (a compile-fail doctest) |
 | `artic-element` | `surface_accesskit_node` (role `Window`, named by `Title`), `desktop_chrome_inherits_from_application`, `attached_property_inherits` |
 | `artic-controls` | `user_control_accesskit_node` (role `GenericContainer`), `user_control_lays_out_its_content` |
-| `artic-platform`, through `Runner` and the fake host | `surface_opens_measured_to_content`, `surface_opens_at_desktop_size`, `title_change_updates_once`, `unchanged_surface_is_not_updated`, `size_to_content_settles` (the OS clamps, and no second request follows), `os_close_writes_is_open_and_reopens`, `last_surface_closing_exits`, `removed_surface_closes`, `windowless_host_binds_in_tree_order` |
+| `artic-platform`, through `Runner` and the fake host | `surface_opens_measured_to_content`, `surface_opens_at_desktop_size`, `title_change_updates_once`, `unchanged_surface_is_not_updated`, `size_to_content_settles` (the OS clamps, and no second request follows), `os_close_writes_is_open_and_reopens`, `last_surface_closing_exits`, `removed_surface_closes`, `windowless_host_binds_in_tree_order`, `windowless_surface_ignores_size_to_content` |
 
 The `smoke` and `frames` examples build an `Application` with one `Surface` and run unchanged in CI.
 
