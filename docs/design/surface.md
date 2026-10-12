@@ -88,7 +88,7 @@ Writing `Local` shadows a binding: after the OS closes a surface whose `IsOpen` 
 
 **Windowless hosts.** A host without `Windows`, such as a phone or a framebuffer, presents surfaces it creates itself. The runner binds open `Surface`s to them in tree order, as it binds roots today; a surface with no host surface left stays unbound.
 
-**Mobile.** A mobile host has one host surface. The first open `Surface` fills it, with its content inset by the safe area (#147). A second open `Surface` is presented over the first as a sheet, and closing it reveals the first; `Mobile.Presentation` arrives with the mobile hosts to choose another presentation. `Desktop` settings do nothing there, and `Title` names the app in the task switcher and to accessibility.
+**Mobile.** A mobile host has one host surface. The first open `Surface` fills it, with its content inset by the safe area (#147). Presenting more is a capability of its own, `Presenter`, which the mobile hosts (#141, #142) add beside `Windows`: through it, a second open `Surface` is presented over the first as a sheet, and closing it reveals the first; `Mobile.Presentation` chooses another presentation. A host with neither capability leaves the second surface unbound, as above. `Desktop` settings do nothing there, and `Title` names the app in the task switcher and to accessibility.
 
 ## 5. Measure and arrange
 

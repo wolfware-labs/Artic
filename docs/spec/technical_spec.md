@@ -649,7 +649,7 @@ pub trait HostContext {                                               // handed 
 
 - Core, required of every host: surfaces, each reporting `SurfaceInfo { size, scale, display, refresh_rate }` when it appears or changes and when it's lost; raw events (§9, plus gamepads), delivered as `HostEvent` variants that #73 adds; frames per surface; waking the loop when another thread posts to the `Dispatcher`.
 - Everything else is a capability whose default is `None`; artic decides the fallback at each use (no `clipboard`: Copy does nothing; no `windows`: each `Surface` takes one whole host surface). A new capability is a new default method, so existing adapters keep compiling.
-- Several displays: a windowed host reports one surface per window, moving between displays with its scale and refresh rate; a host without `windows` reports one full-screen surface per display. The app's `Surface`s are assigned to OS windows (on the display `Desktop.Display` names, #267) or to display surfaces in tree order, so a multi-screen app runs unchanged on both.
+- Several displays: a windowed host reports one surface per window, moving between displays with its scale and refresh rate; a host without `windows` reports one full-screen surface per display. The app's `Surface`s are assigned to OS windows (on the primary display; choosing another is #267) or to display surfaces in tree order, so a multi-screen app runs unchanged on both.
 - The [host design](../design/host.md) (#39) fixes these traits: artic acts on the host only through the context it's handed, the target is lent only in `frame`, and a `Waker` lets other threads wake the loop, after which artic drains the `Dispatcher`.
 - `run` doesn't have to block: a host whose loop can't block, such as a web host, installs its callbacks and returns, and app code can't tell the difference (D24).
 
@@ -671,7 +671,7 @@ Implementation of `artic-winit`: `winit` provides windows, input, DPI and lifecy
 
 - Desktop: each open `Surface` is a top-level window, with its own focus and render surface; popups (`ComboBox`, tooltips) are an overlay layer inside the owning window, not OS windows, so they render identically on all targets.
 - Mobile: one host surface, sized to the screen. The first open `Surface` fills it, its content inset by the safe area by default (`RespectSafeArea="True"`); a second is presented over it as a sheet, and `Mobile.Presentation` chooses another presentation.
-- Window chrome: `Desktop.Chrome`, `System` (OS decorations) by default or `None`; `Extended` (content under the title bar, OS buttons kept, #173) supported on Windows and macOS in v1, Linux v2.
+- Window chrome: `Desktop.Chrome`, `System` (OS decorations) by default or `None`. An `Extended` value (content under the title bar, OS buttons kept) is #173, for Windows and macOS; Linux follows in v2.
 
 ### Packaging
 

@@ -29,8 +29,7 @@ All in `artic-platform`, which depends on `artic-element` to drive the tree as `
 
 ```rust
 impl<R: Renderer> Runner<R> {
-  pub fn new(tree: UiTree, renderer: R) -> Self;
-  pub fn window(self, desc: WindowDesc, root: NodeId) -> Self;
+  pub fn new(tree: UiTree, renderer: R, application: NodeId) -> Self;
   pub fn hooks(&mut self) -> &mut Hooks;
   pub fn stats(&self, surface: SurfaceId) -> Option<FrameStats>;
 }
