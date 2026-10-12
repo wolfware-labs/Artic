@@ -42,6 +42,12 @@ pub trait Nodes {
 
   /// Records the node's own drawing, in its own coordinates, without its descendants.
   fn record(&mut self, tree: &UiTree, node: NodeId, builder: &mut SceneBuilder);
+
+  /// Whether the node's fragment is out of date although the node isn't render-dirty, such as after
+  /// layout gave it a new size. A stale node is recorded again.
+  fn stale(&self, _node: NodeId) -> bool {
+    false
+  }
 }
 
 /// Builds frames from the visual tree, keeping each node's fragment until the node is render-dirty
@@ -50,6 +56,7 @@ pub trait Nodes {
 pub struct Compositor {
   fragments: HashMap<NodeId, Arc<SceneFragment>>,
   generation: u64,
+  recorded: u32,
 }
 
 impl Compositor {
@@ -59,9 +66,11 @@ impl Compositor {
   /// which also wrap its visual descendants; it draws before them, and they draw in `z_index`
   /// order, ties in tree order. A node that isn't visible is skipped with its whole subtree, which
   /// keeps its fragments and its render flags, so it comes back without recording what didn't
-  /// change. A node is recorded again only if it's render-dirty or has no fragment yet, and its
-  /// render flag is cleared. Fragments of nodes no longer in the subtree are dropped.
+  /// change. A node is recorded again only if it's render-dirty, [stale](Nodes::stale) or has no
+  /// fragment yet. Its render flag is cleared before it's recorded, so a write made while recording
+  /// keeps it dirty for the next frame. Fragments of nodes no longer in the subtree are dropped.
   pub fn compose(&mut self, tree: &mut UiTree, root: NodeId, nodes: &mut impl Nodes) -> Scene {
+    self.recorded = 0;
     let mut previous = std::mem::take(&mut self.fragments);
     let mut walk = Walk {
       compositor: self,
@@ -73,6 +82,12 @@ impl Compositor {
     let layers = walk.nodes.layers(tree, root);
     walk.visit(tree, root, layers);
     Scene { items: walk.items }
+  }
+
+  /// How many nodes the last [`compose`](Compositor::compose) recorded.
+  #[must_use]
+  pub fn recorded(&self) -> u32 {
+    self.recorded
   }
 }
 
@@ -103,10 +118,12 @@ impl<N: Nodes> Walk<'_, N> {
     }
 
     let fragment = match self.previous.remove(&node) {
-      Some(fragment) if !tree.dirty(node).contains(Affects::RENDER) => fragment,
-      _ => self.record(tree, node),
+      Some(fragment) if !tree.dirty(node).contains(Affects::RENDER) && !self.nodes.stale(node) => fragment,
+      _ => {
+        tree.clear_dirty(node, Affects::RENDER);
+        self.record(tree, node)
+      }
     };
-    tree.clear_dirty(node, Affects::RENDER);
     self.compositor.fragments.insert(node, Arc::clone(&fragment));
     self.items.push(SceneItem::Fragment(fragment));
 
@@ -132,6 +149,7 @@ impl<N: Nodes> Walk<'_, N> {
   fn record(&mut self, tree: &UiTree, node: NodeId) -> Arc<SceneFragment> {
     self.nodes.record(tree, node, &mut self.builder);
     self.compositor.generation += 1;
+    self.compositor.recorded += 1;
     Arc::new(SceneFragment::new(node, self.compositor.generation, self.builder.take()))
   }
 }
@@ -141,9 +159,10 @@ mod tests {
   use super::*;
   use crate::{Color, Command};
   use artic_core::Object;
-  use artic_core::property::AnyProperty;
+  use artic_core::property::{AnyProperty, Inheritance, Property, PropertyKey};
   use artic_layout::geometry::Rect;
   use pretty_assertions::assert_eq;
+  use std::collections::HashSet;
 
   #[derive(Debug)]
   struct Node;
@@ -157,6 +176,8 @@ mod tests {
   struct Table {
     layers: HashMap<NodeId, Layers>,
     recorded: HashMap<NodeId, usize>,
+    stale: HashSet<NodeId>,
+    writes: HashMap<NodeId, Property<i32>>,
   }
 
   impl Nodes for Table {
@@ -166,7 +187,14 @@ mod tests {
 
     fn record(&mut self, _arena: &UiTree, node: NodeId, builder: &mut SceneBuilder) {
       *self.recorded.entry(node).or_default() += 1;
+      if let Some(property) = self.writes.get(&node) {
+        property.set(property.get() + 1);
+      }
       builder.fill_rect(Rect::new(0.0, 0.0, 1.0, 1.0), Color::rgb(0, 0, 0));
+    }
+
+    fn stale(&self, node: NodeId) -> bool {
+      self.stale.contains(&node)
     }
   }
 
@@ -430,5 +458,64 @@ mod tests {
         color: Color::rgb(0, 0, 0)
       }]
     );
+  }
+
+  static PAINT: PropertyKey<i32> = PropertyKey::new("Paint", Affects::RENDER, Inheritance::None);
+
+  #[derive(Debug)]
+  struct Painted(Property<i32>);
+
+  impl Object for Painted {
+    fn visit_properties(&self, visit: &mut dyn FnMut(&dyn AnyProperty)) {
+      visit(&self.0);
+    }
+  }
+
+  // The compositor counts the nodes the last composition recorded: all of them at first, then only
+  // the render-dirty ones.
+  #[test]
+  fn compose_reports_recorded() {
+    let mut tree = UiTree::new();
+    let [root, _, b, _] = sample(&mut tree);
+    let mut compositor = Compositor::default();
+    let mut nodes = Table::default();
+
+    compositor.compose(&mut tree, root, &mut nodes);
+    let first = compositor.recorded();
+    tree.mark_dirty(b, Affects::RENDER);
+    compositor.compose(&mut tree, root, &mut nodes);
+    let second = compositor.recorded();
+    compositor.compose(&mut tree, root, &mut nodes);
+
+    assert_eq!((first, second, compositor.recorded()), (4, 1, 0));
+  }
+
+  // A stale node is recorded again although it isn't render-dirty.
+  #[test]
+  fn stale_node_is_recorded_again() {
+    let mut tree = UiTree::new();
+    let [root, a, b, c] = sample(&mut tree);
+    let mut compositor = Compositor::default();
+    let mut nodes = Table::default();
+    compositor.compose(&mut tree, root, &mut nodes);
+
+    nodes.stale.insert(a);
+    compositor.compose(&mut tree, root, &mut nodes);
+
+    assert_eq!([a, b, c].map(|node| nodes.recorded[&node]), [2, 1, 1]);
+  }
+
+  // A write made while a node is recorded keeps it render-dirty for the next frame.
+  #[test]
+  fn write_during_record_stays_dirty() {
+    let mut tree = UiTree::new();
+    let paint = Property::new(&PAINT, 0);
+    let root = tree.alloc(Box::new(Painted(paint)));
+    let mut nodes = Table::default();
+    nodes.writes.insert(root, paint);
+
+    Compositor::default().compose(&mut tree, root, &mut nodes);
+
+    assert!(tree.dirty(root).contains(Affects::RENDER));
   }
 }
