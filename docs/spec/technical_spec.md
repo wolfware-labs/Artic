@@ -70,7 +70,7 @@ Each layer builds on the ones below it. The exact dependency edges and the rules
 | `artic-xaml` | Parser: XML → XAML Infoset (MS-XAML §5), markup-extension grammar, diagnostics with spans | `XamlDocument`, `XamlNode`, `MarkupExtensionAst`, `Diagnostic` |
 | `artic-xaml-compiler` | Infoset → Rust source (`build.rs` API and `cargo artic` CLI) | `compile_dir()`, `CompileOptions` |
 | `artic-xaml-runtime` | Infoset → live object tree using the registry; file watcher and hot-swap | `XamlLoader`, `HotReload` |
-| `artic-layout` | Measure/arrange protocol, panels, invalidation | `Layoutable`, `LayoutCx`, `LayoutManager`, `Size`, `Rect`, `Thickness` |
+| `artic-layout` | Measure/arrange protocol, panels, invalidation | `Layoutable`, `MeasureCx`, `ArrangeCx`, `LayoutManager`, `Size`, `Rect`, `Thickness` |
 | `artic-element` | The `Element` trait and its render, hit-test, event and accessibility contexts; the property groups every control has; gesture recognizers. Shared by controls and the platform host (D25) | `Element`, `LayoutProperties`, `RenderCx`, `EventCx`, `AccessCx` |
 | `artic-controls` | Templated controls, primitives, default `ControlTemplate`s | `Button`, `TextBox`, `ItemsControl`, … |
 | `artic-style` | Selector parser and matcher, `Style`, `Setter`, pseudo-classes, resource dictionaries, theme switching | `Selector`, `Style`, `ResourceDictionary` |
@@ -397,8 +397,8 @@ pub trait Element: Object + Layoutable {          // Layoutable (§7 Layout prot
 }
 pub trait ElementImpl {                           // what a control writes; #[element] calls it
     fn defaults(&self) {}                         // e.g. self.interaction.focusable.set_default(true)
-    fn measure_override(&self, cx: &mut LayoutCx, available: Size) -> Size { Size::ZERO }
-    fn arrange_override(&self, cx: &mut LayoutCx, size: Size) {}
+    fn measure_override(&self, cx: &mut MeasureCx, available: Size) -> Size { Size::ZERO }
+    fn arrange_override(&self, cx: &mut ArrangeCx, size: Size) {}
     fn render(&self, cx: &mut RenderCx, scene: &mut SceneBuilder) {}
     fn on_event(&mut self, cx: &mut EventCx, event: &InputEvent) -> Handled { Handled::No }   // not called while disabled
     fn accessibility(&self, cx: &AccessCx, node: &mut accesskit::Node) {}   // adds to the default node
@@ -436,11 +436,11 @@ WPF two-pass measure/arrange with these rules:
 1. `measure(available)` returns the desired size, already including `Margin`. Results are cached per `available`; a node re-measures only when it or a descendant is `InvalidateMeasure`d, or `available` changes.
 2. `arrange(rect)` positions children; alignment and `Margin` are applied by `LayoutProperties` before the element's own `arrange_override`, so control authors only place children.
 3. Infinite constraints are legal (`ScrollViewer`, `StackPanel` on its axis). An element that returns an infinite desired size is a bug and panics in debug.
-4. Layout runs top-down from the highest dirty node; a dirty leaf whose desired size does not change stops propagation (`LayoutCx::desired_size_changed`).
-5. Units are logical pixels (`f32`); the platform layer supplies the scale factor; rounding to device pixels happens in `arrange` (`SnapToPixels` on by default), edge by edge so neighbors never leave a pixel's gap.
+4. Layout runs top-down from the highest dirty node; a dirty leaf whose desired size does not change stops propagation (`MeasureCx::desired_size_changed`).
+5. Units are logical pixels (`f32`); the platform layer supplies the scale factor; rounding to device pixels happens in `arrange` (`SnapToPixels` on by default), edge by edge so neighbors never leave a pixel's gap. Measure never sees the scale: `MeasureCx` has none, so a desired size can be known before a surface exists, and a scale change arranges again without measuring ([surface design](../design/surface.md)).
 6. Layout is synchronous and single-threaded; a `LayoutManager` runs it once per frame after effects.
 
-`measure` and `arrange` take `&self`: an element's inputs are its properties, and what layout works out (each node's last available size, desired size and rectangle) lives in the `LayoutManager`, so a parent measures its children through `LayoutCx` while the tree is only shared. `LayoutManager` finds a node's `Layoutable` through a `LayoutNodes` lookup the frame pipeline provides, so `artic-layout` never names `Element`. A node is laid out again when it's marked `Affects::LAYOUT` (a layout property changed, or its visual children did) or offered a different size; rectangles are relative to the parent. In release builds, an invalid size or rectangle counts as zero instead of panicking.
+`measure` and `arrange` take `&self`: an element's inputs are its properties, and what layout works out (each node's last available size, desired size and rectangle) lives in the `LayoutManager`, so a parent measures its children through `MeasureCx` while the tree is only shared. `LayoutManager` finds a node's `Layoutable` through a `LayoutNodes` lookup the frame pipeline provides, so `artic-layout` never names `Element`. A node is laid out again when it's marked `Affects::LAYOUT` (a layout property changed, or its visual children did) or offered a different size; rectangles are relative to the parent. In release builds, an invalid size or rectangle counts as zero instead of panicking.
 
 ### Panels (v1)
 
@@ -474,7 +474,8 @@ WPF two-pass measure/arrange with these rules:
 | `TabControl` | ItemsControl's parts + `SelectionState` | `PART_TabStrip`, `PART_Content` | `TabItem` header/content |
 | `Popup` | groups | — | overlay-layer primitive used by ComboBox, ToolTip |
 | `UserControl` | groups + content | — | root for app views |
-| `Window` | groups + content | — | title, size, `SizeToContent`, decorations |
+| `Application` | groups + surfaces | — | root of the tree; `Resources` and `Styles` (#122) |
+| `Surface` | groups + content | — | a root the host presents: `Title`, `IsOpen`; platform settings are attached (`Desktop.Width`, `.Height`, `.SizeToContent`, `.Chrome`), see the [surface design](../design/surface.md) |
 
 Every `TemplatedControl` ships a default `ControlTemplate` in the theme dictionary (§8) and looks up `PART_*` names after the template is applied (`on_apply_template`). Missing required parts are an error in debug.
 
@@ -597,7 +598,7 @@ impl LoginView {
 ### Focus and keyboard navigation
 
 - One focused element per window; `Focusable=true` opts in. `Tab`/`Shift+Tab` follow visual order with `TabIndex` overrides; arrow keys within `SelectingItemsControl`. `:focus-visible` is set only after keyboard navigation, so touch/mouse do not draw focus rings.
-- On mobile, focusing a `TextBox` requests the soft keyboard through the host's `text_input` capability; `Window` content scrolls to keep the focused element above the keyboard inset (§10).
+- On mobile, focusing a `TextBox` requests the soft keyboard through the host's `text_input` capability; `Surface` content scrolls to keep the focused element above the keyboard inset (§10).
 
 ### Open question
 
@@ -616,7 +617,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### Renderer
 
-- `Renderer` trait: `accepts(TargetKind)`, `render(&Scene, Surface)` and an optional `surface_lost`. A `Surface` is the host's id, its size in device pixels, its scale, and a `Target`: `Handles` (`raw-window-handle`: OS windows, DRM/GBM screens, canvases; valid until the surface is lost; the renderer presents), `Pixels` (a CPU buffer; the host presents) or `Custom` (a type one adapter's host and renderer agree on). A renderer that doesn't accept what the host offers is a startup error. Other renderers, such as skia or a CPU `tiny-skia`, are adapter crates, not features.
+- `Renderer` trait: `accepts(TargetKind)`, `render(&Scene, SurfaceView)` and an optional `surface_lost`. A `SurfaceView` is the host's id, its size in device pixels, its scale, and a `Target`: `Handles` (`raw-window-handle`: OS windows, DRM/GBM screens, canvases; valid until the surface is lost; the renderer presents), `Pixels` (a CPU buffer; the host presents) or `Custom` (a type one adapter's host and renderer agree on). A renderer that doesn't accept what the host offers is a startup error. Other renderers, such as skia or a CPU `tiny-skia`, are adapter crates, not features.
 - Retained `Scene`: each element owns a `SceneFragment` (a backend-neutral recording that each backend translates, D24) with a generation that increases when it changes, so a renderer may cache unchanged fragments; `render()` is called only for render-dirty nodes and the root composes fragments with transforms, clips, and opacity groups. Siblings are drawn in `ZIndex` order (ties in tree order), and a node that isn't `Visible` is skipped together with its subtree ([elements design](../design/element.md#7-accessibility-and-composition)). Untouched subtrees cost nothing per frame.
 - Primitives, all required of every renderer and all drawable on a CPU: paths (fill/stroke), rounded rects, images, glyph runs, linear/radial gradients, box shadows (blurred rect), clip (rect, rounded rect, path), layers with opacity and blend mode `Normal` only. Images are shared data (`Arc<ImageData>`) that a renderer uploads once and caches.
 - Text: artic shapes and breaks lines with `parley` in `artic-render`, with system font discovery via `fontique`, so layout doesn't depend on the renderer. The scene carries positioned glyph runs; a renderer only draws glyphs (`skrifa` outlines for CPU renderers) and keeps its own glyph cache. Emoji: `COLRv1` via `vello` where supported, bitmap fallback.
@@ -647,8 +648,8 @@ pub trait HostContext {                                               // handed 
 ```
 
 - Core, required of every host: surfaces, each reporting `SurfaceInfo { size, scale, display, refresh_rate }` when it appears or changes and when it's lost; raw events (§9, plus gamepads), delivered as `HostEvent` variants that #73 adds; frames per surface; waking the loop when another thread posts to the `Dispatcher`.
-- Everything else is a capability whose default is `None`; artic decides the fallback at each use (no `clipboard`: Copy does nothing; no `windows`: each `Window` takes one whole surface). A new capability is a new default method, so existing adapters keep compiling.
-- Several displays: a windowed host reports one surface per window, moving between displays with its scale and refresh rate; a host without `windows` reports one full-screen surface per display. The app's `Window`s are assigned to OS windows (on the display their `Display` property names) or to display surfaces in order, so a multi-screen app runs unchanged on both.
+- Everything else is a capability whose default is `None`; artic decides the fallback at each use (no `clipboard`: Copy does nothing; no `windows`: each `Surface` takes one whole host surface). A new capability is a new default method, so existing adapters keep compiling.
+- Several displays: a windowed host reports one surface per window, moving between displays with its scale and refresh rate; a host without `windows` reports one full-screen surface per display. The app's `Surface`s are assigned to OS windows (on the display `Desktop.Display` names) or to display surfaces in tree order, so a multi-screen app runs unchanged on both.
 - The [host design](../design/host.md) (#39) fixes these traits: artic acts on the host only through the context it's handed, the target is lent only in `frame`, and a `Waker` lets other threads wake the loop, after which artic drains the `Dispatcher`.
 - `run` doesn't have to block: a host whose loop can't block, such as a web host, installs its callbacks and returns, and app code can't tell the difference (D24).
 
@@ -668,9 +669,9 @@ Implementation of `artic-winit`: `winit` provides windows, input, DPI and lifecy
 
 ### Windows and popups
 
-- Desktop: multiple top-level windows, each with its own root, focus, and render surface; popups (`ComboBox`, tooltips) are an overlay layer inside the owning window, not OS windows, so they render identically on all targets.
-- Mobile: exactly one `Window`, sized to the screen; `Window.Content` gets `Padding` = safe area by default (`RespectSafeArea="True"`).
-- Window chrome: OS decorations by default; `ExtendIntoTitleBar` (custom title bar) supported on Windows and macOS in v1, Linux v2.
+- Desktop: each open `Surface` is a top-level window, with its own focus and render surface; popups (`ComboBox`, tooltips) are an overlay layer inside the owning window, not OS windows, so they render identically on all targets.
+- Mobile: one host surface, sized to the screen. The first open `Surface` fills it, its content inset by the safe area by default (`RespectSafeArea="True"`); a second is presented over it as a sheet, and `Mobile.Presentation` chooses another presentation.
+- Window chrome: `Desktop.Chrome`, `System` (OS decorations) by default or `None`; `Extended` (content under the title bar, OS buttons kept) supported on Windows and macOS in v1, Linux v2.
 
 ### Packaging
 

@@ -8,7 +8,7 @@ A **frame** turns changed state into pixels on one surface: posted work runs, th
 
 | Who | Writes | Sees |
 | --- | --- | --- |
-| The facade (#55) | builds the tree from the views, then `Runner::new(tree, renderer).window(desc, root)` and `artic_platform::run(host, runner)` | `Runner`, `run`, `Hooks`, `Error` |
+| The facade (#55) | builds the tree from the views, then `Runner::new(tree, renderer).window(desc, root)` and `artic_platform::run(host, runner)`; the [surface design](surface.md) replaces this with `Runner::new(tree, renderer, application)` | `Runner`, `run`, `Hooks`, `Error` |
 | Features that run inside a frame (style pass, size classes, accesskit, transitions) | a closure registered on `Hooks` | `Hooks`, `UiTree`, `SurfaceInfo`, `FrameStats` |
 | Tests and the debug overlay (#165) | | `FrameStats`, per frame and per surface |
 | Host adapters | nothing new | `Runner` is an ordinary `AppHandler` |
@@ -106,7 +106,7 @@ A node that isn't an element gets default layers and records nothing.
 | Call | The runner |
 | --- | --- |
 | `started` | opens each declared window through `cx.windows()` and maps its `SurfaceId` to its root. A host without `Windows`, such as a framebuffer, binds the declared roots to surfaces in the order `surface_changed` first reports them |
-| `surface_changed` | keeps the new `SurfaceInfo`, marks the surface and requests a frame for it, even when nothing differs from the last report: a surface reported again after `surface_lost`, such as on resume, has lost what the renderer kept for it and must be drawn again. A size change marks the root layout-dirty. A scale change marks the root's whole visual subtree layout-dirty, so every node is measured and arranged again and snapped to the new device-pixel grid |
+| `surface_changed` | keeps the new `SurfaceInfo`, marks the surface and requests a frame for it, even when nothing differs from the last report: a surface reported again after `surface_lost`, such as on resume, has lost what the renderer kept for it and must be drawn again. A size change marks the root layout-dirty. A scale change marks the root's whole visual subtree layout-dirty, so every node is measured and arranged again and snapped to the new device-pixel grid; the [surface design](surface.md) makes it arrange only |
 | `surface_lost` | calls `renderer.surface_lost`. A `Suspended` loss flags the surface lost and keeps its root, since a resume reports it again; a `Gone` loss forgets it, and when no window but closing ones is left, the runner exits |
 | `event(CloseRequested)` | closes the window and flags the surface closing, so it gets no more frames; the `Gone` loss the host reports after a close releases the renderer's resources and forgets it. The last window closing exits |
 | `event(Suspended)`, `event(Resumed)` | nothing beyond settling; the surfaces come and go through `surface_lost` and `surface_changed` |

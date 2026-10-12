@@ -125,6 +125,8 @@ pub struct Surface<'a> {
 }
 ```
 
+(The [surface design](surface.md) (#48) renames `Surface` to `SurfaceView`, freeing the name for the element a host presents.)
+
 (Implementing #33 refined the first sketch, `render(&Scene, Target, scale)`: a renderer with several windows needs to know which surface it draws on and at what size, and `artic::run`'s pairing check needs `accepts`.)
 
 - **Text is shaped by artic,** with `parley`, in its own crate. Layout measures text through it, and the scene carries **positioned glyph runs**: font data, glyph ids, positions and size. A renderer draws glyphs; it never shapes, breaks lines or measures. vello and skia draw glyph runs from font data directly, and a CPU renderer gets outlines from a `skrifa` helper artic provides. (The previous spec's `Renderer::measure_text` is gone, and layout no longer depends on which renderer runs.)
