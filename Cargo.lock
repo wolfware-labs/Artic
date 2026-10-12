@@ -309,6 +309,7 @@ dependencies = [
  "artic-render",
  "artic-vello",
  "pretty_assertions",
+ "vello",
  "winit",
 ]
 

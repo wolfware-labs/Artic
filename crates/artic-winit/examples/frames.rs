@@ -1,7 +1,9 @@
 // Draws one window through the frame pipeline, changes a color once after the first frame, and
 // checks that the loop then goes idle: 1.5 s after the first frame it exits with code 1 if any frame
 // ran in the last 500 ms, and with code 0 otherwise. The check and the exit run on the loop's
-// thread, woken by a timer through the host's `Waker`.
+// thread, woken by a timer through the host's `Waker`. On WARP, Windows' software adapter (all
+// GitHub's Windows runners have), vello crashes, so there it draws with a renderer that draws
+// nothing: the check is about when frames run, not what they show.
 //
 // Run with `cargo run -p artic-winit --example frames`.
 
@@ -13,7 +15,7 @@ use artic_element::{AccessCx, Element, RenderCx};
 use artic_layout::geometry::{Rect, Size};
 use artic_layout::{LayoutCx, Layoutable};
 use artic_platform::{AppHandler, Host as _, HostContext, HostEvent, Runner, SurfaceInfo, Waker};
-use artic_render::{Color, Renderer, SceneBuilder, SurfaceId, Target};
+use artic_render::{Color, RenderError, Renderer, Scene, SceneBuilder, Surface, SurfaceId, Target, TargetKind};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -110,11 +112,34 @@ impl<R: Renderer> AppHandler for Idle<R> {
   }
 }
 
+/// Accepts window handles and draws nothing.
+struct Blank;
+
+impl Renderer for Blank {
+  fn accepts(&self, kind: TargetKind) -> bool {
+    kind == TargetKind::Handles
+  }
+
+  fn render(&mut self, _scene: &Scene, _surface: Surface<'_>) -> Result<(), RenderError> {
+    Ok(())
+  }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+  let renderer = artic_vello::Renderer::new().map_err(|error| format!("no GPU renderer: {error}"))?;
+  if cfg!(windows) && renderer.adapter_info().device_type == vello::wgpu::DeviceType::Cpu {
+    println!("WARP, on which vello crashes: drawing nothing");
+    check(Blank)
+  } else {
+    check(renderer)
+  }
+}
+
+/// Runs the app with `renderer` and returns whether it went idle.
+fn check(renderer: impl Renderer + 'static) -> Result<(), Box<dyn std::error::Error>> {
   let mut tree = UiTree::new();
   let red = Property::new(&RED, 128);
   let root = tree.alloc(Box::new(Swatch { red }));
-  let renderer = artic_vello::Renderer::new().map_err(|error| format!("no GPU renderer: {error}"))?;
   let mut runner = Runner::new(tree, renderer).window(
     WindowDesc {
       title: "artic frames".into(),
