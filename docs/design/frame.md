@@ -81,6 +81,8 @@ Pending work never keeps the loop awake by itself: the queue is empty after each
 7. If any `wants_frame` hook returns true, mark the surface and request its next frame.
 8. Settle (section 3). A write made in steps 5 to 7, such as by an `after_present` hook, sets the pending flag after step 3 read it; settling marks the surfaces and asks for exactly one more frame.
 
+Each stage clears a node's flag before doing the node's work, never after: `LayoutManager::run` already clears `LAYOUT` before it measures, and the compositor clears `RENDER` before it calls `record`. A write made during that work, such as from an element's `render`, then sets the flag again and survives to the follow-up frame instead of being cleared with the work it came too late for.
+
 Layout reports resized nodes rather than marking them render-dirty: a mark would set the pending flag in the middle of the frame and cost a second, empty frame after every layout change, such as each step of a window resize.
 
 Pacing comes from the host and the renderer: a surface asks for its next frame only from step 7, and a renderer that presents in step with the display (as `artic-vello` does) holds that request to the display's refresh, so each surface runs at its own display's rate.
@@ -122,7 +124,7 @@ Each stage counts what it did: `LayoutManager::run` returns `LayoutStats { measu
 | --- | --- |
 | `artic-core` | `property_write_sets_pending`, `mark_dirty_sets_pending`, `child_change_sets_pending`, `take_pending_resets` |
 | `artic-layout` | `run_reports_measured_and_arranged`: a second run with nothing dirty reports zero; `run_reports_resized`: a node whose size changed is listed, one that only moved isn't |
-| `artic-render` | `compose_reports_recorded`: only render-dirty nodes count; `stale_node_is_recorded_again` |
+| `artic-render` | `compose_reports_recorded`: only render-dirty nodes count; `stale_node_is_recorded_again`; `write_during_record_stays_dirty` |
 | `artic-platform` | `layout_offset_applies_after_render_transform`, `render_cx_has_the_arranged_size`, `frame_is_send` |
 | `artic-platform`, through `Runner`, a fake `HostContext` and a counting renderer on a `Pixels` target | `clean_frame_is_skipped` (an unasked-for frame measures and records nothing, presents the last scene, and requests no frame, so the loop sleeps), `os_redraw_presents_the_last_scene`, `render_only_change_skips_layout`, `layout_change_remeasures_subtree`, `resize_invalidates_root`, `resized_node_is_recorded_again`, `node_resized_while_hidden_is_recorded_when_shown`, `reparenting_a_root_under_another_window_panics`, `windows_keep_their_own_caches`, `write_after_present_requests_one_frame`, `surface_lost_render_error_resets_the_renderer`, `style_write_lands_in_same_frame`, `hook_write_effects_land_in_same_frame`, `wants_frame_requests_another`, `closing_last_window_exits`, `closed_window_is_released_from_the_renderer`, `render_error_is_returned_from_run`, `render_error_reaches_on_error`, `overlapping_window_roots_panic`, `mismatched_renderer_is_rejected` |
 
@@ -133,5 +135,5 @@ An `artic-winit` example, `frames`, opens a window with one element through `Run
 | PR | Contents | Done when |
 | --- | --- | --- |
 | A | this document; pointers in the element and host designs | approved |
-| B | `DirtyHandle`, the pending flag and `take_pending` in `artic-core`; `LayoutStats`; `Nodes::stale` and the compositor's recorded count | the core, layout and render tests in section 8 |
+| B | `DirtyHandle`, the pending flag and `take_pending` in `artic-core`; `LayoutStats`; `Nodes::stale`, the compositor's recorded count, and the compositor clearing `RENDER` before `record` | the core, layout and render tests in section 8 |
 | C | `Pipeline`, `Frame`, `FrameStats`, `Hooks`, `Runner`, `run`, `Error`, the render `Nodes`, `RenderCx::size`; the `frames` example and its CI step | the `artic-platform` tests in section 8, and `frames` passing on Windows and macOS |
