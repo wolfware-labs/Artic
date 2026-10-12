@@ -100,7 +100,8 @@ impl<R: Renderer> AppHandler for Idle<R> {
 
   fn frame(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, target: Target<'_>, time: Duration) {
     self.runner.frame(cx, surface, target, time);
-    if self.frames.is_empty()
+    self.frames.push(Instant::now());
+    if self.frames.len() == 1
       && let Some(waker) = self.waker.clone()
     {
       std::thread::spawn(move || {
@@ -108,7 +109,6 @@ impl<R: Renderer> AppHandler for Idle<R> {
         waker.wake();
       });
     }
-    self.frames.push(Instant::now());
   }
 }
 
