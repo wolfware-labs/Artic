@@ -125,6 +125,12 @@ impl<R: Renderer> Runner<R> {
     self.surfaces.len() - 1
   }
 
+  fn exit_without_windows(&self, cx: &mut dyn HostContext) {
+    if self.surfaces.iter().all(|window| window.closing) {
+      cx.exit();
+    }
+  }
+
   #[track_caller]
   fn check_root(&self, root: NodeId) {
     for ancestor in self.tree.ancestors(TreeKind::Visual, root) {
@@ -201,10 +207,12 @@ impl<R: Renderer> AppHandler for Runner<R> {
   fn surface_lost(&mut self, cx: &mut dyn HostContext, surface: SurfaceId) {
     self.renderer.surface_lost(surface);
     if let Some(index) = self.surfaces.iter().position(|window| window.id == surface) {
-      if self.surfaces[index].closing {
+      let window = &mut self.surfaces[index];
+      if window.closing || window.info.is_none() {
         self.surfaces.remove(index);
+        self.exit_without_windows(cx);
       } else {
-        self.surfaces[index].lost = true;
+        window.lost = true;
       }
     }
     self.settle(cx);
@@ -218,9 +226,7 @@ impl<R: Renderer> AppHandler for Runner<R> {
       if let Some(windows) = cx.windows() {
         windows.close(surface);
       }
-      if self.surfaces.iter().all(|window| window.closing) {
-        cx.exit();
-      }
+      self.exit_without_windows(cx);
     }
     self.settle(cx);
   }

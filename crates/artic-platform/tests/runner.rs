@@ -506,3 +506,52 @@ fn mismatched_renderer_is_rejected() {
 
   assert!(matches!(result, Err(Error::Unsupported(TargetKind::Handles))));
 }
+
+// A window the host lost before ever reporting it, such as one that failed to open, is forgotten,
+// and with no window left the app exits rather than running with none.
+#[test]
+fn window_that_failed_to_open_exits() {
+  let mut tree = UiTree::new();
+  let (root, _) = panel(&mut tree, &[]);
+  let mut runner = Runner::new(tree, Counter::default()).window(desc("main"), root);
+  let mut cx = Context::default();
+  runner.started(&mut cx, Waker::new(|| {}));
+
+  runner.surface_lost(&mut cx, FIRST);
+
+  assert!(cx.exited);
+}
+
+// With a window that failed to open, closing the other one, the last open window, exits.
+#[test]
+fn closing_the_last_open_window_exits_past_a_failed_one() {
+  let mut tree = UiTree::new();
+  let (first_root, _) = panel(&mut tree, &[]);
+  let (second_root, _) = panel(&mut tree, &[]);
+  let mut runner = Runner::new(tree, Counter::default())
+    .window(desc("first"), first_root)
+    .window(desc("second"), second_root);
+  let mut cx = Context::default();
+  runner.started(&mut cx, Waker::new(|| {}));
+  runner.surface_changed(&mut cx, FIRST, info(64, 64, 1.0));
+  runner.surface_lost(&mut cx, SurfaceId::new(2));
+  assert!(!cx.exited);
+
+  runner.event(&mut cx, HostEvent::CloseRequested { surface: FIRST });
+
+  assert!(cx.exited);
+}
+
+// A window lost while suspended keeps its place: it comes back on resume, so the app doesn't exit.
+#[test]
+fn suspended_window_is_kept() {
+  let mut fixture = Fixture::new(|_| {});
+
+  fixture.runner.surface_lost(&mut fixture.cx, FIRST);
+  fixture.runner.surface_changed(&mut fixture.cx, FIRST, info(64, 64, 1.0));
+  let stats = fixture.frame();
+
+  assert!(!fixture.cx.exited);
+  assert_eq!(fixture.cx.frames, [FIRST]);
+  assert!(stats.rendered);
+}

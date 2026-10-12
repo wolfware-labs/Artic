@@ -107,7 +107,7 @@ A node that isn't an element gets default layers and records nothing.
 | --- | --- |
 | `started` | opens each declared window through `cx.windows()` and maps its `SurfaceId` to its root. A host without `Windows`, such as a framebuffer, binds the declared roots to surfaces in the order `surface_changed` first reports them |
 | `surface_changed` | keeps the new `SurfaceInfo`, marks the surface and requests a frame for it, even when nothing differs from the last report: a surface reported again after `surface_lost`, such as on resume, has lost what the renderer kept for it and must be drawn again. A size change marks the root layout-dirty. A scale change marks the root's whole visual subtree layout-dirty, so every node is measured and arranged again and snapped to the new device-pixel grid |
-| `surface_lost` | calls `renderer.surface_lost`, then flags the surface lost, or forgets it if it was closing. An open surface's root stays mapped: a resume reports the same surface again |
+| `surface_lost` | calls `renderer.surface_lost`, then flags the surface lost, or forgets it if it was closing or was never reported, such as a window that failed to open; when no window but closing ones is left, it exits. A reported surface's root stays mapped: a resume reports the same surface again |
 | `event(CloseRequested)` | closes the window and flags the surface closing, so it gets no more frames; the `surface_lost` the host sends after a close releases the renderer's resources and forgets it. The last window closing exits |
 | `event(Suspended)`, `event(Resumed)` | nothing beyond settling; the surfaces come and go through `surface_lost` and `surface_changed` |
 | `woken` | settles; #79 connects the dispatcher's cross-thread `post` here |
