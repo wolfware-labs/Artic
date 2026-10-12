@@ -1,7 +1,7 @@
 // Opens one empty window through the artic-winit host, asks for a frame after each frame, and
 // exits after `ARTIC_SMOKE_FRAMES` frames, or when the window is closed if the variable isn't set.
 // A window lost before that many frames, such as one that couldn't be created, exits with code 1.
-// It draws nothing: rendering comes with the frame pipeline (#40).
+// It draws nothing; the `frames` example draws through the frame pipeline.
 //
 // Run with `ARTIC_SMOKE_FRAMES=120 cargo run -p artic-winit --example smoke`.
 

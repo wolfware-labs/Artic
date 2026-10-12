@@ -17,6 +17,10 @@ artic-render.workspace = true
 winit = { workspace = true, features = ["rwh_06", "x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita-notitle"] }
 
 [dev-dependencies]
+accesskit.workspace = true
+artic-element.workspace = true
+artic-layout.workspace = true
+artic-vello.workspace = true
 pretty_assertions.workspace = true
 
 [lints]
