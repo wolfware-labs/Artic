@@ -670,7 +670,7 @@ Implementation of `artic-winit`: `winit` provides windows, input, DPI and lifecy
 ### Windows and popups
 
 - Desktop: each open `Surface` is a top-level window, with its own focus and render surface; popups (`ComboBox`, tooltips) are an overlay layer inside the owning window, not OS windows, so they render identically on all targets.
-- Mobile: one host surface, sized to the screen. The first open `Surface` fills it, its content inset by the safe area by default (`RespectSafeArea="True"`); a second is presented over it as a sheet, and `Mobile.Presentation` chooses another presentation.
+- Mobile: one host surface, sized to the screen. The first open `Surface` fills it, its content inset by the safe area by default (`RespectSafeArea="True"`); on a host with the `Presenter` capability (added with the mobile hosts), a second is presented over it as a sheet and `Mobile.Presentation` chooses another presentation; without it, a second `Surface` stays unbound.
 - Window chrome: `Desktop.Chrome`, `System` (OS decorations) by default or `None`. An `Extended` value (content under the title bar, OS buttons kept) is #173, for Windows and macOS; Linux follows in v2.
 
 ### Packaging

@@ -60,7 +60,7 @@ Everything beyond the core is optional. Each capability is a `HostContext` metho
 
 | Capability | What it does | Without it |
 | --- | --- | --- |
-| `windows` | open, update and close (#39, #48); full screen and the display a window opens on arrive with #267 | each `Surface` takes one whole host surface (below) |
+| `windows` | open, update and close (#39, #48); full screen and choosing a display are deferred to #267 | each `Surface` takes one whole host surface (below) |
 | `displays` | list displays (id, bounds, scale, refresh rate, primary); connect and disconnect | everything goes on the host's surfaces in order |
 | `clipboard` | read (async) and write text | Copy does nothing; Paste is disabled |
 | `text_input` | IME composition, soft keyboard, input mode (`InputMode`) | text comes only from `Key` and `Text` events |
