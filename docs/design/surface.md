@@ -76,14 +76,15 @@ Settle, which the runner runs after every callback ([frame design](frame.md) §3
 
 | A surface that is | Reconcile |
 | --- | --- |
-| open (`IsOpen`) and unbound, on a host with `Windows` | measures it (section 6), builds its `WindowDesc`, calls `Windows::open` and binds the returned `SurfaceId` to it |
+| open (`IsOpen`), unbound and not lost, on a host with `Windows` | measures it (section 6), builds its `WindowDesc`, calls `Windows::open` and binds the returned `SurfaceId` to it |
 | open and unbound, on a host without `Windows` | binds it to the next host surface no `Surface` holds, in tree order; with none left it stays unbound (see windowless hosts below) |
-| bound and `SURFACE`-dirty | rebuilds its `WindowDesc`; when it differs from the last one applied, calls `Windows::update` |
+| bound and `SURFACE`-dirty, on a host with `Windows` | rebuilds its `WindowDesc`; when it differs from the last one applied, calls `Windows::update` |
+| bound and `SURFACE`-dirty, on a host without `Windows` | nothing reaches the host: such a host takes no title, size or chrome. `Title` still names the surface's accesskit node, and `Presenter` (mobile) defines what it takes when it arrives |
 | bound, and closed (`IsOpen` false) or no longer in the tree | calls `Windows::close` where the host has it, and unbinds it |
 
 `SURFACE` is cleared when reconcile reads the surface. A change to an inherited `Desktop` value on `Application` marks each surface whose effective value changed, through the same inheritance path as `LAYOUT` and `RENDER`.
 
-**Closing.** The OS asks to close a surface through `event(CloseRequested)`, and loses one for good through `surface_lost(Gone)`. Either way the runner writes `IsOpen = false` at `Local` and reconcile takes it down. The node stays in the tree, so its state survives and setting `IsOpen` again reopens it. When no surface is open, the runner exits. A `Suspended` loss is unchanged: the surface stays bound and is drawn again when the host reports it.
+**Closing.** The user closes a surface through `event(CloseRequested)`: the runner writes `IsOpen = false` at `Local`, and reconcile takes it down. The node stays in the tree, so its state survives and setting `IsOpen` again reopens it. A `surface_lost(Gone)` that no close request preceded, such as a window that couldn't be created, one the OS destroyed, or the loop exiting, isn't the user's decision and writes nothing: the runner unbinds the surface and marks it **lost**, and reconcile doesn't open a lost surface again until its `IsOpen` goes false and then true, so a window that can't be created isn't retried in a loop. When every surface is closed or lost, the runner exits. A `Suspended` loss is unchanged: the surface stays bound and is drawn again when the host reports it.
 
 Writing `Local` shadows a binding: after the OS closes a surface whose `IsOpen` is bound, the binding no longer reaches it. Two-way binding replaces this write with one that goes back to the binding's source; until then a bound `IsOpen` opens a surface once. A cancellable `Closing` event arrives with routed events and sits in front of the write.
 
@@ -111,7 +112,7 @@ This section is about surfaces the runner opens through `Windows`. A surface bou
 
 Before opening a surface, the runner measures it with a `MeasureCx`. Each axis gets `∞` when `SizeToContent` covers it, `Desktop.Width` or `Height` when set, and otherwise `∞` with the host picking the size. `WindowDesc.size` carries the measured size on the `SizeToContent` axes, the set value on the others, and `None` where the host picks. The window opens at that logical size, and the OS converts it to device pixels for whichever monitor it lands on, so there is no hidden first frame and no visible jump.
 
-While a surface is open, each frame lays it out with `∞` on its `SizeToContent` axes, so its root takes its desired size `D` there ([frame design](frame.md): a root's rectangle is its desired size on an infinite axis). When `D` differs from the last size the runner *requested*, it calls `Windows::update`. The OS resizes, `surface_changed` arrives, and the next layout measures at `∞` again and gets `D` again, so it settles in one round. The comparison is with the request, not with the window's actual size, so a window the OS clamps, such as one larger than the screen, settles too: `D` is requested once and never again.
+While a surface is open, each frame lays it out with `∞` on its `SizeToContent` axes, so its root takes its desired size `D` there ([frame design](frame.md): a root's rectangle is its desired size on an infinite axis). After layout, when `D` differs from the last size the runner *requested*, it marks the surface `SURFACE` with `UiTree::mark_dirty`, which sets the pending flag, so the settle that ends the frame reconciles it and calls `Windows::update`. The OS resizes, `surface_changed` arrives, and the next layout measures at `∞` again and gets `D` again, so it settles in one round. The comparison is with the request, not with the window's actual size, so a window the OS clamps, such as one larger than the screen, settles too: `D` is requested once and never again.
 
 The user can't resize a `SizeToContent` axis: `WindowDesc.resizable` leaves it out, and the host locks it. Content owns that axis, and nothing writes to app state behind the developer's back.
 
@@ -122,7 +123,7 @@ The user can't resize a `SizeToContent` axis: `WindowDesc.resizable` leaves it o
 | `artic-layout` | `scale_change_arranges_without_measuring` (`LayoutStats.measured == 0`), `measure_cx_has_no_scale` (a compile-fail doctest) |
 | `artic-element` | `surface_accesskit_node` (role `Window`, named by `Title`), `desktop_chrome_inherits_from_application`, `attached_property_inherits` |
 | `artic-controls` | `user_control_accesskit_node` (role `GenericContainer`), `user_control_lays_out_its_content` |
-| `artic-platform`, through `Runner` and the fake host | `surface_opens_measured_to_content`, `surface_opens_at_desktop_size`, `title_change_updates_once`, `unchanged_surface_is_not_updated`, `size_to_content_settles` (the OS clamps, and no second request follows), `os_close_writes_is_open_and_reopens`, `last_surface_closing_exits`, `removed_surface_closes`, `windowless_host_binds_in_tree_order`, `windowless_surface_ignores_size_to_content` |
+| `artic-platform`, through `Runner` and the fake host | `surface_opens_measured_to_content`, `surface_opens_at_desktop_size`, `title_change_updates_once`, `unchanged_surface_is_not_updated`, `size_to_content_settles` (the OS clamps, and no second request follows), `os_close_writes_is_open_and_reopens`, `failed_open_is_not_retried`, `content_growth_resizes_window`, `last_surface_closing_exits`, `removed_surface_closes`, `windowless_host_binds_in_tree_order`, `windowless_surface_ignores_size_to_content` |
 
 The `smoke` and `frames` examples build an `Application` with one `Surface` and run unchanged in CI.
 
