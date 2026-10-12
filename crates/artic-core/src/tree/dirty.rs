@@ -26,7 +26,59 @@ pub struct DirtyHandle {
 }
 
 impl DirtyHandle {
-  pub(crate) fn mark(&self, stages: Affects) {
+  /// Adds `stages` to the node's dirty flags and sets the tree's pending flag, as a property does
+  /// when its effective value changes. Marking no stage, or marking a freed node, does nothing.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use artic_core::Object;
+  /// use artic_core::property::{Affects, AnyProperty, KeyId};
+  /// use artic_core::tree::{DirtyHandle, UiTree};
+  /// use std::any::Any;
+  /// use std::cell::RefCell;
+  ///
+  /// /// A property kept outside `Property`, which marks its node itself.
+  /// #[derive(Debug, Default)]
+  /// struct Custom(RefCell<Option<DirtyHandle>>);
+  ///
+  /// impl AnyProperty for Custom {
+  ///   fn key_id(&self) -> KeyId {
+  ///     unimplemented!()
+  ///   }
+  ///   fn inherits(&self) -> bool {
+  ///     false
+  ///   }
+  ///   fn attach(&self, dirty: DirtyHandle) {
+  ///     *self.0.borrow_mut() = Some(dirty);
+  ///   }
+  ///   fn inherit_from(&self, _source: Option<&dyn AnyProperty>) {}
+  ///   fn as_any(&self) -> &dyn Any {
+  ///     self
+  ///   }
+  /// }
+  ///
+  /// #[derive(Debug, Default)]
+  /// struct Node(Custom);
+  ///
+  /// impl Object for Node {
+  ///   fn visit_properties(&self, visit: &mut dyn FnMut(&dyn AnyProperty)) {
+  ///     visit(&self.0);
+  ///   }
+  /// }
+  ///
+  /// let mut tree = UiTree::new();
+  /// let id = tree.alloc(Box::new(Node::default()));
+  /// tree.clear_dirty(id, Affects::LAYOUT | Affects::RENDER);
+  /// let _ = tree.take_pending();
+  ///
+  /// let node = tree.get_as::<Node>(id).unwrap();
+  /// node.0.0.borrow().as_ref().unwrap().mark(Affects::RENDER);
+  ///
+  /// assert_eq!(tree.dirty(id), Affects::RENDER);
+  /// assert!(tree.take_pending());
+  /// ```
+  pub fn mark(&self, stages: Affects) {
     if stages.is_empty() || self.freed.get() {
       return;
     }
