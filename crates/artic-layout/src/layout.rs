@@ -59,13 +59,33 @@ pub struct LayoutManager {
   slots: HashMap<NodeId, Slot>,
 }
 
+/// What a [`LayoutManager::run`] did.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LayoutStats {
+  /// The nodes measured, rather than answered from their cache.
+  pub measured: u32,
+  /// The nodes arranged, rather than skipped as unchanged.
+  pub arranged: u32,
+  /// The nodes whose arranged size differs from the run before, in the order they were arranged.
+  /// A node arranged for the first time isn't listed, and neither is one that only moved.
+  pub resized: Vec<NodeId>,
+}
+
 impl LayoutManager {
   /// Lays out `root`'s visual subtree in `available`, at `scale` device pixels per logical pixel.
   ///
   /// With `snap`, every arranged rectangle has its edges on the device-pixel grid. The root's
   /// rectangle is `available` where it's finite, and its desired size where it isn't. Results of
-  /// nodes no longer in the subtree are dropped.
-  pub fn run(&mut self, tree: &mut UiTree, nodes: &impl LayoutNodes, root: NodeId, available: Size, scale: f32, snap: bool) {
+  /// nodes no longer in the subtree are dropped. Returns what it measured, arranged and resized.
+  pub fn run(
+    &mut self,
+    tree: &mut UiTree,
+    nodes: &impl LayoutNodes,
+    root: NodeId,
+    available: Size,
+    scale: f32,
+    snap: bool,
+  ) -> LayoutStats {
     let mut depths = HashMap::new();
     let mut dirty = HashSet::new();
     let mut pending = vec![(root, 0_usize)];
@@ -112,6 +132,7 @@ impl LayoutManager {
       current: None,
       measured: Vec::new(),
       arranging: None,
+      stats: LayoutStats::default(),
     };
 
     // Upward: a dirty node measures again in the size it had. If its desired size is unchanged,
@@ -165,6 +186,7 @@ impl LayoutManager {
         cx.arrange(node, rect);
       }
     }
+    cx.stats
   }
 
   /// Marks `node` to be measured again in the next [`run`](LayoutManager::run).
@@ -211,6 +233,8 @@ pub struct LayoutCx<'a> {
   measured: Vec<HashSet<NodeId>>,
   /// The node being arranged, which only [`set_bounds`](LayoutCx::set_bounds) needs.
   arranging: Option<NodeId>,
+  /// What the run has done so far.
+  stats: LayoutStats,
 }
 
 impl<'a> LayoutCx<'a> {
@@ -272,6 +296,7 @@ impl<'a> LayoutCx<'a> {
     if !self.dirty.contains(&child) && slot.available == Some(available) {
       return slot.desired;
     }
+    self.stats.measured += 1;
     let desired = match self.nodes.layoutable(self.tree, child) {
       Some(layoutable) => {
         let parent = self.current.replace(child);
@@ -316,15 +341,21 @@ impl<'a> LayoutCx<'a> {
     if slot.offered == Some(rect) && !slot.arrange_dirty {
       return;
     }
+    let before = slot.rect.map(Rect::size);
     slot.offered = Some(rect);
     slot.rect = Some(rect);
     slot.arrange_dirty = false;
+    self.stats.arranged += 1;
     if let Some(layoutable) = self.nodes.layoutable(self.tree, child) {
       let parent = self.current.replace(child);
       let arranging = self.arranging.replace(child);
       layoutable.arrange(self, rect);
       self.arranging = arranging;
       self.current = parent;
+    }
+    let after = self.slots.get(&child).and_then(|slot| slot.rect).map(Rect::size);
+    if before.is_some() && before != after {
+      self.stats.resized.push(child);
     }
   }
 

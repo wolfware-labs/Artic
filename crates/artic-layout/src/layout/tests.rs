@@ -531,3 +531,37 @@ mod misuse {
     LayoutManager::default().run(&mut tree, &Skippers, root, Size::new(10.0, 10.0), 1.0, false);
   }
 }
+
+// A run reports the nodes it measured and arranged, lists none as resized the first time, and a
+// run with nothing changed reports nothing.
+#[test]
+fn run_reports_measured_and_arranged() {
+  let mut tree = UiTree::new();
+  let child = leaf(&mut tree, 100.0, 20.0);
+  let root = stack(&mut tree, &[child]);
+  let mut manager = LayoutManager::default();
+
+  let first = manager.run(&mut tree, &Nodes, root, WINDOW, 1.0, false);
+  let second = manager.run(&mut tree, &Nodes, root, WINDOW, 1.0, false);
+
+  assert_eq!((first.measured, first.arranged), (2, 2));
+  assert!(first.resized.is_empty());
+  assert_eq!(second, LayoutStats::default());
+}
+
+// A node whose arranged size changes is listed as resized; a sibling that only moves isn't.
+#[test]
+fn run_reports_resized() {
+  let mut tree = UiTree::new();
+  let grows = leaf(&mut tree, 100.0, 20.0);
+  let moves = leaf(&mut tree, 100.0, 20.0);
+  let root = stack(&mut tree, &[grows, moves]);
+  let mut manager = LayoutManager::default();
+  run(&mut manager, &mut tree, root, WINDOW);
+
+  node(&tree, grows).size.set(Size::new(100.0, 40.0));
+  LayoutManager::invalidate_measure(&mut tree, grows);
+  let stats = manager.run(&mut tree, &Nodes, root, WINDOW, 1.0, false);
+
+  assert_eq!(stats.resized, [grows]);
+}
