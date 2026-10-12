@@ -228,7 +228,6 @@ pub struct LayoutCx<'a> {
   tree: &'a UiTree,
   nodes: &'a dyn LayoutNodes,
   slots: &'a mut HashMap<NodeId, Slot>,
-  /// Each node's last arranged size, kept while its slot is forgotten, as under a collapsed parent.
   sizes: &'a mut HashMap<NodeId, Size>,
   /// The nodes to measure again, whatever their parent offers.
   dirty: HashSet<NodeId>,
@@ -240,7 +239,6 @@ pub struct LayoutCx<'a> {
   measured: Vec<HashSet<NodeId>>,
   /// The node being arranged, which only [`set_bounds`](LayoutCx::set_bounds) needs.
   arranging: Option<NodeId>,
-  /// What the run has done so far.
   stats: LayoutStats,
 }
 
