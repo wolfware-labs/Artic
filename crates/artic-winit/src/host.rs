@@ -4,7 +4,7 @@ use crate::error::Error;
 use crate::surfaces::Surfaces;
 use crate::translate::{Translated, facts, translate};
 use artic_core::window::WindowDesc;
-use artic_platform::{AppHandler, HostContext, HostEvent, SurfaceInfo, Waker, Windows};
+use artic_platform::{AppHandler, HostContext, HostEvent, SurfaceInfo, SurfaceLoss, Waker, Windows};
 use artic_render::{PhysicalSize, SurfaceId, Target, TargetKind};
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Formatter};
@@ -125,10 +125,8 @@ impl<A: AppHandler> Driver<A> {
       for surface in opened {
         self.refresh(event_loop, surface, None);
       }
-      for (surface, window, report) in lost {
-        if report {
-          self.call(event_loop, |app, cx| app.surface_lost(cx, surface));
-        }
+      for (surface, window) in lost {
+        self.call(event_loop, |app, cx| app.surface_lost(cx, surface, SurfaceLoss::Gone));
         drop(window);
       }
     }
@@ -201,7 +199,6 @@ impl<A: AppHandler> ApplicationHandler for Driver<A> {
       if self.surfaces.window(surface).is_none() {
         continue;
       }
-      self.surfaces.clear_reported(surface);
       self.refresh(event_loop, surface, None);
     }
   }
@@ -216,8 +213,7 @@ impl<A: AppHandler> ApplicationHandler for Driver<A> {
       if self.surfaces.window(surface).is_none() {
         continue;
       }
-      self.surfaces.mark_reported(surface);
-      self.call(event_loop, |app, cx| app.surface_lost(cx, surface));
+      self.call(event_loop, |app, cx| app.surface_lost(cx, surface, SurfaceLoss::Suspended));
     }
     self.call(event_loop, |app, cx| app.event(cx, HostEvent::Suspended));
   }
@@ -265,10 +261,8 @@ impl<A: AppHandler> ApplicationHandler for Driver<A> {
       if open.is_empty() {
         return;
       }
-      for (surface, window, report) in open {
-        if report {
-          self.call(event_loop, |app, cx| app.surface_lost(cx, surface));
-        }
+      for (surface, window) in open {
+        self.call(event_loop, |app, cx| app.surface_lost(cx, surface, SurfaceLoss::Gone));
         drop(window);
       }
     }

@@ -11,7 +11,6 @@ struct Entry<K, W> {
   key: K,
   window: W,
   info: Option<SurfaceInfo>,
-  reported_lost: bool,
 }
 
 /// The open windows, keyed by the windowing library's id `K`, in the order they opened.
@@ -22,7 +21,7 @@ pub(crate) struct Surfaces<K, W> {
   entries: Vec<Entry<K, W>>,
   next: u64,
   displays: HashMap<u64, DisplayId>,
-  lost: Vec<(SurfaceId, Option<W>, bool)>,
+  lost: Vec<(SurfaceId, Option<W>)>,
 }
 
 impl<K, W> Default for Surfaces<K, W> {
@@ -52,7 +51,6 @@ impl<K: PartialEq + Copy, W> Surfaces<K, W> {
       key,
       window,
       info: None,
-      reported_lost: false,
     });
     id
   }
@@ -60,36 +58,21 @@ impl<K: PartialEq + Copy, W> Surfaces<K, W> {
   /// Records that surface `id` never got a window, because it couldn't be created, so it's
   /// reported lost.
   pub(crate) fn lose(&mut self, id: SurfaceId) {
-    self.lost.push((id, None, true));
+    self.lost.push((id, None));
   }
 
   /// Closes surface `id`, keeping its window until its loss is reported, so the handles a renderer
-  /// holds stay valid until then. A surface whose loss was already delivered, on suspend, isn't
-  /// reported again, but its window is still kept until the current call ends.
+  /// holds stay valid until then.
   pub(crate) fn close(&mut self, id: SurfaceId) {
     if let Some(index) = self.entries.iter().position(|entry| entry.id == id) {
       let entry = self.entries.remove(index);
-      self.lost.push((entry.id, Some(entry.window), !entry.reported_lost));
+      self.lost.push((entry.id, Some(entry.window)));
     }
   }
 
-  /// Marks surface `id`'s loss as delivered, as its suspend callback runs.
-  pub(crate) fn mark_reported(&mut self, id: SurfaceId) {
-    if let Some(entry) = self.entries.iter_mut().find(|entry| entry.id == id) {
-      entry.reported_lost = true;
-    }
-  }
-
-  /// Clears surface `id`'s mark, on resume, as it's reported again.
-  pub(crate) fn clear_reported(&mut self, id: SurfaceId) {
-    if let Some(entry) = self.entries.iter_mut().find(|entry| entry.id == id) {
-      entry.reported_lost = false;
-    }
-  }
-
-  /// The surfaces gone since the last call, oldest first, each with its window to drop afterwards
-  /// and whether its loss still has to be reported, emptying the list.
-  pub(crate) fn take_lost(&mut self) -> Vec<(SurfaceId, Option<W>, bool)> {
+  /// The surfaces gone since the last call, oldest first, each with its window to drop once its loss
+  /// is reported, emptying the list.
+  pub(crate) fn take_lost(&mut self) -> Vec<(SurfaceId, Option<W>)> {
     std::mem::take(&mut self.lost)
   }
 
@@ -127,14 +110,9 @@ impl<K: PartialEq + Copy, W> Surfaces<K, W> {
     }
   }
 
-  /// Removes every surface and returns it with its window and whether its loss still has to be
-  /// reported, in the order they opened.
-  pub(crate) fn drain(&mut self) -> Vec<(SurfaceId, W, bool)> {
-    self
-      .entries
-      .drain(..)
-      .map(|entry| (entry.id, entry.window, !entry.reported_lost))
-      .collect()
+  /// Removes every surface and returns it with its window, in the order they opened.
+  pub(crate) fn drain(&mut self) -> Vec<(SurfaceId, W)> {
+    self.entries.drain(..).map(|entry| (entry.id, entry.window)).collect()
   }
 
   /// The display id for the monitor the library describes by `key`, the same for the same key.
@@ -199,7 +177,7 @@ mod tests {
     surfaces.close(second);
 
     assert_eq!(
-      surfaces.drain().into_iter().map(|(id, (), _)| id).collect::<Vec<_>>(),
+      surfaces.drain().into_iter().map(|(id, ())| id).collect::<Vec<_>>(),
       [first, third]
     );
     assert_eq!(surfaces.id(10), None);
@@ -224,10 +202,7 @@ mod tests {
     let id = surfaces.reserve();
     surfaces.lose(id);
 
-    assert_eq!(
-      surfaces.take_lost().into_iter().map(|(id, _, _)| id).collect::<Vec<_>>(),
-      [id]
-    );
+    assert_eq!(surfaces.take_lost().into_iter().map(|(id, _)| id).collect::<Vec<_>>(), [id]);
     assert!(surfaces.take_lost().is_empty());
   }
 
@@ -242,70 +217,9 @@ mod tests {
 
     assert_eq!(Rc::strong_count(&window), 2);
     let lost = surfaces.take_lost();
-    assert_eq!(lost.iter().map(|(id, _, _)| *id).collect::<Vec<_>>(), [id]);
+    assert_eq!(lost.iter().map(|(id, _)| *id).collect::<Vec<_>>(), [id]);
     drop(lost);
     assert_eq!(Rc::strong_count(&window), 1);
-  }
-
-  // A surface whose loss was delivered on suspend isn't reported again when it's closed, but its
-  // window is still kept until the current call ends; one opened during suspension is reported.
-  #[test]
-  fn suspended_close_reports_each_loss_once() {
-    let mut surfaces = Surfaces::<u32, Rc<()>>::default();
-    let window = Rc::new(());
-    let before = surfaces.insert(10, Rc::clone(&window));
-    surfaces.mark_reported(before);
-    let during = surfaces.insert(20, Rc::new(()));
-
-    surfaces.close(before);
-    surfaces.close(during);
-
-    let lost = surfaces.take_lost();
-    assert_eq!(
-      lost.iter().map(|(id, _, report)| (*id, *report)).collect::<Vec<_>>(),
-      [(before, false), (during, true)]
-    );
-    assert_eq!(Rc::strong_count(&window), 2);
-  }
-
-  // Draining on exit reports only the surfaces whose loss wasn't delivered yet.
-  #[test]
-  fn drain_skips_delivered_losses() {
-    let mut surfaces = Surfaces::<u32, ()>::default();
-    let delivered = surfaces.insert(10, ());
-    let open = surfaces.insert(20, ());
-    surfaces.mark_reported(delivered);
-
-    let drained = surfaces.drain();
-
-    assert_eq!(
-      drained.into_iter().map(|(id, (), report)| (id, report)).collect::<Vec<_>>(),
-      [(delivered, false), (open, true)]
-    );
-  }
-
-  // Resuming a surface clears its mark, so a later close is reported again, while a surface not yet
-  // resumed keeps its mark.
-  #[test]
-  fn resumed_surfaces_report_their_loss() {
-    let mut surfaces = Surfaces::<u32, ()>::default();
-    let resumed = surfaces.insert(10, ());
-    let pending = surfaces.insert(20, ());
-    surfaces.mark_reported(resumed);
-    surfaces.mark_reported(pending);
-
-    surfaces.clear_reported(resumed);
-    surfaces.close(resumed);
-    surfaces.close(pending);
-
-    assert_eq!(
-      surfaces
-        .take_lost()
-        .into_iter()
-        .map(|(id, _, report)| (id, report))
-        .collect::<Vec<_>>(),
-      [(resumed, true), (pending, false)]
-    );
   }
 
   // Forgetting the facts makes the same facts count as a change again.

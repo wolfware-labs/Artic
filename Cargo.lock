@@ -199,11 +199,14 @@ dependencies = [
 name = "artic-platform"
 version = "0.1.0"
 dependencies = [
+ "accesskit",
  "artic-core",
+ "artic-element",
  "artic-layout",
  "artic-render",
  "pretty_assertions",
  "static_assertions",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -298,10 +301,15 @@ dependencies = [
 name = "artic-winit"
 version = "0.1.0"
 dependencies = [
+ "accesskit",
  "artic-core",
+ "artic-element",
+ "artic-layout",
  "artic-platform",
  "artic-render",
+ "artic-vello",
  "pretty_assertions",
+ "vello",
  "winit",
 ]
 

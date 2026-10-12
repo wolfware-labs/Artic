@@ -17,7 +17,8 @@ pub enum HostEvent {
     /// The window's surface.
     surface: SurfaceId,
   },
-  /// The app went to the background. Its surfaces were reported lost first.
+  /// The app went to the background. Its surfaces were reported lost first, as
+  /// [`SurfaceLoss::Suspended`](crate::SurfaceLoss::Suspended).
   Suspended,
   /// The app came back to the foreground. Its surfaces are reported again after this.
   Resumed,

@@ -32,3 +32,14 @@ impl DisplayId {
     self.0
   }
 }
+
+/// Why a surface went away.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SurfaceLoss {
+  /// The app was suspended. The surface is reported again after
+  /// [`HostEvent::Resumed`](crate::HostEvent::Resumed).
+  Suspended,
+  /// The surface won't come back: its window was closed, destroyed by the OS or never created, or
+  /// the loop is exiting.
+  Gone,
+}

@@ -31,13 +31,14 @@ pub enum HitTestResult {
 pub struct RenderCx<'a> {
   tree: &'a UiTree,
   node: NodeId,
+  size: Size,
 }
 
 impl<'a> RenderCx<'a> {
-  /// A context for drawing `node`.
+  /// A context for drawing `node`, which layout gave `size`.
   #[must_use]
-  pub fn new(tree: &'a UiTree, node: NodeId) -> Self {
-    Self { tree, node }
+  pub fn new(tree: &'a UiTree, node: NodeId, size: Size) -> Self {
+    Self { tree, node, size }
   }
 
   /// The node being drawn.
@@ -50,6 +51,12 @@ impl<'a> RenderCx<'a> {
   #[must_use]
   pub fn tree(&self) -> &'a UiTree {
     self.tree
+  }
+
+  /// The size layout gave the node, in its own coordinates: it draws from the origin to here.
+  #[must_use]
+  pub fn size(&self) -> Size {
+    self.size
   }
 }
 

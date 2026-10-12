@@ -95,7 +95,11 @@ fn element_render_calls_hook() {
   let node = tree.alloc(Box::new(Tile::default()));
   let tile = tree.get_as::<Tile>(node).unwrap();
 
-  Element::render(tile, &mut RenderCx::new(&tree, node), &mut SceneBuilder::default());
+  Element::render(
+    tile,
+    &mut RenderCx::new(&tree, node, Size::ZERO),
+    &mut SceneBuilder::default(),
+  );
 
   assert_eq!(tile.rendered.get(), 1);
 }
@@ -348,4 +352,15 @@ mod shadowed {
 #[test]
 fn default_ignores_a_user_item_named_value() {
   assert!(shadowed::Lamp::default().interaction.is_enabled.get());
+}
+
+// A render context carries the size layout gave the node it draws.
+#[test]
+fn render_cx_carries_its_size() {
+  let mut tree = UiTree::new();
+  let node = tree.alloc(Box::new(Tile::default()));
+
+  let cx = RenderCx::new(&tree, node, Size::new(40.0, 30.0));
+
+  assert_eq!(cx.size(), Size::new(40.0, 30.0));
 }

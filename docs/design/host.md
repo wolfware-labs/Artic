@@ -33,7 +33,7 @@ pub trait AppHandler {
   fn started(&mut self, cx: &mut dyn HostContext, waker: Waker);
   fn woken(&mut self, cx: &mut dyn HostContext);
   fn surface_changed(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, info: SurfaceInfo);
-  fn surface_lost(&mut self, cx: &mut dyn HostContext, surface: SurfaceId);
+  fn surface_lost(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, loss: SurfaceLoss);
   fn event(&mut self, cx: &mut dyn HostContext, event: HostEvent);
   fn frame(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, target: Target<'_>, time: Duration);
 }
@@ -65,6 +65,7 @@ pub trait Windows {
 | --- | --- | --- |
 | `WindowDesc` | `artic-core` | `title: String`, `width: f32`, `height: f32` in logical units. Plain data, so the `Window` element (#48) describes itself without naming the platform; `artic-core` sits below `artic-layout`, so it uses plain fields rather than `Size`. #48 adds the display a window opens on, full screen, and `Windows` methods to change a window after it opens. |
 | `SurfaceInfo` | `artic-platform` | `size: PhysicalSize`, `scale: f32` (device pixels per logical unit), `display: DisplayId`, `refresh_rate: Option<f32>` (some platforms don't report it) |
+| `SurfaceLoss` | `artic-platform` | why a surface went away: `Suspended`, reported again after `Resumed`, or `Gone`, closed, destroyed, never created or the loop exiting |
 | `DisplayId` | `artic-platform` | an opaque id the host assigns per display |
 | `HostEvent` | `artic-platform` | `#[non_exhaustive]`: `CloseRequested { surface }`, `Suspended`, `Resumed` |
 | `Waker` | `artic-platform` | `Clone + Send + Sync`; `wake()` makes the host call `AppHandler::woken` on its loop. An adapter builds one with `Waker::new(hook)`, where `hook` is any `Fn() + Send + Sync + 'static` that wakes its loop. |
@@ -86,23 +87,23 @@ The desktop adapter, at layer 5, depending on `artic-platform`, `artic-render`, 
 | winit | `artic-winit` | `AppHandler` |
 | --- | --- | --- |
 | first `resumed` | builds the `Waker` from the `EventLoopProxy` | `started(cx, waker)`; artic opens its first window through `cx.windows()`, and `surface_changed` follows |
-| `suspended` | (mobile: the GPU surfaces are destroyed) until resumed, ignores frame requests, redraws and surface changes, and doesn't report a surface lost a second time | `surface_lost` for each surface, in open order (a surface the handler closes during this pass is reported as it closes, which can be earlier), then `event(Suspended)` |
-| later `resumed` | (mobile: the surfaces are recreated) | `event(Resumed)`, then `surface_changed` for each surface, stopping if the handler asked to exit; a surface not yet reported again isn't reported lost twice on exit |
+| `suspended` | (mobile: the GPU surfaces are destroyed) until resumed, ignores frame requests, redraws and surface changes | `surface_lost(…, Suspended)` for each surface, in open order, then `event(Suspended)` |
+| later `resumed` | (mobile: the surfaces are recreated) | `event(Resumed)`, then `surface_changed` for each surface, stopping if the handler asked to exit |
 | `WindowEvent::Resized`, `ScaleFactorChanged`, `Moved` | rebuilds the surface's `SurfaceInfo`, with the current monitor as its `DisplayId` and its refresh rate | `surface_changed`, if anything differs from what was last reported |
 | `WindowEvent::CloseRequested` | | `event(CloseRequested { surface })` |
-| `WindowEvent::Destroyed` (the OS destroyed the window without a close request) | forgets the window | `surface_lost` |
+| `WindowEvent::Destroyed` (the OS destroyed the window without a close request) | forgets the window | `surface_lost(…, Gone)` |
 | `WindowEvent::RedrawRequested` | reads the current monitor again, then lends the window as `Target::Handles`, with the time since `run` started (winit doesn't expose present times) | `surface_changed` if any fact changed, then `frame(cx, surface, target, time)`, unless the handler closed the window in that `surface_changed` |
 | `user_event` (a `Waker` fired) | | `woken` |
 | `about_to_wait` | `ControlFlow::Wait`: sleep until the next event or wake-up | |
 
 - `cx.request_frame(id)` calls the window's `request_redraw()`, which schedules one `RedrawRequested` for that window; winit merges repeated requests. Scheduling isn't pacing: a handler that asks for the next frame from inside `frame` runs as fast as rendering allows unless something waits for the display. Pacing each surface to its display's refresh (§10) comes from the renderer's vsync'd presentation and the platform's frame callbacks ([frame design](frame.md) §4).
-- `cx.exit()` exits the loop; windows still open are reported through `surface_lost` before `run` returns.
+- `cx.exit()` exits the loop; windows still open are reported through `surface_lost(…, Gone)` before `run` returns.
 - `targets()` is `TargetKind::Handles`.
 - The monitor is read on every resize, scale change, move and frame, because Wayland sends no `Moved` and a move between monitors of equal scale sends no scale change; a display change on its own is still reported. A monitor's `DisplayId` follows its name (the connector, such as `DP-1`), and its position only when it has none, so rearranging displays doesn't change it.
 - A closed window is kept until its `surface_lost` has been delivered, and so is every window when the loop exits, so the handles a renderer holds stay valid until it's told they're gone. While the loop exits, `open` creates no window and its id is never reported, so a handler that opens a window from `surface_lost` can't keep the loop alive.
-- Each surface's loss is reported once: a surface reported lost on suspend and then closed or destroyed isn't reported again, while one opened during suspension and destroyed before resume is reported lost.
+- A loss says whether the surface comes back: `Suspended` on suspend, `Gone` when its window is closed, destroyed or never created, or the loop exits. A window closed or destroyed while suspended is reported again, as `Gone`, so a handler never waits for a surface that won't return.
 - On Windows, a scale change reports the new scale with the window's old size, and the `Resized` that follows corrects it.
-- A window opened during a handler call reports its first `surface_changed` right after that call returns, since the context can't call the handler while it's in a call. A window that couldn't be created reports `surface_lost` the same way.
+- A window opened during a handler call reports its first `surface_changed` right after that call returns, since the context can't call the handler while it's in a call. A window that couldn't be created reports `surface_lost(…, Gone)` the same way.
 - `run` panics if winit's loop ends with an error, such as a lost connection to the display server, after the surfaces have been reported lost: the seam's `run` returns nothing, and a silent failure would hide it.
 
 The translation from a winit `WindowEvent` to a `SurfaceInfo`, a `HostEvent` or a frame is a pure function over values pulled out of the event, so tests construct its inputs without a display (winit's `ScaleFactorChanged` carries a writer tests can't build).

@@ -49,7 +49,7 @@ Only stages that run inside a frame are hooks. Features that react to host event
 
 Each surface has a pipeline of its own because each cache is cleaned per root: `LayoutManager::run` drops what it knew about nodes outside the root it lays out, and `Compositor::compose` drops the fragments it didn't visit, so two windows sharing one would discard each other's work on every frame.
 
-Window roots are disjoint: a node has one visual parent, so it belongs to at most one window, and `Runner::window` panics when given a root that overlaps an existing window's root in either direction: the same node, a node inside it, or a node that contains it. Hooks can still move nodes after that, so before preparing a surface the runner walks its root's visual ancestors and panics if one is another window's root. Checking every root's ancestors covers both directions, and costs the tree's depth per frame. Each pipeline therefore clears layout and render flags only on its own window's nodes, and one window's frame never consumes another's invalidation.
+Window roots are disjoint: a node has one visual parent, so it belongs to at most one window, and `Runner::window` panics when given a root that overlaps an existing window's root in either direction: the same node, a node inside it, or a node that contains it. Hooks can still move nodes after that, so before preparing a surface the runner walks every window root's visual ancestors and panics if one is another window's root. That covers both directions, a root moved inside another and another moved inside it, and costs the windows times the tree's depth per frame. Each pipeline therefore clears layout and render flags only on its own window's nodes, and one window's frame never consumes another's invalidation.
 
 ## 3. From a write to a request
 
@@ -107,8 +107,8 @@ A node that isn't an element gets default layers and records nothing.
 | --- | --- |
 | `started` | opens each declared window through `cx.windows()` and maps its `SurfaceId` to its root. A host without `Windows`, such as a framebuffer, binds the declared roots to surfaces in the order `surface_changed` first reports them |
 | `surface_changed` | keeps the new `SurfaceInfo`, marks the surface and requests a frame for it, even when nothing differs from the last report: a surface reported again after `surface_lost`, such as on resume, has lost what the renderer kept for it and must be drawn again. A size change marks the root layout-dirty. A scale change marks the root's whole visual subtree layout-dirty, so every node is measured and arranged again and snapped to the new device-pixel grid |
-| `surface_lost` | calls `renderer.surface_lost`, then flags the surface lost, or forgets it if it was closing. An open surface's root stays mapped: a resume reports the same surface again |
-| `event(CloseRequested)` | closes the window and flags the surface closing, so it gets no more frames; the `surface_lost` the host sends after a close releases the renderer's resources and forgets it. The last window closing exits |
+| `surface_lost` | calls `renderer.surface_lost`. A `Suspended` loss flags the surface lost and keeps its root, since a resume reports it again; a `Gone` loss forgets it, and when no window but closing ones is left, the runner exits |
+| `event(CloseRequested)` | closes the window and flags the surface closing, so it gets no more frames; the `Gone` loss the host reports after a close releases the renderer's resources and forgets it. The last window closing exits |
 | `event(Suspended)`, `event(Resumed)` | nothing beyond settling; the surfaces come and go through `surface_lost` and `surface_changed` |
 | `woken` | settles; #79 connects the dispatcher's cross-thread `post` here |
 

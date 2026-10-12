@@ -1,0 +1,199 @@
+//! One surface's frames: layout, composition and presenting, without a host.
+
+use crate::SurfaceInfo;
+use artic_core::tree::{NodeId, TreeKind, UiTree};
+use artic_element::{ElementTypes, RenderCx};
+use artic_layout::LayoutManager;
+use artic_layout::geometry::{Rect, Size, Transform};
+use artic_render::{
+  Compositor, Layers, Nodes, PhysicalSize, RenderError, Renderer, Scene, SceneBuilder, Surface, SurfaceId, Target,
+};
+use std::collections::HashSet;
+
+/// What one frame did, for tests and the debug overlay.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FrameStats {
+  /// The nodes measured, rather than answered from layout's cache.
+  pub measured: u32,
+  /// The nodes arranged, rather than skipped as unchanged.
+  pub arranged: u32,
+  /// The nodes whose drawing was recorded again.
+  pub recorded: u32,
+  /// Whether the frame reached the renderer.
+  pub rendered: bool,
+}
+
+/// A frame laid out and composed, waiting to be presented.
+///
+/// It owns its scene and borrows nothing from the tree, so it's `Send`: a render thread can take it
+/// over without the API changing.
+#[derive(Debug)]
+pub struct Frame {
+  surface: SurfaceId,
+  size: PhysicalSize,
+  scale: f32,
+  scene: Scene,
+  stats: FrameStats,
+}
+
+impl Frame {
+  /// The composed scene.
+  #[must_use]
+  pub fn scene(&self) -> &Scene {
+    &self.scene
+  }
+
+  /// What laying out and composing it did. `rendered` is false until it's presented.
+  #[must_use]
+  pub fn stats(&self) -> FrameStats {
+    self.stats
+  }
+}
+
+/// Draws one surface's frames.
+///
+/// It keeps the surface's layout results and recorded drawings between frames, so each frame
+/// redoes only what changed, and the last scene it presented, for a redraw the OS asks for. Each
+/// surface has its own, since both caches drop what isn't under the root they last worked on.
+#[derive(Debug, Default)]
+pub struct Pipeline {
+  layout: LayoutManager,
+  compositor: Compositor,
+  stale: HashSet<NodeId>,
+  last: Option<Scene>,
+}
+
+impl Pipeline {
+  /// A pipeline that hasn't drawn yet.
+  #[must_use]
+  pub fn new() -> Pipeline {
+    Pipeline::default()
+  }
+
+  /// Lays out `root`'s visual subtree in the surface's logical size and composes it.
+  ///
+  /// Layout measures only what changed; composition records only render-dirty nodes and the
+  /// nodes layout resized since they were last recorded, including while hidden.
+  pub fn prepare(
+    &mut self,
+    tree: &mut UiTree,
+    root: NodeId,
+    surface: SurfaceId,
+    info: &SurfaceInfo,
+    types: &ElementTypes,
+  ) -> Frame {
+    let available = Size::new(info.size.width as f32 / info.scale, info.size.height as f32 / info.scale);
+    let layout = self.layout.run(tree, types, root, available, info.scale, true);
+    self.stale.extend(layout.resized);
+    self
+      .stale
+      .retain(|node| tree.contains(*node) && (*node == root || tree.ancestors(TreeKind::Visual, *node).any(|a| a == root)));
+    let mut nodes = ElementNodes {
+      types,
+      layout: &self.layout,
+      stale: &mut self.stale,
+    };
+    let scene = self.compositor.compose(tree, root, &mut nodes);
+    Frame {
+      surface,
+      size: info.size,
+      scale: info.scale,
+      scene,
+      stats: FrameStats {
+        measured: layout.measured,
+        arranged: layout.arranged,
+        recorded: self.compositor.recorded(),
+        rendered: false,
+      },
+    }
+  }
+
+  /// Renders `frame` on `target` and, once it's drawn, keeps its scene for a later
+  /// [`redraw`](Pipeline::redraw).
+  ///
+  /// # Errors
+  ///
+  /// Returns what the renderer returned when it fails.
+  pub fn present(&mut self, renderer: &mut impl Renderer, frame: Frame, target: Target<'_>) -> Result<FrameStats, RenderError> {
+    let Frame {
+      surface,
+      size,
+      scale,
+      scene,
+      mut stats,
+    } = frame;
+    renderer.render(
+      &scene,
+      Surface {
+        id: surface,
+        size,
+        scale,
+        target,
+      },
+    )?;
+    self.last = Some(scene);
+    stats.rendered = true;
+    Ok(stats)
+  }
+
+  /// Renders the last presented scene again, for a redraw the OS asked for with nothing changed,
+  /// or returns `None` if nothing was presented yet.
+  ///
+  /// # Errors
+  ///
+  /// The inner result is what the renderer returned.
+  pub fn redraw(
+    &mut self,
+    renderer: &mut impl Renderer,
+    surface: SurfaceId,
+    info: &SurfaceInfo,
+    target: Target<'_>,
+  ) -> Option<Result<FrameStats, RenderError>> {
+    let scene = self.last.as_ref()?;
+    let surface = Surface {
+      id: surface,
+      size: info.size,
+      scale: info.scale,
+      target,
+    };
+    Some(renderer.render(scene, surface).map(|()| FrameStats {
+      rendered: true,
+      ..FrameStats::default()
+    }))
+  }
+}
+
+/// Answers composition from the elements, with each node's layout offset and arranged size.
+struct ElementNodes<'a> {
+  types: &'a ElementTypes,
+  layout: &'a LayoutManager,
+  stale: &'a mut HashSet<NodeId>,
+}
+
+impl Nodes for ElementNodes<'_> {
+  fn layers(&self, tree: &UiTree, node: NodeId) -> Layers {
+    let rect = self.layout.rect(node).unwrap_or(Rect::ZERO);
+    let mut layers = tree
+      .get(node)
+      .and_then(|object| self.types.element(object))
+      .map_or_else(Layers::default, |element| element.layers(rect.size()));
+    let offset = (rect.x != 0.0 || rect.y != 0.0).then(|| Transform::translate(rect.x, rect.y));
+    layers.transform = match (layers.transform, offset) {
+      (Some(own), Some(offset)) => Some(own.then(offset)),
+      (own, offset) => own.or(offset),
+    };
+    layers
+  }
+
+  fn record(&mut self, tree: &UiTree, node: NodeId, builder: &mut SceneBuilder) {
+    self.stale.remove(&node);
+    let size = self.layout.rect(node).map_or(Size::ZERO, Rect::size);
+    if let Some(element) = tree.get(node).and_then(|object| self.types.element(object)) {
+      element.render(&mut RenderCx::new(tree, node, size), builder);
+    }
+  }
+
+  fn stale(&self, node: NodeId) -> bool {
+    self.stale.contains(&node)
+  }
+}

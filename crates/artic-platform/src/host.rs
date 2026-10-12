@@ -1,6 +1,6 @@
 //! The traits a host adapter implements and calls.
 
-use crate::{HostEvent, SurfaceInfo, Waker};
+use crate::{HostEvent, SurfaceInfo, SurfaceLoss, Waker};
 use artic_core::window::WindowDesc;
 use artic_render::{SurfaceId, Target, TargetKind};
 use std::time::Duration;
@@ -36,9 +36,9 @@ pub trait AppHandler {
   /// A surface appeared, or one of its facts changed.
   fn surface_changed(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, info: SurfaceInfo);
 
-  /// A surface went away, such as a closed window or a suspended app. What a renderer holds for it
-  /// can be released.
-  fn surface_lost(&mut self, cx: &mut dyn HostContext, surface: SurfaceId);
+  /// A surface went away, until the app resumes or for good, as `loss` says. What a renderer holds
+  /// for it can be released.
+  fn surface_lost(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, loss: SurfaceLoss);
 
   /// Something happened on the host.
   fn event(&mut self, cx: &mut dyn HostContext, event: HostEvent);
