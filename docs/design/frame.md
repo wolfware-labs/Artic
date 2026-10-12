@@ -36,7 +36,7 @@ impl<R: Renderer> Runner<R> {
 }
 
 impl Hooks {
-  pub fn before_layout(&mut self, hook: impl FnMut(&mut UiTree, NodeId, &SurfaceInfo) + 'static);
+  pub fn before_layout(&mut self, hook: impl FnMut(&mut UiTree, NodeId, &SurfaceInfo, Duration) + 'static);
   pub fn after_present(&mut self, hook: impl FnMut(&UiTree, NodeId, &FrameStats) + 'static);
   pub fn wants_frame(&mut self, hook: impl FnMut() -> bool + 'static);
   pub fn on_error(&mut self, hook: impl FnMut(&Error) + 'static);
@@ -71,7 +71,7 @@ Pending work never keeps the loop awake by itself: the queue is empty after each
 `AppHandler::frame(cx, surface, target, time)`:
 
 1. If the surface is unknown or lost, return.
-2. Run the dispatcher, then the `before_layout` hooks with this surface's root and `SurfaceInfo`.
+2. Run the dispatcher, then the `before_layout` hooks with this surface's root, `SurfaceInfo` and the frame's `time`, the host's monotonic estimate of when the frame reaches the display, so animations tick from the display's timing rather than a clock of their own.
 3. `take_pending()`; if true, mark every surface and request frames for the others. Writes from step 2, such as the style pass's, count for this frame.
 4. If this surface isn't marked, return: nothing is measured, recorded or rendered, and the loop goes back to sleep.
 5. Clear the mark and `pipeline.prepare(tree, root, info)`:
@@ -104,7 +104,7 @@ A node that isn't an element gets default layers and records nothing.
 | Call | The runner |
 | --- | --- |
 | `started` | opens each declared window through `cx.windows()` and maps its `SurfaceId` to its root. A host without `Windows`, such as a framebuffer, binds the declared roots to surfaces in the order `surface_changed` first reports them |
-| `surface_changed` | keeps the new `SurfaceInfo` and marks the surface. A size change marks the root layout-dirty. A scale change marks the root's whole visual subtree layout-dirty, so every node is measured and arranged again and snapped to the new device-pixel grid |
+| `surface_changed` | keeps the new `SurfaceInfo`, marks the surface and requests a frame for it, even when nothing differs from the last report: a surface reported again after `surface_lost`, such as on resume, has lost what the renderer kept for it and must be drawn again. A size change marks the root layout-dirty. A scale change marks the root's whole visual subtree layout-dirty, so every node is measured and arranged again and snapped to the new device-pixel grid |
 | `surface_lost` | flags the surface lost and calls `renderer.surface_lost`. The root stays mapped: a resume reports the same surface again |
 | `event(CloseRequested)` | closes the window and forgets it; the last one closing exits |
 | `event(Suspended)`, `event(Resumed)` | nothing beyond settling; the surfaces come and go through `surface_lost` and `surface_changed` |
