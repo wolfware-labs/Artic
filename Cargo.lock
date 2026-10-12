@@ -301,9 +301,13 @@ dependencies = [
 name = "artic-winit"
 version = "0.1.0"
 dependencies = [
+ "accesskit",
  "artic-core",
+ "artic-element",
+ "artic-layout",
  "artic-platform",
  "artic-render",
+ "artic-vello",
  "pretty_assertions",
  "winit",
 ]
