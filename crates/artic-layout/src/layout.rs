@@ -57,6 +57,7 @@ struct Slot {
 #[derive(Debug, Default)]
 pub struct LayoutManager {
   slots: HashMap<NodeId, Slot>,
+  sizes: HashMap<NodeId, Size>,
 }
 
 /// What a [`LayoutManager::run`] did.
@@ -66,8 +67,10 @@ pub struct LayoutStats {
   pub measured: u32,
   /// The nodes arranged, rather than skipped as unchanged.
   pub arranged: u32,
-  /// The nodes whose arranged size differs from the run before, in the order they were arranged.
-  /// A node arranged for the first time isn't listed, and neither is one that only moved.
+  /// The nodes whose arranged size differs from the last time they were arranged, in the order
+  /// their arrangement finished. A node arranged for the first time isn't listed, and neither is
+  /// one that only moved; one shown again after its parent stopped laying it out is compared with
+  /// its size from before.
   pub resized: Vec<NodeId>,
 }
 
@@ -100,6 +103,7 @@ impl LayoutManager {
       tree.clear_dirty(*node, Affects::LAYOUT);
     }
     self.slots.retain(|node, _| depths.contains_key(node));
+    self.sizes.retain(|node, _| depths.contains_key(node));
 
     let mut nested = HashSet::new();
     let mut between = Vec::new();
@@ -126,6 +130,7 @@ impl LayoutManager {
       tree,
       nodes,
       slots: &mut self.slots,
+      sizes: &mut self.sizes,
       dirty,
       scale,
       snap,
@@ -223,6 +228,8 @@ pub struct LayoutCx<'a> {
   tree: &'a UiTree,
   nodes: &'a dyn LayoutNodes,
   slots: &'a mut HashMap<NodeId, Slot>,
+  /// Each node's last arranged size, kept while its slot is forgotten, as under a collapsed parent.
+  sizes: &'a mut HashMap<NodeId, Size>,
   /// The nodes to measure again, whatever their parent offers.
   dirty: HashSet<NodeId>,
   scale: f32,
@@ -341,7 +348,6 @@ impl<'a> LayoutCx<'a> {
     if slot.offered == Some(rect) && !slot.arrange_dirty {
       return;
     }
-    let before = slot.rect.map(Rect::size);
     slot.offered = Some(rect);
     slot.rect = Some(rect);
     slot.arrange_dirty = false;
@@ -353,8 +359,9 @@ impl<'a> LayoutCx<'a> {
       self.arranging = arranging;
       self.current = parent;
     }
-    let after = self.slots.get(&child).and_then(|slot| slot.rect).map(Rect::size);
-    if before.is_some() && before != after {
+    if let Some(after) = self.slots.get(&child).and_then(|slot| slot.rect).map(Rect::size)
+      && self.sizes.insert(child, after).is_some_and(|before| before != after)
+    {
       self.stats.resized.push(child);
     }
   }

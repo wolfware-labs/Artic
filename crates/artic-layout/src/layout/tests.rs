@@ -399,6 +399,26 @@ mod skipped {
     assert_eq!(tree.get_as::<Toggle>(child).unwrap().measured.get(), 1);
   }
 
+  // A child its parent stopped measuring, as when the parent collapses, keeps its last size, so
+  // when the parent shows it again at another size the child is listed as resized.
+  #[test]
+  fn child_shown_again_at_another_size_is_resized() {
+    let mut tree = UiTree::new();
+    let [parent, child] = [(); 2].map(|()| tree.alloc(Box::<Toggle>::default()));
+    tree.add_child(TreeKind::Visual, parent, child);
+    let mut layout = LayoutManager::default();
+    layout.run(&mut tree, &Toggles, parent, Size::new(100.0, 100.0), 1.0, false);
+    tree.get_as::<Toggle>(parent).unwrap().skip.set(true);
+    LayoutManager::invalidate_measure(&mut tree, parent);
+    layout.run(&mut tree, &Toggles, parent, Size::new(200.0, 200.0), 1.0, false);
+
+    tree.get_as::<Toggle>(parent).unwrap().skip.set(false);
+    LayoutManager::invalidate_measure(&mut tree, parent);
+    let stats = layout.run(&mut tree, &Toggles, parent, Size::new(200.0, 200.0), 1.0, false);
+
+    assert_eq!(stats.resized, [child]);
+  }
+
   /// A root, a middle node and a leaf, laid out once.
   fn three_levels() -> (UiTree, LayoutManager, [NodeId; 3]) {
     let mut tree = UiTree::new();
