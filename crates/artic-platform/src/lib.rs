@@ -26,5 +26,5 @@ pub use hooks::Hooks;
 pub use host::{AppHandler, Host, HostContext, Windows};
 pub use pipeline::{Frame, FrameStats, Pipeline};
 pub use runner::{Runner, run};
-pub use surface::{DisplayId, SurfaceInfo};
+pub use surface::{DisplayId, SurfaceInfo, SurfaceLoss};
 pub use waker::Waker;

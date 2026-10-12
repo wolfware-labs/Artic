@@ -2,7 +2,7 @@
 // against the traits alone, and a handler like artic's.
 
 use artic_core::window::WindowDesc;
-use artic_platform::{AppHandler, DisplayId, Host, HostContext, HostEvent, SurfaceInfo, Waker, Windows};
+use artic_platform::{AppHandler, DisplayId, Host, HostContext, HostEvent, SurfaceInfo, SurfaceLoss, Waker, Windows};
 use artic_render::{PhysicalSize, PixelBuffer, PixelFormat, SurfaceId, Target, TargetKind};
 use pretty_assertions::assert_eq;
 use std::cell::RefCell;
@@ -76,7 +76,7 @@ impl Host for FakeHost {
     });
     app.frame(&mut cx, surface, target, Duration::from_millis(16));
     app.event(&mut cx, HostEvent::CloseRequested { surface });
-    app.surface_lost(&mut cx, surface);
+    app.surface_lost(&mut cx, surface, SurfaceLoss::Gone);
   }
 }
 
@@ -109,8 +109,8 @@ impl AppHandler for Recorder {
     cx.request_frame(surface);
   }
 
-  fn surface_lost(&mut self, _cx: &mut dyn HostContext, surface: SurfaceId) {
-    self.calls.borrow_mut().push(format!("lost {}", surface.get()));
+  fn surface_lost(&mut self, _cx: &mut dyn HostContext, surface: SurfaceId, loss: SurfaceLoss) {
+    self.calls.borrow_mut().push(format!("lost {} {loss:?}", surface.get()));
   }
 
   fn event(&mut self, cx: &mut dyn HostContext, event: HostEvent) {
@@ -155,7 +155,7 @@ fn fake_host_drives_a_handler() {
       "changed 7 2x1",
       "frame 7 pixels 16ms",
       "close 7",
-      "lost 7"
+      "lost 7 Gone"
     ]
   );
   let requests = requests.borrow();

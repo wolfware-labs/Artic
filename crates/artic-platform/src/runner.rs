@@ -1,6 +1,6 @@
 //! The frame pipeline's `AppHandler`: when each surface draws, and what a frame runs.
 
-use crate::{AppHandler, Error, FrameStats, Hooks, Host, HostContext, HostEvent, Pipeline, SurfaceInfo, Waker};
+use crate::{AppHandler, Error, FrameStats, Hooks, Host, HostContext, HostEvent, Pipeline, SurfaceInfo, SurfaceLoss, Waker};
 use artic_core::dispatcher::Dispatcher;
 use artic_core::property::Affects;
 use artic_core::reactive::flush_effects;
@@ -25,7 +25,6 @@ pub struct Runner<R> {
   hooks: Hooks,
   declared: Vec<(WindowDesc, NodeId)>,
   surfaces: Vec<Window>,
-  suspended: bool,
   error: Rc<RefCell<Option<Error>>>,
 }
 
@@ -52,7 +51,6 @@ impl<R: Renderer> Runner<R> {
       hooks: Hooks::default(),
       declared: Vec::new(),
       surfaces: Vec::new(),
-      suspended: false,
       error: Rc::new(RefCell::new(None)),
     }
   }
@@ -209,26 +207,21 @@ impl<R: Renderer> AppHandler for Runner<R> {
     self.settle(cx);
   }
 
-  fn surface_lost(&mut self, cx: &mut dyn HostContext, surface: SurfaceId) {
+  fn surface_lost(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, loss: SurfaceLoss) {
     self.renderer.surface_lost(surface);
     if let Some(index) = self.surfaces.iter().position(|window| window.id == surface) {
-      let window = &mut self.surfaces[index];
-      if window.closing || window.info.is_none() || !self.suspended {
-        self.surfaces.remove(index);
-        self.exit_without_windows(cx);
-      } else {
-        window.lost = true;
+      match loss {
+        SurfaceLoss::Suspended => self.surfaces[index].lost = true,
+        SurfaceLoss::Gone => {
+          self.surfaces.remove(index);
+          self.exit_without_windows(cx);
+        }
       }
     }
     self.settle(cx);
   }
 
   fn event(&mut self, cx: &mut dyn HostContext, event: HostEvent) {
-    match event {
-      HostEvent::Suspended => self.suspended = true,
-      HostEvent::Resumed => self.suspended = false,
-      _ => {}
-    }
     if let HostEvent::CloseRequested { surface } = event
       && let Some(window) = self.surfaces.iter_mut().find(|window| window.id == surface)
     {

@@ -12,7 +12,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use artic_platform::{Error, Host, HostEvent, run};
+use artic_platform::{Error, Host, HostEvent, SurfaceLoss, run};
 use artic_render::{RenderError, TargetKind};
 const FIRST: SurfaceId = SurfaceId::new(1);
 
@@ -389,7 +389,7 @@ fn closed_window_is_released_from_the_renderer() {
   fixture
     .runner
     .event(&mut fixture.cx, HostEvent::CloseRequested { surface: FIRST });
-  fixture.runner.surface_lost(&mut fixture.cx, FIRST);
+  fixture.runner.surface_lost(&mut fixture.cx, FIRST, SurfaceLoss::Gone);
 
   assert_eq!(*fixture.renderer.lost.borrow(), [FIRST]);
   assert_eq!(fixture.runner.stats(FIRST), None);
@@ -517,7 +517,7 @@ fn window_that_failed_to_open_exits() {
   let mut cx = Context::default();
   runner.started(&mut cx, Waker::new(|| {}));
 
-  runner.surface_lost(&mut cx, FIRST);
+  runner.surface_lost(&mut cx, FIRST, SurfaceLoss::Gone);
 
   assert!(cx.exited);
 }
@@ -534,7 +534,7 @@ fn closing_the_last_open_window_exits_past_a_failed_one() {
   let mut cx = Context::default();
   runner.started(&mut cx, Waker::new(|| {}));
   runner.surface_changed(&mut cx, FIRST, info(64, 64, 1.0));
-  runner.surface_lost(&mut cx, SurfaceId::new(2));
+  runner.surface_lost(&mut cx, SurfaceId::new(2), SurfaceLoss::Gone);
   assert!(!cx.exited);
 
   runner.event(&mut cx, HostEvent::CloseRequested { surface: FIRST });
@@ -547,9 +547,7 @@ fn closing_the_last_open_window_exits_past_a_failed_one() {
 fn suspended_window_is_kept() {
   let mut fixture = Fixture::new(|_| {});
 
-  fixture.runner.event(&mut fixture.cx, HostEvent::Suspended);
-  fixture.runner.surface_lost(&mut fixture.cx, FIRST);
-  fixture.runner.event(&mut fixture.cx, HostEvent::Resumed);
+  fixture.runner.surface_lost(&mut fixture.cx, FIRST, SurfaceLoss::Suspended);
   fixture.runner.surface_changed(&mut fixture.cx, FIRST, info(64, 64, 1.0));
   let stats = fixture.frame();
 
@@ -587,7 +585,7 @@ fn reparenting_another_root_under_this_one_panics() {
 fn destroyed_window_exits() {
   let mut fixture = Fixture::new(|_| {});
 
-  fixture.runner.surface_lost(&mut fixture.cx, FIRST);
+  fixture.runner.surface_lost(&mut fixture.cx, FIRST, SurfaceLoss::Gone);
 
   assert!(fixture.cx.exited);
   assert_eq!(fixture.runner.stats(FIRST), None);

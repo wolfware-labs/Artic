@@ -14,7 +14,7 @@ use artic_core::window::WindowDesc;
 use artic_element::{AccessCx, Element, RenderCx};
 use artic_layout::geometry::{Rect, Size};
 use artic_layout::{LayoutCx, Layoutable};
-use artic_platform::{AppHandler, Host as _, HostContext, HostEvent, Runner, SurfaceInfo, Waker};
+use artic_platform::{AppHandler, Host as _, HostContext, HostEvent, Runner, SurfaceInfo, SurfaceLoss, Waker};
 use artic_render::{Color, RenderError, Renderer, Scene, SceneBuilder, Surface, SurfaceId, Target, TargetKind};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -90,8 +90,8 @@ impl<R: Renderer> AppHandler for Idle<R> {
     self.runner.surface_changed(cx, surface, info);
   }
 
-  fn surface_lost(&mut self, cx: &mut dyn HostContext, surface: SurfaceId) {
-    self.runner.surface_lost(cx, surface);
+  fn surface_lost(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, loss: SurfaceLoss) {
+    self.runner.surface_lost(cx, surface, loss);
   }
 
   fn event(&mut self, cx: &mut dyn HostContext, event: HostEvent) {

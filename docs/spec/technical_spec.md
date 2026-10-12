@@ -634,7 +634,7 @@ pub trait AppHandler {                                                // artic's
     fn started(&mut self, cx: &mut dyn HostContext, waker: Waker);
     fn woken(&mut self, cx: &mut dyn HostContext);
     fn surface_changed(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, info: SurfaceInfo);
-    fn surface_lost(&mut self, cx: &mut dyn HostContext, surface: SurfaceId);
+    fn surface_lost(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, loss: SurfaceLoss);
     fn event(&mut self, cx: &mut dyn HostContext, event: HostEvent);
     fn frame(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, target: Target<'_>, time: Duration);
 }
