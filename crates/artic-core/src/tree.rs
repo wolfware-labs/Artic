@@ -213,10 +213,10 @@ impl UiTree {
   /// ```
   pub fn free(&mut self, node_id: NodeId) -> Option<Box<dyn Object>> {
     let object = self.objects.free(node_id)?;
+    self.dirty_flags.remove(node_id);
     object.visit_properties(&mut |property| property.inherit_from(None));
     self.logical.remove(node_id);
     self.visual.remove(node_id);
-    self.dirty_flags.remove(node_id);
     self.attached_values.remove(node_id);
     Some(object)
   }

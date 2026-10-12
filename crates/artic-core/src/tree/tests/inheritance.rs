@@ -267,3 +267,23 @@ fn combine_marks_dirty_through_a_node_with_its_own_value() {
   root_enabled.set(true);
   assert!(enabled.get());
 }
+
+// Freeing a node whose value was inherited stops it following its parent without setting the
+// pending flag: the node is gone, so nothing needs a frame.
+#[test]
+fn freeing_an_inheriting_node_sets_no_pending() {
+  let mut tree = UiTree::new();
+  let font_size = Property::new(&FONT_SIZE, 12);
+  let window = tree.alloc(Box::new(Window { font_size }));
+  font_size.set(20);
+  let text = tree.alloc(Box::new(TextBlock {
+    font_size: Property::new(&FONT_SIZE, 12),
+    width: Property::new(&WIDTH, 0),
+  }));
+  tree.add_child(TreeKind::Logical, window, text);
+  let _ = tree.take_pending();
+
+  tree.free(text);
+
+  assert!(!tree.take_pending());
+}

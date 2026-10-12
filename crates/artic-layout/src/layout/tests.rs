@@ -399,8 +399,8 @@ mod skipped {
     assert_eq!(tree.get_as::<Toggle>(child).unwrap().measured.get(), 1);
   }
 
-  // A child its parent stopped measuring, as when the parent collapses, keeps its last size, so
-  // when the parent shows it again at another size the child is listed as resized.
+  // A child whose parent stopped measuring it, as a collapsed parent does, keeps its last size,
+  // so when the parent shows it again at another size the child is listed as resized.
   #[test]
   fn child_shown_again_at_another_size_is_resized() {
     let mut tree = UiTree::new();
