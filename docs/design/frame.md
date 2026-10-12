@@ -59,7 +59,7 @@ A property write records that work exists and calls nothing: the `HostContext` t
 
 The runner ends every `AppHandler` call by **settling**:
 
-1. `Dispatcher::run_pending()`, which also flushes effects.
+1. **Drain**: `Dispatcher::run_pending()`, then `flush_effects()`, repeated until the queue is empty. `run_pending` flushes effects only after each task it runs, so a write made directly in a callback or a hook, with no task queued, needs the explicit flush; an effect can post a task, hence the repeat.
 2. If `tree.take_pending()` is true, every live surface gets `needs_frame` and a `cx.request_frame`.
 
 Every change happens inside some call (an event, a wake-up, a task run from one), so settling catches it. The flag is tree-wide, so a change in one window also redraws the others: each one composes again and presents, but records nothing that didn't change. A flag per surface would avoid that and can replace this one behind `take_pending`.
@@ -71,8 +71,8 @@ Pending work never keeps the loop awake by itself: the queue is empty after each
 `AppHandler::frame(cx, surface, target, time)`:
 
 1. If the surface is unknown or lost, return.
-2. Run the dispatcher, then the `before_layout` hooks with this surface's root, `SurfaceInfo` and the frame's `time`, the host's monotonic estimate of when the frame reaches the display, so animations tick from the display's timing rather than a clock of their own.
-3. `take_pending()`; if true, mark every surface and request frames for the others. Writes from step 2, such as the style pass's, count for this frame.
+2. Drain, then run the `before_layout` hooks with this surface's root, `SurfaceInfo` and the frame's `time`, the host's monotonic estimate of when the frame reaches the display, so animations tick from the display's timing rather than a clock of their own.
+3. Drain again, so the effects of the hooks' writes land, then `take_pending()`; if true, mark every surface and request frames for the others. Writes from step 2, such as the style pass's, count for this frame.
 4. If this surface isn't marked, nothing changed for it, but the host still asked for pixels: an OS redraw, such as a window uncovered or restored, reaches `frame` like a requested one, and a host can't always tell them apart (winit can't). The pipeline presents the last `Scene` again, with nothing measured or recorded, then settles and returns; the loop goes back to sleep. A surface with no scene yet goes on to step 5.
 5. Clear the mark and `pipeline.prepare(tree, root, info, &types)`, lending the runner's `ElementTypes`, from which the pipeline builds the `LayoutNodes` and render `Nodes` for this frame:
    - `LayoutManager::run` at `size / scale` in logical units, with pixel snapping. It measures only layout-dirty nodes and those whose desired size a change reached, and reports the nodes whose arranged size changed.
@@ -124,7 +124,7 @@ Each stage counts what it did: `LayoutManager::run` returns `LayoutStats { measu
 | `artic-layout` | `run_reports_measured_and_arranged`: a second run with nothing dirty reports zero; `run_reports_resized`: a node whose size changed is listed, one that only moved isn't |
 | `artic-render` | `compose_reports_recorded`: only render-dirty nodes count; `stale_node_is_recorded_again` |
 | `artic-platform` | `layout_offset_applies_after_render_transform`, `render_cx_has_the_arranged_size`, `frame_is_send` |
-| `artic-platform`, through `Runner`, a fake `HostContext` and a counting renderer on a `Pixels` target | `clean_frame_is_skipped` (an unasked-for frame measures and records nothing, presents the last scene, and requests no frame, so the loop sleeps), `os_redraw_presents_the_last_scene`, `render_only_change_skips_layout`, `layout_change_remeasures_subtree`, `resize_invalidates_root`, `resized_node_is_recorded_again`, `node_resized_while_hidden_is_recorded_when_shown`, `reparenting_a_root_under_another_window_panics`, `windows_keep_their_own_caches`, `write_after_present_requests_one_frame`, `surface_lost_render_error_resets_the_renderer`, `style_write_lands_in_same_frame`, `wants_frame_requests_another`, `closing_last_window_exits`, `render_error_is_returned_from_run`, `render_error_reaches_on_error`, `overlapping_window_roots_panic`, `mismatched_renderer_is_rejected` |
+| `artic-platform`, through `Runner`, a fake `HostContext` and a counting renderer on a `Pixels` target | `clean_frame_is_skipped` (an unasked-for frame measures and records nothing, presents the last scene, and requests no frame, so the loop sleeps), `os_redraw_presents_the_last_scene`, `render_only_change_skips_layout`, `layout_change_remeasures_subtree`, `resize_invalidates_root`, `resized_node_is_recorded_again`, `node_resized_while_hidden_is_recorded_when_shown`, `reparenting_a_root_under_another_window_panics`, `windows_keep_their_own_caches`, `write_after_present_requests_one_frame`, `surface_lost_render_error_resets_the_renderer`, `style_write_lands_in_same_frame`, `hook_write_effects_land_in_same_frame`, `wants_frame_requests_another`, `closing_last_window_exits`, `render_error_is_returned_from_run`, `render_error_reaches_on_error`, `overlapping_window_roots_panic`, `mismatched_renderer_is_rejected` |
 
 An `artic-winit` example, `frames`, opens a window with one element through `Runner` and `artic_vello::Renderer`, changes a property once, and exits with an error if any frame runs in the last 500 ms of a 1.5 s run. The Windows and macOS CI jobs run it next to `smoke`. A quiet window, not a frame count, is what it asserts, so a transient resize at startup can't fail it.
 
