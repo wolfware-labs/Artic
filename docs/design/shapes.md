@@ -120,7 +120,7 @@ Values out of range are made drawable when drawn, never rejected, as for brushes
 | --- | --- |
 | Corner radii | `RoundedRect::fitted()` (section 1) |
 | A stroke width of `0`, negative, NaN or infinite | nothing |
-| A miter limit below `1` | `1` |
+| A finite miter limit below `1` | `1` |
 | A miter limit NaN or infinite | `10`, the default |
 | A shadow blur below `0`, NaN or infinite | `0`: a sharp shadow |
 | A negative spread | shrinks the rectangle, as in CSS, down to nothing |
@@ -128,6 +128,7 @@ Values out of range are made drawable when drawn, never rejected, as for brushes
 | A shadow offset with a NaN or infinite coordinate | nothing |
 | A shadow's radii | grown by the spread; a corner with radius `0` stays sharp |
 | A shape with a NaN or infinite coordinate | nothing |
+| A rectangle or rounded rectangle with a negative width or height | nothing, as `Rect`'s parser already rejects one |
 | A layer's opacity below `0`, above `1`, NaN or infinite | clamped to `0..=1`, NaN as `1`. One function in `artic-render` does this for `with_opacity` and for the element's `Opacity` when it builds `Layers` (the [element design](element.md) §7), so the two can't differ. A brush's opacity differs on purpose: NaN counts as `0` there (#35), since a broken brush should paint nothing, while a broken layer opacity shouldn't hide a whole subtree |
 
 `artic-vello` translates, in `translate.rs`:
