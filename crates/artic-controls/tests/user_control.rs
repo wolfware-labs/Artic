@@ -1,0 +1,49 @@
+// UserControl: a view's root, which describes itself as a plain container and fills its content
+// into its box.
+
+use artic_controls::UserControl;
+use artic_core::tree::{TreeKind, UiTree};
+use artic_element::{AccessCx, ElementTypes};
+use artic_layout::LayoutManager;
+use artic_layout::geometry::{Rect, Size};
+use pretty_assertions::assert_eq;
+
+// A UserControl is a plain container to accessibility.
+#[test]
+fn user_control_accesskit_node() {
+  let mut tree = UiTree::new();
+  let node = tree.alloc(Box::new(UserControl::default()));
+  let types = ElementTypes::from_link_time();
+
+  let element = types
+    .element(tree.get(node).expect("live"))
+    .expect("UserControl is an element");
+  let described = element.accessibility(&AccessCx::new(&tree, node, Rect::new(0.0, 0.0, 10.0, 10.0)));
+
+  assert_eq!(described.role(), accesskit::Role::GenericContainer);
+}
+
+// A UserControl wants its content's size and fills its content into its box.
+#[test]
+fn user_control_lays_out_its_content() {
+  let mut tree = UiTree::new();
+  let view = tree.alloc(Box::new(UserControl::default()));
+  let content = tree.alloc(Box::new(UserControl::default()));
+  let inner = tree.get_as::<UserControl>(content).expect("a user control");
+  inner.layout.width.set(Some(40.0));
+  inner.layout.height.set(Some(30.0));
+  tree.add_child(TreeKind::Visual, view, content);
+  let mut layout = LayoutManager::default();
+
+  layout.run(
+    &mut tree,
+    &ElementTypes::from_link_time(),
+    view,
+    Size::new(f32::INFINITY, f32::INFINITY),
+    1.0,
+    false,
+  );
+
+  assert_eq!(layout.desired(view), Some(Size::new(40.0, 30.0)));
+  assert_eq!(layout.rect(content), Some(Rect::new(0.0, 0.0, 40.0, 30.0)));
+}
