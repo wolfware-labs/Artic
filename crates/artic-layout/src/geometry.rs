@@ -1,9 +1,11 @@
 //! The value types layout measures and positions with, in logical pixels.
 
 mod parse;
+mod relative;
 mod transform;
 
 pub use parse::{GeometryProblem, ParseGeometryError};
+pub use relative::{RelativePoint, RelativeScalar, RelativeUnit};
 use std::fmt::{Display, Formatter, Result};
 use std::ops::{Add, Sub};
 pub use transform::Transform;
