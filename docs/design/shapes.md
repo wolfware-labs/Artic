@@ -40,7 +40,7 @@ let triangle = Path::builder(Point::new(50.0, 0.0))
 | A fill or clip treats an open figure as closed by a straight line back to its start; a stroke leaves it open | What every renderer and SVG do, written down so none differs |
 | A path's elements are an `Arc<[PathElement]>` | Commands are cloned into fragments; a shared list keeps that cheap, as with gradient stops (#35) |
 | `Path::bounds()` is exact: it includes each curve's extremes, not only its control points | Gradients resolve against the bounds; control points would make a circle's box too big and shift its colors |
-| `RoundedRect::fitted()` makes radii drawable: a negative or NaN radius is `0`, and when two radii on one side add up to more than the side, all four shrink by the same factor, as in CSS | Every renderer gets the same corners from one function, and `Border` can pass its properties through |
+| `RoundedRect::fitted()` makes radii drawable: a negative, NaN or infinite radius is `0`, and when two radii on one side add up to more than the side, all four shrink by the same factor, as in CSS | Every renderer gets the same corners from one function, and `Border` can pass its properties through |
 | `Rect` converts into `RoundedRect`, with zero radii | A box shadow takes either |
 
 Parsing SVG path data (`"M0,0 L10,10 Z"`) can come later as a `FromStr` beside the other geometry parsers.
@@ -119,10 +119,13 @@ Values out of range are made drawable when drawn, never rejected, as for brushes
 | Value | Drawn as |
 | --- | --- |
 | Corner radii | `RoundedRect::fitted()` (section 1) |
-| A stroke width of `0`, negative or NaN | nothing |
-| A miter limit below `1` or NaN | `1` |
-| A shadow blur below `0` or NaN | `0`: a sharp shadow |
+| A stroke width of `0`, negative, NaN or infinite | nothing |
+| A miter limit below `1` | `1` |
+| A miter limit NaN or infinite | `10`, the default |
+| A shadow blur below `0`, NaN or infinite | `0`: a sharp shadow |
 | A negative spread | shrinks the rectangle, as in CSS, down to nothing |
+| A spread NaN or infinite | `0` |
+| A shadow offset with a NaN or infinite coordinate | nothing |
 | A shadow's radii | grown by the spread; a corner with radius `0` stays sharp |
 | A shape with a NaN or infinite coordinate | nothing |
 | A layer's opacity below `0`, above `1`, NaN or infinite | clamped to `0..=1`, NaN as `1`. One function in `artic-render` does this for `with_opacity` and for the element's `Opacity` when it builds `Layers` (the [element design](element.md) §7), so the two can't differ. A brush's opacity differs on purpose: NaN counts as `0` there (#35), since a broken brush should paint nothing, while a broken layer opacity shouldn't hide a whole subtree |
@@ -151,7 +154,7 @@ Glyph runs (#37), images (#71), golden images (#38) and blend modes other than `
 | --- | --- |
 | `artic-layout` | `path_builder_records_figures`, `path_bounds_include_curve_extrema`, `path_fill_rule_defaults_to_even_odd`, `rounded_rect_fitted_scales_overlapping_radii` (and negative and NaN radii) |
 | `artic-render` | `opacity_is_clamped`, `layers_balance_by_construction`, `opacity_layer_nests` (two nested opacity layers record in order), `fill_and_stroke_record_shapes`, `shape_bounds_cover_each_variant`, `stroke_defaults_match_xaml` |
-| `artic-vello` | `shapes_convert_to_kurbo` (per-corner radii, curves), `stroke_converts_join_cap_and_miter`, `invalid_shapes_and_strokes_draw_nothing`, `box_shadow_grows_moves_and_blurs` (spread, offset, standard deviation) |
+| `artic-vello` | `shapes_convert_to_kurbo` (per-corner radii, curves), `stroke_converts_join_cap_and_miter`, `invalid_shapes_and_strokes_draw_nothing` (each row of section 4's table, infinities included), `box_shadow_values_are_made_drawable`, `box_shadow_grows_moves_and_blurs` (spread, offset, standard deviation) |
 | `artic-vello` pixels | `rounded_rect_leaves_corners_clear`, `stroke_paints_only_the_outline`, `path_clip_masks_drawing`, `fill_rule_decides_a_star_center`, `box_shadow_fades_outside_the_rect`, `unequal_radii_shadow_matches_each_corner` (each corner matches a shadow with that corner's radius everywhere), `gradient_on_path_uses_its_bounds` |
 
 The example `artic-vello/examples/primitives.rs` draws every primitive in one window: a rounded rectangle, a stroked star, linear and radial swatches, clips by rectangle, rounded rectangle and path, nested opacity, and a card with a shadow. It replaces `window.rs`, whose rectangles, clip and opacity it covers. Its PR records a manual check on each desktop available.
@@ -161,5 +164,5 @@ The example `artic-vello/examples/primitives.rs` draws every primitive in one wi
 | PR | Contents | Done when |
 | --- | --- | --- |
 | A | this document; the follow-up issues #274 and #275 | approved |
-| B | `RoundedRect` and `Path` in `artic-layout`; `Shape`, `Stroke`, the new commands and shape clips in `artic-render`, with `fill_rect` and `Clip` removed; fills, strokes and clips in `artic-vello` | the tests in section 6, except box shadows |
+| B | `RoundedRect` and `Path` in `artic-layout`; `Shape`, `Stroke`, the new commands and shape clips in `artic-render`, with `fill_rect` and `Clip` removed; fills, strokes and clips in `artic-vello`; every caller in the workspace moved over: `ElementImpl::clip` and `Layers` in `artic-element`, and the tests and examples of `artic-element`, `artic-platform`, `artic-winit` and `artic-vello` | the tests in section 6, except box shadows |
 | C | `BoxShadow`, recorded and drawn by vello with the quadrant path; `examples/primitives` | the box shadow tests, and the example checked by hand |
