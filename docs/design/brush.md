@@ -9,8 +9,8 @@ A brush is the paint behind `Background="#3B82F6"`, `BorderBrush="Red"` or a gra
 ```
 
 ```rust
-builder.fill_rect(bounds, Color::STEEL_BLUE);
-builder.fill_rect(bounds, LinearGradientBrush::new(
+builder.fill(bounds, Color::STEEL_BLUE);
+builder.fill(bounds, LinearGradientBrush::new(
   RelativePoint::relative(0.0, 0.0),
   RelativePoint::relative(1.0, 0.0),
   [GradientStop::new(0.0, Color::WHITE), GradientStop::new(1.0, Color::STEEL_BLUE)],
@@ -65,7 +65,7 @@ pub struct GradientStop { pub offset: f32, pub color: Color }
 
 | Rule | Why |
 | --- | --- |
-| Each struct converts into `Brush` with `From`, and so does `Color` (a solid brush) | `fill_rect(rect, Color::RED)` and `Background = gradient.into()` read naturally |
+| Each struct converts into `Brush` with `From`, and so does `Color` (a solid brush) | `fill(rect, Color::RED)` and `Background = gradient.into()` read naturally |
 | `FromStr for Brush` parses color text into a solid brush | `Background="Red"` is the common case |
 | Defaults: linear from `0%,0%` to `100%,100%`; radial centered at `50%,50%` with radii of `50%`; opacity `1` | A gradient written with only its stops fills its box |
 | `opacity` multiplies the alpha of the color, or of every stop | One brush-wide fade, as in WPF and Avalonia, without rewriting the stops |
@@ -89,7 +89,7 @@ pub struct RelativeScalar { pub value: f32, pub scaling: Scaling }
 
 ## 4. Drawing
 
-`Command::FillRect` carries a brush instead of a color:
+The [shapes design](shapes.md) (#36) later generalized this to `Command::Fill { shape, brush }` and `SceneBuilder::fill(shape, brush)`, with relative points resolved against the shape's bounds. As this design first had it, `Command::FillRect` carries a brush instead of a color:
 
 ```rust
 FillRect { rect: Rect, brush: Brush }

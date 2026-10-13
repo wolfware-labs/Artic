@@ -21,12 +21,14 @@ Two types join `Rect` in `artic_layout::geometry`, because layout and hit-testin
 pub struct RoundedRect { pub rect: Rect, pub radius: CornerRadius }
 
 pub enum PathElement { MoveTo(Point), LineTo(Point), QuadTo(Point, Point), CubicTo(Point, Point, Point), Close }
-pub struct Path(Arc<[PathElement]>);
+pub enum FillRule { EvenOdd, NonZero }
+pub struct Path { /* elements: Arc<[PathElement]>, fill_rule: FillRule */ }
 
 let triangle = Path::builder(Point::new(50.0, 0.0))
   .line_to(Point::new(100.0, 100.0))
   .line_to(Point::new(0.0, 100.0))
   .close()
+  .fill_rule(FillRule::NonZero)
   .build();
 ```
 
@@ -34,6 +36,8 @@ let triangle = Path::builder(Point::new(50.0, 0.0))
 | --- | --- |
 | `Path::builder(start)` starts the first figure; `move_to` starts another | A path can't begin with a segment from nowhere, so no renderer needs a rule for one |
 | After `close`, the next segment starts from the closed figure's start, as in SVG | The common convention, so path data translates one to one |
+| A path carries its `FillRule`, default `EvenOdd`, which fills and clips both use | Where a path crosses itself, the rule decides what is inside, so it can't be left to each renderer. It belongs to the geometry, as `PathGeometry.FillRule` does in WPF and Avalonia, and the default is theirs |
+| A fill or clip treats an open figure as closed by a straight line back to its start; a stroke leaves it open | What every renderer and SVG do, written down so none differs |
 | A path's elements are an `Arc<[PathElement]>` | Commands are cloned into fragments; a shared list keeps that cheap, as with gradient stops (#35) |
 | `Path::bounds()` is exact: it includes each curve's extremes, not only its control points | Gradients resolve against the bounds; control points would make a circle's box too big and shift its colors |
 | `RoundedRect::fitted()` makes radii drawable: a negative or NaN radius is `0`, and when two radii on one side add up to more than the side, all four shrink by the same factor, as in CSS | Every renderer gets the same corners from one function, and `Border` can pass its properties through |
@@ -61,7 +65,7 @@ pub enum Layer { Transform(Transform), Clip(Shape), Opacity(f32) }
 
 `Shape` converts from each of its three types, and `Shape::bounds()` is the box a brush's relative points resolve against. A stroke's brush resolves against the same bounds, without the stroke width, as in WPF.
 
-The `Clip` enum is gone: a clip is a `Shape`, so rectangles, rounded rectangles and paths all clip. `Element::clip` returns `Option<Shape>`, and the compositor's `Layers.clip` holds one. `Layer` and `Layers` stop being `Copy`, since a shape can hold a path; cloning one is still cheap.
+The `Clip` enum is gone: a clip is a `Shape`, so rectangles, rounded rectangles and paths all clip. `ElementImpl::clip` returns `Option<Shape>`, and the compositor's `Layers.clip` holds one. `Layer` and `Layers` stop being `Copy`, since a shape can hold a path; cloning one is still cheap.
 
 ### Strokes
 
@@ -121,12 +125,13 @@ Values out of range are made drawable when drawn, never rejected, as for brushes
 | A negative spread | shrinks the rectangle, as in CSS, down to nothing |
 | A shadow's radii | grown by the spread; a corner with radius `0` stays sharp |
 | A shape with a NaN or infinite coordinate | nothing |
+| An opacity below `0`, above `1`, NaN or infinite | clamped to `0..=1`, NaN as `0`, as a brush's opacity (#35) |
 
 `artic-vello` translates, in `translate.rs`:
 
 - A `Shape` becomes a kurbo `Rect`, `RoundedRect` (with per-corner radii) or `BezPath`.
 - `Fill` and `Stroke` use the brush conversion from #35, resolved against `shape.bounds()`. A `Stroke` becomes a kurbo `Stroke` with the same width, join, cap and miter limit.
-- `Layer::Clip` becomes `push_clip_layer` with the shape.
+- `Layer::Clip` becomes `push_clip_layer` with the shape, and a path's `FillRule` becomes vello's `Fill::EvenOdd` or `Fill::NonZero` for fills and clips.
 - A `BoxShadow` becomes `draw_blurred_rounded_rect`, with the standard deviation CSS defines, `blur / 2`. Vello's fast blur takes one radius, so a shadow with unequal radii is drawn in four quadrants, each clipped to its quarter of the shadow and blurred with its corner's radius. Near a corner, a blurred rounded rectangle depends almost only on that corner's radius, so the seams don't show.
 
 ## 5. What waits
@@ -144,10 +149,10 @@ Glyph runs (#37), images (#71), golden images (#38) and blend modes other than `
 
 | Crate | Tests |
 | --- | --- |
-| `artic-layout` | `path_builder_records_figures`, `path_bounds_include_curve_extrema`, `rounded_rect_fitted_scales_overlapping_radii` (and negative and NaN radii) |
-| `artic-render` | `layers_balance_by_construction`, `opacity_layer_nests` (two nested opacity layers record in order), `fill_and_stroke_record_shapes`, `shape_bounds_cover_each_variant`, `stroke_defaults_match_xaml` |
+| `artic-layout` | `path_builder_records_figures`, `path_bounds_include_curve_extrema`, `path_fill_rule_defaults_to_even_odd`, `rounded_rect_fitted_scales_overlapping_radii` (and negative and NaN radii) |
+| `artic-render` | `opacity_is_clamped`, `layers_balance_by_construction`, `opacity_layer_nests` (two nested opacity layers record in order), `fill_and_stroke_record_shapes`, `shape_bounds_cover_each_variant`, `stroke_defaults_match_xaml` |
 | `artic-vello` | `shapes_convert_to_kurbo` (per-corner radii, curves), `stroke_converts_join_cap_and_miter`, `invalid_shapes_and_strokes_draw_nothing`, `box_shadow_grows_moves_and_blurs` (spread, offset, standard deviation) |
-| `artic-vello` pixels | `rounded_rect_leaves_corners_clear`, `stroke_paints_only_the_outline`, `path_clip_masks_drawing`, `box_shadow_fades_outside_the_rect`, `unequal_radii_shadow_matches_each_corner` (each corner matches a shadow with that corner's radius everywhere), `gradient_on_path_uses_its_bounds` |
+| `artic-vello` pixels | `rounded_rect_leaves_corners_clear`, `stroke_paints_only_the_outline`, `path_clip_masks_drawing`, `fill_rule_decides_a_star_center`, `box_shadow_fades_outside_the_rect`, `unequal_radii_shadow_matches_each_corner` (each corner matches a shadow with that corner's radius everywhere), `gradient_on_path_uses_its_bounds` |
 
 The example `artic-vello/examples/primitives.rs` draws every primitive in one window: a rounded rectangle, a stroked star, linear and radial swatches, clips by rectangle, rounded rectangle and path, nested opacity, and a card with a shadow. It replaces `window.rs`, whose rectangles, clip and opacity it covers. Its PR records a manual check on each desktop available.
 
