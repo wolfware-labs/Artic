@@ -101,15 +101,15 @@ fn paint(brush: &Brush, rect: Rect) -> Option<(peniko::Brush, Option<Affine>)> {
   let (stops, opacity, gradient) = match brush {
     Brush::Solid(solid) => return Some((peniko::Brush::Solid(color(solid.color, solid.opacity)), None)),
     Brush::Linear(linear) => {
-      let (start, end) = (linear.start.resolve(rect), linear.end.resolve(rect));
-      let gradient = (start != end).then(|| (Gradient::new_linear(kurbo_point(start), kurbo_point(end)), None));
+      let (start, end) = (kurbo_point(linear.start.resolve(rect)), kurbo_point(linear.end.resolve(rect)));
+      let gradient = (start.is_finite() && end.is_finite() && start != end).then(|| (Gradient::new_linear(start, end), None));
       (&linear.stops, linear.opacity, gradient)
     }
     Brush::Radial(radial) => {
-      let radius_x = non_negative(radial.radius_x.resolve(rect.width));
-      let radius_y = non_negative(radial.radius_y.resolve(rect.height));
+      let radius_x = radius(radial.radius_x.resolve(rect.width));
+      let radius_y = radius(radial.radius_y.resolve(rect.height));
       let center = kurbo_point(radial.center.resolve(rect));
-      let gradient = (radius_x > 0.0 && radius_y > 0.0).then(|| {
+      let gradient = (center.is_finite() && radius_x > 0.0 && radius_y > 0.0).then(|| {
         let ellipse = Affine::translate(center.to_vec2()) * Affine::scale_non_uniform(f64::from(radius_x), f64::from(radius_y));
         (Gradient::new_radial((0.0, 0.0), 1.0), Some(ellipse))
       });
@@ -143,8 +143,8 @@ fn unit(value: f32) -> f32 {
   if value > 0.0 { value.min(1.0) } else { 0.0 }
 }
 
-fn non_negative(value: f32) -> f32 {
-  if value > 0.0 { value } else { 0.0 }
+fn radius(value: f32) -> f32 {
+  if value > 0.0 && value.is_finite() { value } else { 0.0 }
 }
 
 fn kurbo_point(point: Point) -> kurbo::Point {
@@ -313,5 +313,55 @@ mod tests {
     assert_eq!(paint(&meeting.into(), rect), blue);
     assert_eq!(paint(&single.into(), rect), blue);
     assert_eq!(paint(&LinearGradientBrush::default().into(), rect), None);
+  }
+
+  // Geometry that isn't finite, which a brush built in code can carry, fills with the last color
+  // too, instead of handing vello a NaN or infinite gradient.
+  #[test]
+  fn non_finite_gradients_fill_with_their_last_color() {
+    let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
+    let blue = Some((peniko::Brush::Solid(opaque(0, 0, 255)), None));
+    let linear = |start, end| Brush::from(LinearGradientBrush::new(start, end, red_to_blue()));
+    let radial = RadialGradientBrush {
+      stops: red_to_blue().into(),
+      ..RadialGradientBrush::default()
+    };
+
+    assert_eq!(
+      paint(
+        &linear(RelativePoint::relative(f32::NAN, 0.0), RelativePoint::relative(1.0, 0.0)),
+        rect
+      ),
+      blue
+    );
+    assert_eq!(
+      paint(
+        &linear(RelativePoint::relative(0.0, 0.0), RelativePoint::absolute(f32::INFINITY, 0.0)),
+        rect
+      ),
+      blue
+    );
+    assert_eq!(
+      paint(
+        &RadialGradientBrush {
+          radius_x: RelativeScalar::absolute(f32::INFINITY),
+          ..radial.clone()
+        }
+        .into(),
+        rect
+      ),
+      blue
+    );
+    assert_eq!(
+      paint(
+        &RadialGradientBrush {
+          center: RelativePoint::relative(0.5, f32::NAN),
+          ..radial
+        }
+        .into(),
+        rect
+      ),
+      blue
+    );
   }
 }
