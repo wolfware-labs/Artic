@@ -4,5 +4,5 @@ pub mod geometry;
 mod layout;
 mod sizing;
 
-pub use layout::{LayoutCx, LayoutManager, LayoutNodes, LayoutStats, Layoutable};
+pub use layout::{ArrangeCx, LayoutManager, LayoutNodes, LayoutStats, Layoutable, MeasureCx};
 pub use sizing::{HorizontalAlignment, Sizing, VerticalAlignment, arrange_with, measure_with};

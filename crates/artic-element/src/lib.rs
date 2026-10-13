@@ -39,7 +39,7 @@ pub mod __private {
   pub use accesskit;
   pub use artic_core::input::InputEvent;
   pub use artic_layout::geometry::{Point, Rect, Size};
-  pub use artic_layout::{LayoutCx, Layoutable};
+  pub use artic_layout::{ArrangeCx, Layoutable, MeasureCx};
   pub use artic_registry::__private::*;
   pub use artic_render::{Layers, SceneBuilder};
   pub use linkme;

@@ -3,7 +3,7 @@
 use crate::{AccessCx, Classes, Cursor, HitTestCx, HitTestResult, Visibility};
 use artic_core::property::Property;
 use artic_layout::geometry::{Point, Rect, Size, Thickness, Transform};
-use artic_layout::{HorizontalAlignment, LayoutCx, Sizing, VerticalAlignment, arrange_with, measure_with};
+use artic_layout::{ArrangeCx, HorizontalAlignment, MeasureCx, Sizing, VerticalAlignment, arrange_with, measure_with};
 use artic_macros::XamlProperties;
 use artic_render::{Clip, Layers};
 
@@ -117,10 +117,10 @@ impl LayoutProperties {
   /// and its result, held within the limits, gets the margin back.
   pub fn measure(
     &self,
-    cx: &mut LayoutCx<'_>,
+    cx: &mut MeasureCx<'_>,
     visibility: Visibility,
     available: Size,
-    content: impl FnOnce(&mut LayoutCx<'_>, Size) -> Size,
+    content: impl FnOnce(&mut MeasureCx<'_>, Size) -> Size,
   ) -> Size {
     if visibility == Visibility::Collapsed {
       return Size::ZERO;
@@ -133,10 +133,10 @@ impl LayoutProperties {
   /// element gets empty bounds at the slot's corner, and `content` isn't called.
   pub fn arrange(
     &self,
-    cx: &mut LayoutCx<'_>,
+    cx: &mut ArrangeCx<'_>,
     visibility: Visibility,
     slot: Rect,
-    content: impl FnOnce(&mut LayoutCx<'_>, Size),
+    content: impl FnOnce(&mut ArrangeCx<'_>, Size),
   ) {
     if visibility == Visibility::Collapsed {
       cx.set_bounds(Rect::new(slot.x, slot.y, 0.0, 0.0));

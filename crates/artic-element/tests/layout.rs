@@ -6,7 +6,7 @@ use artic_core::property::AnyProperty;
 use artic_core::tree::{TreeKind, UiTree};
 use artic_element::{AccessCx, ElementImpl, ElementTypes, RenderCx};
 use artic_layout::geometry::{Rect, Size};
-use artic_layout::{LayoutCx, LayoutManager, Layoutable};
+use artic_layout::{ArrangeCx, LayoutManager, Layoutable, MeasureCx};
 use artic_render::SceneBuilder;
 use pretty_assertions::assert_eq;
 
@@ -20,7 +20,7 @@ impl Object for Column {
 }
 
 impl ElementImpl for Column {
-  fn measure_override(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size {
+  fn measure_override(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size {
     let children: Vec<_> = cx.children().collect();
     children.iter().fold(Size::ZERO, |total, child| {
       let size = cx.measure(*child, available);
@@ -28,7 +28,7 @@ impl ElementImpl for Column {
     })
   }
 
-  fn arrange_override(&self, cx: &mut LayoutCx<'_>, size: Size) {
+  fn arrange_override(&self, cx: &mut ArrangeCx<'_>, size: Size) {
     let children: Vec<_> = cx.children().collect();
     let mut y = 0.0;
     for child in children {
@@ -40,11 +40,11 @@ impl ElementImpl for Column {
 }
 
 impl Layoutable for Column {
-  fn measure(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size {
+  fn measure(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size {
     self.measure_override(cx, available)
   }
 
-  fn arrange(&self, cx: &mut LayoutCx<'_>, rect: Rect) {
+  fn arrange(&self, cx: &mut ArrangeCx<'_>, rect: Rect) {
     self.arrange_override(cx, rect.size());
   }
 }
@@ -68,11 +68,11 @@ impl Object for Block {
 }
 
 impl Layoutable for Block {
-  fn measure(&self, _cx: &mut LayoutCx<'_>, _available: Size) -> Size {
+  fn measure(&self, _cx: &mut MeasureCx<'_>, _available: Size) -> Size {
     Size::new(30.0, self.0)
   }
 
-  fn arrange(&self, _cx: &mut LayoutCx<'_>, _rect: Rect) {}
+  fn arrange(&self, _cx: &mut ArrangeCx<'_>, _rect: Rect) {}
 }
 
 impl artic_element::Element for Block {
@@ -96,11 +96,11 @@ impl Object for Spacer {
 impl ElementImpl for Spacer {}
 
 impl Layoutable for Spacer {
-  fn measure(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size {
+  fn measure(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size {
     self.measure_override(cx, available)
   }
 
-  fn arrange(&self, cx: &mut LayoutCx<'_>, rect: Rect) {
+  fn arrange(&self, cx: &mut ArrangeCx<'_>, rect: Rect) {
     self.arrange_override(cx, rect.size());
   }
 }

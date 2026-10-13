@@ -19,7 +19,7 @@ impl Object for Node {
 }
 
 impl Layoutable for Node {
-  fn measure(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size {
+  fn measure(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size {
     self.measured.set(self.measured.get() + 1);
     if !self.stack {
       return self.size.get();
@@ -32,7 +32,7 @@ impl Layoutable for Node {
     total
   }
 
-  fn arrange(&self, cx: &mut LayoutCx<'_>, rect: Rect) {
+  fn arrange(&self, cx: &mut ArrangeCx<'_>, rect: Rect) {
     self.arranged.set(self.arranged.get() + 1);
     let mut top = 0.0;
     for child in cx.children() {
@@ -255,7 +255,7 @@ fn layout_rounding_snaps_to_device_pixels() {
 
 mod bounds {
   use crate::geometry::{Rect, Size};
-  use crate::{LayoutCx, LayoutManager, LayoutNodes, Layoutable};
+  use crate::{ArrangeCx, LayoutManager, LayoutNodes, Layoutable, MeasureCx};
   use artic_core::Object;
   use artic_core::property::AnyProperty;
   use artic_core::tree::{NodeId, TreeKind, UiTree};
@@ -273,7 +273,7 @@ mod bounds {
   }
 
   impl Layoutable for Inset {
-    fn measure(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size {
+    fn measure(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size {
       let children: Vec<NodeId> = cx.children().collect();
       for child in children {
         cx.measure(child, available);
@@ -281,7 +281,7 @@ mod bounds {
       available
     }
 
-    fn arrange(&self, cx: &mut LayoutCx<'_>, slot: Rect) {
+    fn arrange(&self, cx: &mut ArrangeCx<'_>, slot: Rect) {
       self.arranged.set(self.arranged.get() + 1);
       let bounds = Rect::new(slot.x + 10.0, slot.y + 10.0, slot.width - 20.0, slot.height - 20.0);
       cx.set_bounds(bounds);
@@ -324,7 +324,7 @@ mod bounds {
 
 mod skipped {
   use crate::geometry::{Rect, Size};
-  use crate::{LayoutCx, LayoutManager, LayoutNodes, Layoutable};
+  use crate::{ArrangeCx, LayoutManager, LayoutNodes, Layoutable, MeasureCx};
   use artic_core::Object;
   use artic_core::property::AnyProperty;
   use artic_core::tree::{NodeId, TreeKind, UiTree};
@@ -344,7 +344,7 @@ mod skipped {
   }
 
   impl Layoutable for Toggle {
-    fn measure(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size {
+    fn measure(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size {
       self.measured.set(self.measured.get() + 1);
       if self.skip.get() {
         return Size::ZERO;
@@ -356,7 +356,7 @@ mod skipped {
       Size::new(10.0, 10.0)
     }
 
-    fn arrange(&self, cx: &mut LayoutCx<'_>, rect: Rect) {
+    fn arrange(&self, cx: &mut ArrangeCx<'_>, rect: Rect) {
       if self.skip.get() {
         return;
       }
@@ -466,7 +466,7 @@ mod skipped {
 
 mod misuse {
   use crate::geometry::{Rect, Size};
-  use crate::{LayoutCx, LayoutManager, LayoutNodes, Layoutable};
+  use crate::{ArrangeCx, LayoutManager, LayoutNodes, Layoutable, MeasureCx};
   use artic_core::Object;
   use artic_core::property::AnyProperty;
   use artic_core::tree::{NodeId, TreeKind, UiTree};
@@ -480,7 +480,7 @@ mod misuse {
   }
 
   impl Layoutable for Skipper {
-    fn measure(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size {
+    fn measure(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size {
       let tree = cx.tree();
       let grandchild = cx.children().find_map(|child| tree.children(TreeKind::Visual, child).next());
       if let Some(grandchild) = grandchild {
@@ -489,7 +489,7 @@ mod misuse {
       Size::ZERO
     }
 
-    fn arrange(&self, _cx: &mut LayoutCx<'_>, _rect: Rect) {}
+    fn arrange(&self, _cx: &mut ArrangeCx<'_>, _rect: Rect) {}
   }
 
   /// Lays out `Skipper` nodes.
@@ -499,42 +499,6 @@ mod misuse {
     fn layoutable<'a>(&self, tree: &'a UiTree, node: NodeId) -> Option<&'a dyn Layoutable> {
       tree.get_as::<Skipper>(node).map(|skipper| skipper as &dyn Layoutable)
     }
-  }
-
-  /// Calls `set_bounds` while measuring, which only `arrange` may.
-  #[derive(Debug)]
-  struct EarlyBounds;
-
-  impl Object for EarlyBounds {
-    fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
-  }
-
-  impl Layoutable for EarlyBounds {
-    fn measure(&self, cx: &mut LayoutCx<'_>, _available: Size) -> Size {
-      cx.set_bounds(Rect::new(0.0, 0.0, 1.0, 1.0));
-      Size::ZERO
-    }
-
-    fn arrange(&self, _cx: &mut LayoutCx<'_>, _rect: Rect) {}
-  }
-
-  /// Lays out `EarlyBounds` nodes.
-  struct EarlyBoundsNodes;
-
-  impl LayoutNodes for EarlyBoundsNodes {
-    fn layoutable<'a>(&self, tree: &'a UiTree, node: NodeId) -> Option<&'a dyn Layoutable> {
-      tree.get_as::<EarlyBounds>(node).map(|node| node as &dyn Layoutable)
-    }
-  }
-
-  // set_bounds belongs to arrange: calling it while measuring panics.
-  #[test]
-  #[should_panic(expected = "called from a node's arrange")]
-  fn set_bounds_while_measuring_panics() {
-    let mut tree = UiTree::new();
-    let node = tree.alloc(Box::new(EarlyBounds));
-
-    LayoutManager::default().run(&mut tree, &EarlyBoundsNodes, node, Size::new(10.0, 10.0), 1.0, false);
   }
 
   // Measuring a node that isn't one of the current node's visual children is a bug, caught in
@@ -584,4 +548,53 @@ fn run_reports_resized() {
   let stats = manager.run(&mut tree, &Nodes, root, WINDOW, 1.0, false);
 
   assert_eq!(stats.resized, [grows]);
+}
+
+// A new scale arranges every node again on the new device grid and measures nothing: a desired
+// size doesn't depend on the display.
+#[test]
+fn scale_change_arranges_without_measuring() {
+  let mut tree = UiTree::new();
+  let children = [10.3, 10.3].map(|height| leaf(&mut tree, 33.3, height));
+  let root = stack(&mut tree, &children);
+  let mut manager = LayoutManager::default();
+  manager.run(&mut tree, &Nodes, root, WINDOW, 1.0, true);
+
+  let stats = manager.run(&mut tree, &Nodes, root, WINDOW, 1.25, true);
+
+  assert_eq!((stats.measured, stats.arranged), (0, 3));
+  let rect = manager.rect(children[1]).expect("arranged");
+  let device = rect.y * 1.25;
+  assert!((device - device.round()).abs() < 1e-3, "{rect}");
+}
+
+// A scale reported before the size that matches it, as Windows does, changes the logical size:
+// the root is measured again, like on any resize.
+#[test]
+fn scale_reported_before_size_measures_again() {
+  let mut tree = UiTree::new();
+  let children = [10.0, 10.0].map(|height| leaf(&mut tree, 33.0, height));
+  let root = stack(&mut tree, &children);
+  let mut manager = LayoutManager::default();
+  manager.run(&mut tree, &Nodes, root, WINDOW, 1.0, true);
+
+  let stats = manager.run(&mut tree, &Nodes, root, Size::new(200.0, 150.0), 2.0, true);
+
+  assert_eq!(stats.measured, 3);
+  assert_eq!(manager.rect(root), Some(Rect::new(0.0, 0.0, 200.0, 150.0)));
+}
+
+// Turning snapping on at the same scale moves the rectangles onto the device grid.
+#[test]
+fn snap_change_arranges_again() {
+  let mut tree = UiTree::new();
+  let children = [10.3, 10.3].map(|height| leaf(&mut tree, 33.3, height));
+  let root = stack(&mut tree, &children);
+  let mut manager = LayoutManager::default();
+  manager.run(&mut tree, &Nodes, root, WINDOW, 1.0, false);
+
+  let stats = manager.run(&mut tree, &Nodes, root, WINDOW, 1.0, true);
+
+  assert_eq!((stats.measured, stats.arranged), (0, 3));
+  assert_eq!(manager.rect(children[1]).map(|rect| rect.y), Some(10.0));
 }

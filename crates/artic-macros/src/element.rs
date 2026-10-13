@@ -103,13 +103,13 @@ pub fn expand(attribute: TokenStream, item: TokenStream) -> syn::Result<TokenStr
       use #root::__private as __artic;
 
       impl __artic::Layoutable for #ident {
-        fn measure(&self, cx: &mut __artic::LayoutCx<'_>, available: __artic::Size) -> __artic::Size {
+        fn measure(&self, cx: &mut __artic::MeasureCx<'_>, available: __artic::Size) -> __artic::Size {
           self.layout.measure(cx, self.appearance.visibility.get(), available, |cx, available| {
             <Self as __artic::ElementImpl>::measure_override(self, cx, available)
           })
         }
 
-        fn arrange(&self, cx: &mut __artic::LayoutCx<'_>, slot: __artic::Rect) {
+        fn arrange(&self, cx: &mut __artic::ArrangeCx<'_>, slot: __artic::Rect) {
           self.layout.arrange(cx, self.appearance.visibility.get(), slot, |cx, size| {
             <Self as __artic::ElementImpl>::arrange_override(self, cx, size)
           })

@@ -13,7 +13,7 @@ use artic_core::tree::UiTree;
 use artic_core::window::WindowDesc;
 use artic_element::{AccessCx, Element, RenderCx};
 use artic_layout::geometry::{Rect, Size};
-use artic_layout::{LayoutCx, Layoutable};
+use artic_layout::{ArrangeCx, Layoutable, MeasureCx};
 use artic_platform::{AppHandler, Host as _, HostContext, HostEvent, Runner, SurfaceInfo, SurfaceLoss, Waker};
 use artic_render::{Color, RenderError, Renderer, Scene, SceneBuilder, Surface, SurfaceId, Target, TargetKind};
 use std::cell::Cell;
@@ -35,11 +35,11 @@ impl Object for Swatch {
 }
 
 impl Layoutable for Swatch {
-  fn measure(&self, _cx: &mut LayoutCx<'_>, available: Size) -> Size {
+  fn measure(&self, _cx: &mut MeasureCx<'_>, available: Size) -> Size {
     available
   }
 
-  fn arrange(&self, _cx: &mut LayoutCx<'_>, _rect: Rect) {}
+  fn arrange(&self, _cx: &mut ArrangeCx<'_>, _rect: Rect) {}
 }
 
 impl Element for Swatch {

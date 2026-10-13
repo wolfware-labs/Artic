@@ -10,7 +10,7 @@ use artic_element::{
   Visibility,
 };
 use artic_layout::geometry::{Point, Rect, Size, Thickness};
-use artic_layout::{LayoutCx, LayoutManager};
+use artic_layout::{ArrangeCx, LayoutManager, MeasureCx};
 use artic_macros::element;
 use artic_registry::XamlType;
 use artic_render::{Clip, SceneBuilder};
@@ -30,12 +30,12 @@ struct Tile {
 }
 
 impl ElementImpl for Tile {
-  fn measure_override(&self, _cx: &mut LayoutCx<'_>, _available: Size) -> Size {
+  fn measure_override(&self, _cx: &mut MeasureCx<'_>, _available: Size) -> Size {
     self.measured.set(self.measured.get() + 1);
     Size::new(30.0, 10.0)
   }
 
-  fn arrange_override(&self, _cx: &mut LayoutCx<'_>, size: Size) {
+  fn arrange_override(&self, _cx: &mut ArrangeCx<'_>, size: Size) {
     self.arranged.set(Some(size));
   }
 
