@@ -212,7 +212,7 @@ pub fn arrange_with(sizing: &Sizing, slot: Rect, desired: Size) -> Rect {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::{LayoutCx, LayoutManager, LayoutNodes, Layoutable};
+  use crate::{ArrangeCx, LayoutManager, LayoutNodes, Layoutable, MeasureCx};
   use artic_core::Object;
   use artic_core::property::AnyProperty;
   use artic_core::tree::{NodeId, UiTree};
@@ -314,11 +314,11 @@ mod tests {
   }
 
   impl Layoutable for Element {
-    fn measure(&self, _cx: &mut LayoutCx<'_>, available: Size) -> Size {
+    fn measure(&self, _cx: &mut MeasureCx<'_>, available: Size) -> Size {
       measure_with(&self.sizing, available, |_| Size::new(60.0, 20.0))
     }
 
-    fn arrange(&self, cx: &mut LayoutCx<'_>, rect: Rect) {
+    fn arrange(&self, cx: &mut ArrangeCx<'_>, rect: Rect) {
       let desired = cx.desired(cx.node());
       self.inner_rect.set(Some(arrange_with(&self.sizing, rect, desired)));
     }

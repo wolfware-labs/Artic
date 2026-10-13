@@ -100,8 +100,8 @@ mod tests {
   use super::*;
   use crate::{AccessCx, RenderCx};
   use artic_core::property::AnyProperty;
-  use artic_layout::LayoutCx;
   use artic_layout::geometry::{Rect, Size};
+  use artic_layout::{ArrangeCx, MeasureCx};
   use artic_render::SceneBuilder;
   use pretty_assertions::assert_eq;
 
@@ -114,11 +114,11 @@ mod tests {
   }
 
   impl Layoutable for Dot {
-    fn measure(&self, _cx: &mut LayoutCx<'_>, _available: Size) -> Size {
+    fn measure(&self, _cx: &mut MeasureCx<'_>, _available: Size) -> Size {
       Size::new(1.0, 1.0)
     }
 
-    fn arrange(&self, _cx: &mut LayoutCx<'_>, _rect: Rect) {}
+    fn arrange(&self, _cx: &mut ArrangeCx<'_>, _rect: Rect) {}
   }
 
   impl Element for Dot {

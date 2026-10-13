@@ -9,7 +9,7 @@ use artic_element::{
   LayoutProperties, Visibility,
 };
 use artic_layout::geometry::{Point, Rect, Size, Thickness, Transform};
-use artic_layout::{HorizontalAlignment, LayoutCx, LayoutManager, LayoutNodes, Layoutable, VerticalAlignment};
+use artic_layout::{ArrangeCx, HorizontalAlignment, LayoutManager, LayoutNodes, Layoutable, MeasureCx, VerticalAlignment};
 use artic_macros::XamlType;
 use artic_registry::{PropertyGroup, Registry};
 use artic_render::{Clip, Layers};
@@ -130,7 +130,7 @@ impl Object for Boxed {
 }
 
 impl Layoutable for Boxed {
-  fn measure(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size {
+  fn measure(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size {
     self.measured.set(self.measured.get() + 1);
     self
       .layout
@@ -143,7 +143,7 @@ impl Layoutable for Boxed {
       })
   }
 
-  fn arrange(&self, cx: &mut LayoutCx<'_>, slot: Rect) {
+  fn arrange(&self, cx: &mut ArrangeCx<'_>, slot: Rect) {
     self.layout.arrange(cx, self.appearance.visibility.get(), slot, |cx, size| {
       let children: Vec<NodeId> = cx.children().collect();
       for child in children {

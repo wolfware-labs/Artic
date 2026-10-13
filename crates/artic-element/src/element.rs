@@ -5,7 +5,7 @@ use crate::context::{AccessCx, EventCx, Handled, HitTestCx, HitTestResult, Rende
 use artic_core::Object;
 use artic_core::input::InputEvent;
 use artic_layout::geometry::{Point, Size};
-use artic_layout::{LayoutCx, Layoutable};
+use artic_layout::{ArrangeCx, Layoutable, MeasureCx};
 use artic_render::{Clip, Layers, SceneBuilder};
 
 /// A node the frame pipeline lays out, draws, hit-tests, sends input to and describes to
@@ -56,13 +56,13 @@ pub trait ElementImpl {
 
   /// The content's size within `available`, which already excludes the margin and is held within
   /// the element's limits. By default, nothing.
-  fn measure_override(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size {
+  fn measure_override(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size {
     let _ = (cx, available);
     Size::ZERO
   }
 
   /// Places the children within `size`, in the element's own coordinates. By default, nothing.
-  fn arrange_override(&self, cx: &mut LayoutCx<'_>, size: Size) {
+  fn arrange_override(&self, cx: &mut ArrangeCx<'_>, size: Size) {
     let _ = (cx, size);
   }
 
@@ -125,11 +125,11 @@ mod tests {
   }
 
   impl Layoutable for Leaf {
-    fn measure(&self, _cx: &mut LayoutCx<'_>, _available: Size) -> Size {
+    fn measure(&self, _cx: &mut MeasureCx<'_>, _available: Size) -> Size {
       Size::new(10.0, 10.0)
     }
 
-    fn arrange(&self, _cx: &mut LayoutCx<'_>, _rect: artic_layout::geometry::Rect) {}
+    fn arrange(&self, _cx: &mut ArrangeCx<'_>, _rect: artic_layout::geometry::Rect) {}
   }
 
   impl Element for Leaf {
@@ -151,7 +151,7 @@ mod tests {
   }
 
   // ElementImpl's defaults: no input handled, no clip. measure_override's default needs a
-  // LayoutCx, which only a layout pass makes, so the integration test covers it.
+  // MeasureCx, which only a layout pass makes, so the integration test covers it.
   #[test]
   fn element_impl_defaults_do_nothing() {
     let node = UiTree::new().alloc(Box::new(Leaf));

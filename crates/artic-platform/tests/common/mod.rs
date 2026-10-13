@@ -7,7 +7,7 @@ use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_core::window::WindowDesc;
 use artic_element::{AccessCx, Element, RenderCx};
 use artic_layout::geometry::{Rect, Size, Transform};
-use artic_layout::{LayoutCx, Layoutable};
+use artic_layout::{ArrangeCx, Layoutable, MeasureCx};
 use artic_platform::{DisplayId, HostContext, SurfaceInfo, Windows};
 use artic_render::{
   Color, Layers, PhysicalSize, PixelBuffer, PixelFormat, RenderError, Renderer, Scene, SceneBuilder, Surface, SurfaceId,
@@ -34,7 +34,7 @@ impl Object for Panel {
 }
 
 impl Layoutable for Panel {
-  fn measure(&self, cx: &mut LayoutCx<'_>, available: Size) -> Size {
+  fn measure(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size {
     let children: Vec<NodeId> = cx.children().collect();
     children.iter().fold(Size::ZERO, |total, child| {
       let size = cx.measure(*child, Size::new(available.width, f32::INFINITY));
@@ -42,7 +42,7 @@ impl Layoutable for Panel {
     })
   }
 
-  fn arrange(&self, cx: &mut LayoutCx<'_>, rect: Rect) {
+  fn arrange(&self, cx: &mut ArrangeCx<'_>, rect: Rect) {
     let children: Vec<NodeId> = cx.children().collect();
     let mut y = 0.0;
     for child in children {
@@ -88,11 +88,11 @@ impl Object for Leaf {
 }
 
 impl Layoutable for Leaf {
-  fn measure(&self, _cx: &mut LayoutCx<'_>, _available: Size) -> Size {
+  fn measure(&self, _cx: &mut MeasureCx<'_>, _available: Size) -> Size {
     Size::new(10.0, self.height.get())
   }
 
-  fn arrange(&self, _cx: &mut LayoutCx<'_>, _rect: Rect) {}
+  fn arrange(&self, _cx: &mut ArrangeCx<'_>, _rect: Rect) {}
 }
 
 impl Element for Leaf {
