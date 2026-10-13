@@ -371,7 +371,10 @@ impl<R: Renderer> AppHandler for Runner<R> {
     if self.tree.take_pending() {
       self.mark_all(cx, Some(surface));
     }
-    self.check_visual_parent(root);
+    let surfaces: Vec<NodeId> = self.tree.children(TreeKind::Logical, self.application).collect();
+    for node in surfaces {
+      self.check_visual_parent(node);
+    }
     let content = if self.bound[index].applied.is_some() {
       Axes::from(self.tree.attached(root, Desktop::SIZE_TO_CONTENT))
     } else {

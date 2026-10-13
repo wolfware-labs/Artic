@@ -888,23 +888,30 @@ fn width_change_measures_content_at_the_new_width() {
 }
 
 // A surface must be a visual child of the Application too, so no surface draws inside another;
-// a hook that nests one under another is caught before the frame draws.
+// a hook that nests another surface under the one being drawn is caught before anything renders.
 #[test]
-#[should_panic(expected = "isn't a visual child of the Application")]
-fn surface_nested_in_another_panics() {
+fn surface_nested_in_another_panics_before_rendering() {
   let (tree, application, surfaces) = titled(&["first", "second"]);
   let (first, second) = (surfaces[0], surfaces[1]);
-  let mut runner = Runner::new(tree, Counter::default(), application);
+  let renderer = Counter::default();
+  let mut runner = Runner::new(tree, renderer.clone(), application);
+  let mut cx = Context::default();
+  runner.started(&mut cx, Waker::new(|| {}));
+  runner.surface_changed(&mut cx, FIRST, info(64, 64, 1.0));
   runner.hooks().before_layout(move |tree, _, _, _| {
     if tree.parent(TreeKind::Visual, second) != Some(first) {
       tree.detach(TreeKind::Visual, second);
       tree.add_child(TreeKind::Visual, first, second);
     }
   });
-  let mut cx = Context::default();
-  runner.started(&mut cx, Waker::new(|| {}));
-  runner.surface_changed(&mut cx, FIRST, info(64, 64, 1.0));
   let mut buffer = pixels();
 
-  runner.frame(&mut cx, FIRST, target(&mut buffer), Duration::ZERO);
+  let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    runner.frame(&mut cx, FIRST, target(&mut buffer), Duration::ZERO);
+  }));
+
+  let message = result.expect_err("nesting a surface panics");
+  let message = message.downcast_ref::<String>().map_or("", String::as_str);
+  assert!(message.contains("isn't a visual child of the Application"), "{message}");
+  assert_eq!(renderer.rendered.get(), 0);
 }
