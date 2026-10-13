@@ -1,5 +1,5 @@
 use crate::Object;
-use crate::property::{Affects, AnyProperty, AttachedKey, Inheritance, Precedence};
+use crate::property::{Affects, AnyProperty, AttachedKey, Inheritance, Precedence, Property};
 use crate::tree::{NodeId, TreeKind, UiTree};
 use pretty_assertions::assert_eq;
 
@@ -171,4 +171,31 @@ fn moved_holder_follows_its_new_ancestor() {
   tree.add_child(TreeKind::Logical, second, leaf);
 
   assert_eq!(held.get(), 2);
+}
+
+/// A node that holds `Chrome` as a field, keyed by the attached property's key.
+#[derive(Debug)]
+struct Themed {
+  chrome: Property<u8>,
+}
+
+impl Object for Themed {
+  fn visit_properties(&self, visit: &mut dyn FnMut(&dyn AnyProperty)) {
+    visit(&self.chrome);
+  }
+}
+
+// A field sharing an inheriting attached key is a source like an attached value, so reading the
+// key on a descendant agrees with holding it there.
+#[test]
+fn attached_read_finds_an_ancestor_field() {
+  let mut tree = UiTree::new();
+  let root = tree.alloc(Box::new(Themed {
+    chrome: Property::new(CHROME.key(), 6),
+  }));
+  let leaf = tree.alloc(Box::new(Button));
+  tree.add_child(TreeKind::Logical, root, leaf);
+
+  assert_eq!(tree.attached(leaf, &CHROME), 6);
+  assert_eq!(tree.attached_property(leaf, &CHROME).get(), 6);
 }

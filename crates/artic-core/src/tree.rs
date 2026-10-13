@@ -571,8 +571,8 @@ impl UiTree {
   }
 
   /// Returns `node`'s value of the attached property `key`: the value it holds, or for an
-  /// inheriting key the value of its nearest logical ancestor that holds one, or the key's
-  /// default. Reading never stores anything on the node.
+  /// inheriting key the value of its nearest logical ancestor that holds one, as an attached value
+  /// or a field sharing the key, or the key's default. Reading never stores anything on the node.
   ///
   /// # Panics
   ///
@@ -591,7 +591,7 @@ impl UiTree {
       inheritance => self
         .logical
         .ancestors(node)
-        .find_map(|ancestor| self.stored(ancestor, key))
+        .find_map(|ancestor| self.held(ancestor, key))
         .map(|source| (inheritance, source.get())),
     };
     match inherited {
@@ -703,6 +703,20 @@ impl UiTree {
     if tree == TreeKind::Visual {
       self.mark_dirty(parent, Affects::LAYOUT);
     }
+  }
+
+  fn held<T>(&self, node: NodeId, key: &'static AttachedKey<T>) -> Option<Property<T>>
+  where
+    T: PartialEq + 'static,
+  {
+    let id = KeyId::of(key.key());
+    let mut field = None;
+    self.objects.object(node).visit_properties(&mut |property| {
+      if field.is_none() && property.key_id() == id {
+        field = property.as_any().downcast_ref::<Property<T>>().copied();
+      }
+    });
+    field.or_else(|| self.stored(node, key))
   }
 
   /// The property `node` stores for `key`, if one was created.
