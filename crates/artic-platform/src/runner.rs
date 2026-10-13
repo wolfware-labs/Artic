@@ -351,12 +351,25 @@ impl<R: Renderer> AppHandler for Runner<R> {
     if self.tree.take_pending() {
       self.mark_all(cx, Some(surface));
     }
+    let content = if self.bound[index].applied.is_some() {
+      Axes::from(self.tree.attached(root, Desktop::SIZE_TO_CONTENT))
+    } else {
+      Axes::NONE
+    };
     let window = &mut self.bound[index];
     let result = if window.needs_frame {
       window.needs_frame = false;
       let frame = window
         .pipeline
-        .prepare(&mut self.tree, root, surface, &info, &self.types, crate::Axes::NONE);
+        .prepare(&mut self.tree, root, surface, &info, &self.types, content);
+      if let (Some(applied), Some(desired)) = (&window.applied, window.pipeline.desired(root)) {
+        let requested = applied.size;
+        let grew = (content.width && requested.width != Some(desired.width))
+          || (content.height && requested.height != Some(desired.height));
+        if grew {
+          self.tree.mark_dirty(root, Affects::SURFACE);
+        }
+      }
       Some(window.pipeline.present(&mut self.renderer, frame, target))
     } else {
       window.pipeline.redraw(&mut self.renderer, surface, &info, target)

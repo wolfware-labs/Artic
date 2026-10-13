@@ -5,10 +5,11 @@ mod common;
 use artic_core::property::Property;
 use artic_core::reactive::{Signal, effect};
 use artic_core::tree::{NodeId, TreeKind, UiTree};
-use artic_element::Desktop;
+use artic_element::{Desktop, SizeToContent};
+use artic_layout::geometry::Size;
 use artic_platform::{AppHandler, Axes, Chrome, FrameStats, LogicalSize, Runner, Waker, WindowDesc};
 use artic_render::SurfaceId;
-use common::{Context, Counter, LeafHandles, application, info, leaf, panel, pixels, surface, target};
+use common::{Context, Counter, Leaf, LeafHandles, application, info, leaf, panel, pixels, surface, target};
 use pretty_assertions::assert_eq;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -751,4 +752,105 @@ fn closed_surface_frees_its_host_surface() {
 
   assert_eq!(drawn.get(), Some(surfaces[1]));
   assert!(cx.closed.is_empty());
+}
+
+// A window whose content sizes it opens at the content's measured size, and the user can't resize
+// those axes.
+#[test]
+fn surface_opens_measured_to_content() {
+  let mut tree = UiTree::new();
+  let top = leaf(&mut tree, 20.0);
+  let bottom = leaf(&mut tree, 30.0);
+  let (content, _) = panel(&mut tree, &[top.id, bottom.id]);
+  let (application, surfaces) = application(&mut tree, &[("main", content)]);
+  Desktop::set_size_to_content(&mut tree, surfaces[0], SizeToContent::WidthAndHeight);
+
+  let (_runner, cx) = started(tree, application);
+
+  assert_eq!(
+    cx.opened[0].size,
+    LogicalSize {
+      width: Some(10.0),
+      height: Some(50.0)
+    }
+  );
+  assert_eq!(cx.opened[0].resizable, Axes::NONE);
+}
+
+// When the OS gives a content-sized window another size than requested, such as clamping it to
+// the screen, the runner doesn't ask again.
+#[test]
+fn size_to_content_settles() {
+  let (mut tree, application, surfaces) = titled(&["main"]);
+  Desktop::set_size_to_content(&mut tree, surfaces[0], SizeToContent::Height);
+  let (mut runner, mut cx) = started(tree, application);
+  let mut buffer = pixels();
+
+  runner.surface_changed(&mut cx, FIRST, info(64, 10, 1.0));
+  runner.frame(&mut cx, FIRST, target(&mut buffer), Duration::ZERO);
+  runner.frame(&mut cx, FIRST, target(&mut buffer), Duration::ZERO);
+
+  assert_eq!(
+    cx.opened[0].size,
+    LogicalSize {
+      width: None,
+      height: Some(20.0)
+    }
+  );
+  assert!(cx.updated.is_empty());
+}
+
+// Content that grows resizes a window sized to it, once.
+#[test]
+fn content_growth_resizes_window() {
+  let mut tree = UiTree::new();
+  let content = leaf(&mut tree, 20.0);
+  let (application, surfaces) = application(&mut tree, &[("main", content.id)]);
+  Desktop::set_size_to_content(&mut tree, surfaces[0], SizeToContent::Height);
+  let (mut runner, mut cx) = started(tree, application);
+  let mut buffer = pixels();
+  runner.surface_changed(&mut cx, FIRST, info(64, 20, 1.0));
+  runner.frame(&mut cx, FIRST, target(&mut buffer), Duration::ZERO);
+
+  content.height.set(40.0);
+  runner.woken(&mut cx);
+  runner.frame(&mut cx, FIRST, target(&mut buffer), Duration::ZERO);
+  runner.frame(&mut cx, FIRST, target(&mut buffer), Duration::ZERO);
+
+  let sizes: Vec<LogicalSize> = cx.updated.iter().map(|(_, desc)| desc.size).collect();
+  assert_eq!(
+    sizes,
+    [LogicalSize {
+      width: None,
+      height: Some(40.0)
+    }]
+  );
+}
+
+// A surface on a host without windows fills its host surface: SizeToContent doesn't apply.
+#[test]
+fn windowless_surface_ignores_size_to_content() {
+  let mut tree = UiTree::new();
+  let content = leaf(&mut tree, 20.0);
+  let (application, surfaces) = application(&mut tree, &[("main", content.id)]);
+  Desktop::set_size_to_content(&mut tree, surfaces[0], SizeToContent::WidthAndHeight);
+  let mut runner = Runner::new(tree, Counter::default(), application);
+  let seen = Rc::new(Cell::new(None));
+  let hook_seen = Rc::clone(&seen);
+  let leaf_id = content.id;
+  runner
+    .hooks()
+    .after_present(move |tree, _, _| hook_seen.set(tree.get_as::<Leaf>(leaf_id).and_then(|leaf| leaf.seen.get())));
+  let mut cx = Context {
+    windowless: true,
+    ..Context::default()
+  };
+  let mut buffer = pixels();
+  runner.started(&mut cx, Waker::new(|| {}));
+  runner.surface_changed(&mut cx, SurfaceId::new(9), info(64, 64, 1.0));
+
+  runner.frame(&mut cx, SurfaceId::new(9), target(&mut buffer), Duration::ZERO);
+
+  assert_eq!(seen.get(), Some(Size::new(64.0, 64.0)));
+  assert!(cx.updated.is_empty());
 }
