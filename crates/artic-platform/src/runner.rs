@@ -382,6 +382,13 @@ impl<R: Renderer> AppHandler for Runner<R> {
       self.settle(cx);
       return;
     }
+    let nested = self
+      .tree
+      .descendants(TreeKind::Visual, root)
+      .find(|node| self.tree.get_as::<Surface>(*node).is_some());
+    if let Some(nested) = nested {
+      panic!("the Surface {nested:?} is inside the Surface {root:?}; no surface draws inside another");
+    }
     let content = if self.bound[index].applied.is_some() {
       Axes::from(self.tree.attached(root, Desktop::SIZE_TO_CONTENT))
     } else {
