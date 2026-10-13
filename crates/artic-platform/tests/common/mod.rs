@@ -10,7 +10,7 @@ use artic_layout::geometry::{Rect, Size, Transform};
 use artic_layout::{ArrangeCx, Layoutable, MeasureCx};
 use artic_platform::{DisplayId, HostContext, SurfaceInfo, Windows};
 use artic_render::{
-  Color, Layers, PhysicalSize, PixelBuffer, PixelFormat, RenderError, Renderer, Scene, SceneBuilder, Surface, SurfaceId,
+  Color, Layers, PhysicalSize, PixelBuffer, PixelFormat, RenderError, Renderer, Scene, SceneBuilder, SurfaceId, SurfaceView,
   Target, TargetKind,
 };
 use std::cell::{Cell, RefCell};
@@ -165,7 +165,7 @@ impl Renderer for Counter {
     kind == TargetKind::Pixels
   }
 
-  fn render(&mut self, _scene: &Scene, _surface: Surface<'_>) -> Result<(), RenderError> {
+  fn render(&mut self, _scene: &Scene, _surface: SurfaceView<'_>) -> Result<(), RenderError> {
     if let Some(error) = self.fail.borrow_mut().take() {
       return Err(error);
     }

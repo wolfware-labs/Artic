@@ -6,7 +6,7 @@ use artic_element::{ElementTypes, RenderCx};
 use artic_layout::LayoutManager;
 use artic_layout::geometry::{Rect, Size, Transform};
 use artic_render::{
-  Compositor, Layers, Nodes, PhysicalSize, RenderError, Renderer, Scene, SceneBuilder, Surface, SurfaceId, Target,
+  Compositor, Layers, Nodes, PhysicalSize, RenderError, Renderer, Scene, SceneBuilder, SurfaceId, SurfaceView, Target,
 };
 use std::collections::HashSet;
 
@@ -124,7 +124,7 @@ impl Pipeline {
     } = frame;
     renderer.render(
       &scene,
-      Surface {
+      SurfaceView {
         id: surface,
         size,
         scale,
@@ -150,7 +150,7 @@ impl Pipeline {
     target: Target<'_>,
   ) -> Option<Result<FrameStats, RenderError>> {
     let scene = self.last.as_ref()?;
-    let surface = Surface {
+    let surface = SurfaceView {
       id: surface,
       size: info.size,
       scale: info.scale,

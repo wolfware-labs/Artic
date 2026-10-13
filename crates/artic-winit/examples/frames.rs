@@ -15,7 +15,7 @@ use artic_element::{AccessCx, Element, RenderCx};
 use artic_layout::geometry::{Rect, Size};
 use artic_layout::{ArrangeCx, Layoutable, MeasureCx};
 use artic_platform::{AppHandler, Host as _, HostContext, HostEvent, Runner, SurfaceInfo, SurfaceLoss, Waker};
-use artic_render::{Color, RenderError, Renderer, Scene, SceneBuilder, Surface, SurfaceId, Target, TargetKind};
+use artic_render::{Color, RenderError, Renderer, Scene, SceneBuilder, SurfaceId, SurfaceView, Target, TargetKind};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -120,7 +120,7 @@ impl Renderer for Blank {
     kind == TargetKind::Handles
   }
 
-  fn render(&mut self, _scene: &Scene, _surface: Surface<'_>) -> Result<(), RenderError> {
+  fn render(&mut self, _scene: &Scene, _surface: SurfaceView<'_>) -> Result<(), RenderError> {
     Ok(())
   }
 }

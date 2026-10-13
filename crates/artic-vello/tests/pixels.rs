@@ -9,8 +9,8 @@ use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_layout::geometry::{Rect, Transform};
 use artic_render::Renderer as _;
 use artic_render::{
-  Clip, Color, Compositor, Layers, Nodes, PhysicalSize, PixelBuffer, PixelFormat, RenderError, SceneBuilder, Surface,
-  SurfaceId, Target, TargetKind,
+  Clip, Color, Compositor, Layers, Nodes, PhysicalSize, PixelBuffer, PixelFormat, RenderError, SceneBuilder, SurfaceId,
+  SurfaceView, Target, TargetKind,
 };
 use artic_vello::Renderer;
 use pretty_assertions::assert_eq;
@@ -81,7 +81,7 @@ fn is_warp(renderer: &Renderer) -> bool {
 fn render(renderer: &mut Renderer, tree: &mut UiTree, root: NodeId, nodes: &mut Fills, format: PixelFormat) -> Vec<[u8; 4]> {
   let scene = Compositor::default().compose(tree, root, nodes);
   let mut data = vec![0; (SIZE * SIZE * 4) as usize];
-  let surface = Surface {
+  let surface = SurfaceView {
     id: SurfaceId::new(1),
     size: PhysicalSize::new(SIZE, SIZE),
     scale: 1.0,
@@ -188,7 +188,7 @@ fn accepts_handles_and_pixels() {
     assert!(renderer.accepts(TargetKind::Handles) && renderer.accepts(TargetKind::Pixels));
     assert!(!renderer.accepts(TargetKind::Custom));
     let mut other = ();
-    let surface = Surface {
+    let surface = SurfaceView {
       id: SurfaceId::new(1),
       size: PhysicalSize::new(1, 1),
       scale: 1.0,
