@@ -2,7 +2,6 @@
 
 use crate::{AppHandler, Error, FrameStats, Hooks, Host, HostContext, HostEvent, Pipeline, SurfaceInfo, SurfaceLoss, Waker};
 use artic_core::dispatcher::Dispatcher;
-use artic_core::property::Affects;
 use artic_core::reactive::flush_effects;
 use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_core::window::WindowDesc;
@@ -187,22 +186,9 @@ impl<R: Renderer> AppHandler for Runner<R> {
       None => return,
     };
     let window = &mut self.surfaces[index];
-    let previous = window.info.replace(info);
+    window.info = Some(info);
     window.lost = false;
     window.needs_frame = true;
-    let root = window.root;
-    match previous {
-      Some(previous) if previous.scale != info.scale => {
-        let subtree: Vec<NodeId> = std::iter::once(root)
-          .chain(self.tree.descendants(TreeKind::Visual, root))
-          .collect();
-        for node in subtree {
-          self.tree.mark_dirty(node, Affects::LAYOUT);
-        }
-      }
-      Some(previous) if previous.size != info.size => self.tree.mark_dirty(root, Affects::LAYOUT),
-      _ => {}
-    }
     cx.request_frame(surface);
     self.settle(cx);
   }

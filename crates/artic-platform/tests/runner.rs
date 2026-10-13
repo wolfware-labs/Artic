@@ -144,6 +144,19 @@ fn resize_invalidates_root() {
   assert_eq!((stats.measured, stats.arranged), (3, 3));
 }
 
+// A new scale at the same logical size, as when a window moves to a monitor with another scale,
+// arranges the window again and measures nothing.
+#[test]
+fn scale_change_measures_nothing() {
+  let mut fixture = Fixture::new(|_| {});
+
+  fixture.runner.surface_changed(&mut fixture.cx, FIRST, info(128, 128, 2.0));
+  let stats = fixture.frame();
+
+  assert!(fixture.cx.frames.contains(&FIRST));
+  assert_eq!((stats.measured, stats.arranged), (0, 3));
+}
+
 // Nodes layout gave a new size are recorded again although no property changed.
 #[test]
 fn resized_node_is_recorded_again() {
