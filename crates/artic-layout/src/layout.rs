@@ -241,7 +241,6 @@ struct Pass<'a> {
   nodes: &'a dyn LayoutNodes,
   slots: &'a mut HashMap<NodeId, Slot>,
   sizes: &'a mut HashMap<NodeId, Size>,
-  /// The node being measured or arranged.
   current: Option<NodeId>,
   stats: LayoutStats,
 }
