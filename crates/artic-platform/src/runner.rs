@@ -182,6 +182,7 @@ impl<R: Renderer> Runner<R> {
       if surface.is_open.get() {
         shown.push(*node);
       }
+      self.check_visual_parent(*node);
     }
     self.lost.retain(|node| shown.contains(node));
     let mut index = 0;
@@ -274,6 +275,14 @@ impl<R: Renderer> Runner<R> {
     }
   }
 
+  #[track_caller]
+  fn check_visual_parent(&self, node: NodeId) {
+    assert!(
+      self.tree.parent(TreeKind::Visual, node) == Some(self.application),
+      "the Surface {node:?} isn't a visual child of the Application; each Surface is a logical and visual child of it, so no surface draws inside another"
+    );
+  }
+
   fn title(&self, node: NodeId) -> String {
     self
       .tree
@@ -362,6 +371,7 @@ impl<R: Renderer> AppHandler for Runner<R> {
     if self.tree.take_pending() {
       self.mark_all(cx, Some(surface));
     }
+    self.check_visual_parent(root);
     let content = if self.bound[index].applied.is_some() {
       Axes::from(self.tree.attached(root, Desktop::SIZE_TO_CONTENT))
     } else {

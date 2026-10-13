@@ -886,3 +886,25 @@ fn width_change_measures_content_at_the_new_width() {
     }]
   );
 }
+
+// A surface must be a visual child of the Application too, so no surface draws inside another;
+// a hook that nests one under another is caught before the frame draws.
+#[test]
+#[should_panic(expected = "isn't a visual child of the Application")]
+fn surface_nested_in_another_panics() {
+  let (tree, application, surfaces) = titled(&["first", "second"]);
+  let (first, second) = (surfaces[0], surfaces[1]);
+  let mut runner = Runner::new(tree, Counter::default(), application);
+  runner.hooks().before_layout(move |tree, _, _, _| {
+    if tree.parent(TreeKind::Visual, second) != Some(first) {
+      tree.detach(TreeKind::Visual, second);
+      tree.add_child(TreeKind::Visual, first, second);
+    }
+  });
+  let mut cx = Context::default();
+  runner.started(&mut cx, Waker::new(|| {}));
+  runner.surface_changed(&mut cx, FIRST, info(64, 64, 1.0));
+  let mut buffer = pixels();
+
+  runner.frame(&mut cx, FIRST, target(&mut buffer), Duration::ZERO);
+}
