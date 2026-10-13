@@ -13,7 +13,7 @@ mod renderer;
 mod scene;
 
 pub use builder::SceneBuilder;
-pub use color::Color;
+pub use color::{Color, ColorProblem, ParseColorError};
 pub use compose::{Compositor, Layers, Nodes};
 pub use renderer::{
   PhysicalSize, PixelBuffer, PixelFormat, RawHandles, RenderError, Renderer, SurfaceId, SurfaceView, Target, TargetKind,
