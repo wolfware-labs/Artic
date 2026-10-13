@@ -8,7 +8,7 @@ A **frame** turns changed state into pixels on one surface: posted work runs, th
 
 | Who | Writes | Sees |
 | --- | --- | --- |
-| The facade (#55) | builds the tree from the views, then `Runner::new(tree, renderer).window(desc, root)` and `artic_platform::run(host, runner)` | `Runner`, `run`, `Hooks`, `Error` |
+| The facade (#55) | builds the tree from the views, then `Runner::new(tree, renderer, application)` ([surface design](surface.md)) and `artic_platform::run(host, runner)` | `Runner`, `run`, `Hooks`, `Error` |
 | Features that run inside a frame (style pass, size classes, accesskit, transitions) | a closure registered on `Hooks` | `Hooks`, `UiTree`, `SurfaceInfo`, `FrameStats` |
 | Tests and the debug overlay (#165) | | `FrameStats`, per frame and per surface |
 | Host adapters | nothing new | `Runner` is an ordinary `AppHandler` |
@@ -29,8 +29,7 @@ All in `artic-platform`, which depends on `artic-element` to drive the tree as `
 
 ```rust
 impl<R: Renderer> Runner<R> {
-  pub fn new(tree: UiTree, renderer: R) -> Self;
-  pub fn window(self, desc: WindowDesc, root: NodeId) -> Self;
+  pub fn new(tree: UiTree, renderer: R, application: NodeId) -> Self;
   pub fn hooks(&mut self) -> &mut Hooks;
   pub fn stats(&self, surface: SurfaceId) -> Option<FrameStats>;
 }
@@ -49,7 +48,7 @@ Only stages that run inside a frame are hooks. Features that react to host event
 
 Each surface has a pipeline of its own because each cache is cleaned per root: `LayoutManager::run` drops what it knew about nodes outside the root it lays out, and `Compositor::compose` drops the fragments it didn't visit, so two windows sharing one would discard each other's work on every frame.
 
-Window roots are disjoint: a node has one visual parent, so it belongs to at most one window, and `Runner::window` panics when given a root that overlaps an existing window's root in either direction: the same node, a node inside it, or a node that contains it. Hooks can still move nodes after that, so before preparing a surface the runner walks every window root's visual ancestors and panics if one is another window's root. That covers both directions, a root moved inside another and another moved inside it, and costs the windows times the tree's depth per frame. Each pipeline therefore clears layout and render flags only on its own window's nodes, and one window's frame never consumes another's invalidation.
+Surface roots are disjoint: each `Surface` is a child of the `Application` and a `Surface` is accepted nowhere else ([surface design](surface.md) §2), and a node has one visual parent, so it belongs to at most one surface. Each pipeline therefore clears layout and render flags only on its own surface's nodes, and one surface's frame never consumes another's invalidation.
 
 ## 3. From a write to a request
 
@@ -61,6 +60,7 @@ The runner ends every `AppHandler` call by **settling**:
 
 1. **Drain**: `Dispatcher::run_pending()`, then `flush_effects()`, repeated until the queue is empty. `run_pending` flushes effects only after each task it runs, so a write made directly in a callback or a hook, with no task queued, needs the explicit flush; an effect can post a task, hence the repeat.
 2. If `tree.take_pending()` is true, every live surface gets `needs_frame` and a `cx.request_frame`.
+3. **Reconcile**: the host is made to match the `Application`'s surfaces, opening, updating and closing them ([surface design](surface.md) §4), so an `IsOpen` or `Desktop` write from any call reaches the host in the same settle.
 
 Every change happens inside some call (an event, a wake-up, a task run from one), so settling catches it. The flag is tree-wide, so a change in one window also redraws the others: each one composes again and presents, but records nothing that didn't change. A flag per surface would avoid that and can replace this one behind `take_pending`.
 
@@ -77,7 +77,7 @@ Pending work never keeps the loop awake by itself: the queue is empty after each
 5. Clear the mark and `pipeline.prepare(tree, root, info, &types)`, lending the runner's `ElementTypes`, from which the pipeline builds the `LayoutNodes` and render `Nodes` for this frame:
    - `LayoutManager::run` at `size / scale` in logical units, with pixel snapping. It measures only layout-dirty nodes and those whose desired size a change reached, and reports the nodes whose arranged size changed.
    - `Compositor::compose` through the pipeline's render `Nodes` (section 5). It records only render-dirty nodes and the nodes layout resized, and reuses every other fragment.
-6. `pipeline.present(renderer, frame, target)` builds the renderer's `Surface` from the frame's id, size and scale and the lent target, and renders; then the `after_present` hooks run and the surface's `FrameStats` are kept.
+6. `pipeline.present(renderer, frame, target)` builds the renderer's `SurfaceView` from the frame's id, size and scale and the lent target, and renders; then the `after_present` hooks run and the surface's `FrameStats` are kept.
 7. If any `wants_frame` hook returns true, mark the surface and request its next frame.
 8. Settle (section 3). A write made in steps 5 to 7, such as by an `after_present` hook, sets the pending flag after step 3 read it; settling marks the surfaces and asks for exactly one more frame.
 
@@ -105,8 +105,8 @@ A node that isn't an element gets default layers and records nothing.
 
 | Call | The runner |
 | --- | --- |
-| `started` | opens each declared window through `cx.windows()` and maps its `SurfaceId` to its root. A host without `Windows`, such as a framebuffer, binds the declared roots to surfaces in the order `surface_changed` first reports them |
-| `surface_changed` | keeps the new `SurfaceInfo`, marks the surface and requests a frame for it, even when nothing differs from the last report: a surface reported again after `surface_lost`, such as on resume, has lost what the renderer kept for it and must be drawn again. A size change marks the root layout-dirty. A scale change marks the root's whole visual subtree layout-dirty, so every node is measured and arranged again and snapped to the new device-pixel grid |
+| `started` | settles, so the first reconcile opens each open `Surface` through `cx.windows()` and binds its `SurfaceId` to it ([surface design](surface.md) §4). A host without `Windows`, such as a framebuffer, gets the open surfaces bound in tree order to the surfaces `surface_changed` reports |
+| `surface_changed` | keeps the new `SurfaceInfo`, marks the surface and requests a frame for it, even when nothing differs from the last report: a surface reported again after `surface_lost`, such as on resume, has lost what the renderer kept for it and must be drawn again. A size change marks the root layout-dirty. A scale change arranges the surface again from its root, snapped to the new device-pixel grid; measures answer from their caches unless the logical size (device size over scale) changed too, which measures the root again like any resize ([surface design](surface.md) §5) |
 | `surface_lost` | calls `renderer.surface_lost`. A `Suspended` loss flags the surface lost and keeps its root, since a resume reports it again; a `Gone` loss forgets it, and when no window but closing ones is left, the runner exits |
 | `event(CloseRequested)` | closes the window and flags the surface closing, so it gets no more frames; the `Gone` loss the host reports after a close releases the renderer's resources and forgets it. The last window closing exits |
 | `event(Suspended)`, `event(Resumed)` | nothing beyond settling; the surfaces come and go through `surface_lost` and `surface_changed` |
@@ -126,7 +126,7 @@ Each stage counts what it did: `LayoutManager::run` returns `LayoutStats { measu
 | `artic-layout` | `run_reports_measured_and_arranged`: a second run with nothing dirty reports zero; `run_reports_resized`: a node whose size changed is listed, one that only moved isn't |
 | `artic-render` | `compose_reports_recorded`: only render-dirty nodes count; `stale_node_is_recorded_again`; `write_during_record_stays_dirty` |
 | `artic-platform` | `layout_offset_applies_after_render_transform`, `render_cx_has_the_arranged_size`, `frame_is_send` |
-| `artic-platform`, through `Runner`, a fake `HostContext` and a counting renderer on a `Pixels` target | `clean_frame_is_skipped` (an unasked-for frame measures and records nothing, presents the last scene, and requests no frame, so the loop sleeps), `os_redraw_presents_the_last_scene`, `render_only_change_skips_layout`, `layout_change_remeasures_subtree`, `resize_invalidates_root`, `resized_node_is_recorded_again`, `node_resized_while_hidden_is_recorded_when_shown`, `reparenting_a_root_under_another_window_panics`, `windows_keep_their_own_caches`, `write_after_present_requests_one_frame`, `surface_lost_render_error_resets_the_renderer`, `style_write_lands_in_same_frame`, `hook_write_effects_land_in_same_frame`, `wants_frame_requests_another`, `closing_last_window_exits`, `closed_window_is_released_from_the_renderer`, `render_error_is_returned_from_run`, `render_error_reaches_on_error`, `overlapping_window_roots_panic`, `mismatched_renderer_is_rejected` |
+| `artic-platform`, through `Runner`, a fake `HostContext` and a counting renderer on a `Pixels` target | `clean_frame_is_skipped` (an unasked-for frame measures and records nothing, presents the last scene, and requests no frame, so the loop sleeps), `os_redraw_presents_the_last_scene`, `render_only_change_skips_layout`, `layout_change_remeasures_subtree`, `resize_invalidates_root`, `resized_node_is_recorded_again`, `node_resized_while_hidden_is_recorded_when_shown`, `windows_keep_their_own_caches`, `write_after_present_requests_one_frame`, `surface_lost_render_error_resets_the_renderer`, `style_write_lands_in_same_frame`, `hook_write_effects_land_in_same_frame`, `wants_frame_requests_another`, `closing_last_window_exits`, `closed_window_is_released_from_the_renderer`, `render_error_is_returned_from_run`, `render_error_reaches_on_error`, `mismatched_renderer_is_rejected` |
 
 An `artic-winit` example, `frames`, opens a window with one element through `Runner` and `artic_vello::Renderer`, changes a property once, and exits with an error if any frame runs in the last 500 ms of a 1.5 s run. The Windows and macOS CI jobs run it next to `smoke`. A quiet window, not a frame count, is what it asserts, so a transient resize at startup can't fail it.
 

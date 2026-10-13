@@ -1,6 +1,6 @@
 # Design: the host seam
 
-Issue: #39. Builds on: the [backend seams](backends.md) (#240), `artic-render`'s `Target` and `Renderer` (#33, #34), the `Dispatcher` (#16). Unblocks: #40 (frame pipeline), #48 (`Window` roots), #73 (input), #79 (cross-thread posting), #101 (`TestHost`), #141 and #142 (mobile hosts).
+Issue: #39. Builds on: the [backend seams](backends.md) (#240), `artic-render`'s `Target` and `Renderer` (#33, #34), the `Dispatcher` (#16). Unblocks: #40 (frame pipeline), #48 (surface roots), #73 (input), #79 (cross-thread posting), #101 (`TestHost`), #141 and #142 (mobile hosts).
 
 A **host** drives the screen: it owns the event loop, reports surfaces and events to artic, draws frames when artic asks, and wakes up when work is posted from another thread. The [backend design](backends.md) fixed the roles; this document fixes the traits a host adapter implements and calls, and the first adapter, `artic-winit`, which opens real windows on Windows, macOS and Linux.
 
@@ -49,6 +49,7 @@ pub trait Windows {
   /// Opens a window; its surface arrives through `surface_changed`, or `surface_lost` if it
   /// couldn't be created.
   fn open(&mut self, desc: &WindowDesc) -> SurfaceId;
+  fn update(&mut self, surface: SurfaceId, desc: &WindowDesc);
   fn close(&mut self, surface: SurfaceId);
 }
 ```
@@ -63,7 +64,7 @@ pub trait Windows {
 
 | Type | Crate | Holds |
 | --- | --- | --- |
-| `WindowDesc` | `artic-core` | `title: String`, `width: f32`, `height: f32` in logical units. Plain data, so the `Window` element (#48) describes itself without naming the platform; `artic-core` sits below `artic-layout`, so it uses plain fields rather than `Size`. #48 adds the display a window opens on, full screen, and `Windows` methods to change a window after it opens. |
+| `WindowDesc` | `artic-platform` | `title: String`, `size: LogicalSize` with `Option<f32>` axes (`None`: the host picks), `chrome: Chrome`, `resizable: Axes`. Only the runner builds it, from a `Surface` ([surface design](surface.md), #48, which moved it from `artic-core` and added `Windows::update`). |
 | `SurfaceInfo` | `artic-platform` | `size: PhysicalSize`, `scale: f32` (device pixels per logical unit), `display: DisplayId`, `refresh_rate: Option<f32>` (some platforms don't report it) |
 | `SurfaceLoss` | `artic-platform` | why a surface went away: `Suspended`, reported again after `Resumed`, or `Gone`, closed, destroyed, never created or the loop exiting |
 | `DisplayId` | `artic-platform` | an opaque id the host assigns per display |

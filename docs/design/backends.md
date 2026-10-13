@@ -60,7 +60,7 @@ Everything beyond the core is optional. Each capability is a `HostContext` metho
 
 | Capability | What it does | Without it |
 | --- | --- | --- |
-| `windows` | open and close (#39); title, size, full screen and the display a window opens on grow with the `Window` element (#48) | each `Window` takes one whole surface (below) |
+| `windows` | open, update and close (#39, #48); full screen and choosing a display are deferred to #267 | each `Surface` takes one whole host surface (below) |
 | `displays` | list displays (id, bounds, scale, refresh rate, primary); connect and disconnect | everything goes on the host's surfaces in order |
 | `clipboard` | read (async) and write text | Copy does nothing; Paste is disabled |
 | `text_input` | IME composition, soft keyboard, input mode (`InputMode`) | text comes only from `Key` and `Text` events |
@@ -76,7 +76,7 @@ Everything beyond the core is optional. Each capability is a `HostContext` metho
 | Windowed, such as a laptop at 2× with a monitor at 1× | one surface per window; a surface moves between displays, and its scale and refresh rate change with it |
 | Not windowed, such as a kiosk with two HDMI outputs | one full-screen surface per display, appearing and disappearing with the outputs |
 
-The app declares its `Window`s the same way for both. artic assigns each one: on a host with `windows`, each `Window` is an OS window on the display its `Display` property names (the primary one by default); on a host without it, each `Window` takes one display's surface, in order, and a window with no surface left is reported as an error. A two-screen kiosk app runs unchanged on a Pi with two outputs and on a desktop with two monitors.
+The app declares its `Surface`s the same way for both ([surface design](surface.md)). artic assigns each one: on a host with `windows`, each open `Surface` is an OS window, on the primary display until `Desktop.Display` (#267) names another; on a host without it, each open `Surface` takes one display's surface, in tree order, and one with no surface left stays unbound. A two-screen kiosk app runs unchanged on a Pi with two outputs and on a desktop with two monitors.
 
 ## 3. The surface handoff
 
@@ -110,20 +110,22 @@ pub trait Renderer {
   fn accepts(&self, kind: TargetKind) -> bool;
 
   /// Draws `scene` on `surface`.
-  fn render(&mut self, scene: &Scene, surface: Surface<'_>) -> Result<(), RenderError>;
+  fn render(&mut self, scene: &Scene, surface: SurfaceView<'_>) -> Result<(), RenderError>;
 
   /// Releases what the renderer holds for a surface that's gone, such as its swapchain.
   fn surface_lost(&mut self, surface: SurfaceId) {}
 }
 
 /// One surface to draw on this frame.
-pub struct Surface<'a> {
+pub struct SurfaceView<'a> {
   pub id: SurfaceId,        // which surface: a renderer keeps a swapchain per surface
   pub size: PhysicalSize,   // in device pixels: a swapchain needs it, and handles don't carry it
   pub scale: f32,           // device pixels per logical unit
   pub target: Target<'a>,
 }
 ```
+
+(First named `Surface`; the [surface design](surface.md) (#48) renamed it `SurfaceView`, freeing the name for the element a host presents.)
 
 (Implementing #33 refined the first sketch, `render(&Scene, Target, scale)`: a renderer with several windows needs to know which surface it draws on and at what size, and `artic::run`'s pairing check needs `accepts`.)
 
@@ -211,7 +213,7 @@ Compared with today's §2 and `docs/architecture.md`:
 | Before | After |
 | --- | --- |
 | `PlatformHost` with 14 required methods | `Host`: `targets` and `run`; capabilities on `HostContext`, defaulting to `None` |
-| `Renderer::begin_frame`, `render`, `resize`, `create_image`, `measure_text` | `Renderer::accepts`, `render(&Scene, Surface)` and `surface_lost` |
+| `Renderer::begin_frame`, `render`, `resize`, `create_image`, `measure_text` | `Renderer::accepts`, `render(&Scene, SurfaceView)` and `surface_lost` |
 | A "backend-neutral surface handle" | `Target::Handles`, `Pixels` or `Custom` |
 | `primary_input()` from the host | input mode tracked by artic |
 | `Focus` moves in `Tab` order | actions, with directional focus from geometry |
