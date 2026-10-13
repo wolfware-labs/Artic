@@ -378,7 +378,8 @@ impl<R: Renderer> AppHandler for Runner<R> {
     if self.tree.take_pending() {
       self.mark_all(cx, Some(surface));
     }
-    if !self.surfaces().contains(&root) {
+    let open = self.tree.get_as::<Surface>(root).is_some_and(|surface| surface.is_open.get());
+    if !self.surfaces().contains(&root) || !open {
       self.settle(cx);
       return;
     }

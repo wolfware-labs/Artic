@@ -997,3 +997,22 @@ fn surface_detached_into_another_panics_before_rendering() {
   assert!(message.contains("is inside the Surface"), "{message}");
   assert_eq!(renderer.rendered.get(), 0);
 }
+
+// A hook that closes the surface being drawn closes its window instead of drawing it once more.
+#[test]
+fn surface_closed_by_a_hook_isnt_drawn() {
+  let (tree, application, surfaces) = titled(&["first", "second"]);
+  let is_open = surface(&tree, surfaces[0]).is_open;
+  let renderer = Counter::default();
+  let mut runner = Runner::new(tree, renderer.clone(), application);
+  let mut cx = Context::default();
+  runner.started(&mut cx, Waker::new(|| {}));
+  runner.surface_changed(&mut cx, FIRST, info(64, 64, 1.0));
+  runner.hooks().before_layout(move |_, _, _, _| is_open.set(false));
+  let mut buffer = pixels();
+
+  runner.frame(&mut cx, FIRST, target(&mut buffer), Duration::ZERO);
+
+  assert_eq!(renderer.rendered.get(), 0);
+  assert_eq!(cx.closed, [FIRST]);
+}
