@@ -64,7 +64,7 @@ pub trait Windows {
 
 | Type | Crate | Holds |
 | --- | --- | --- |
-| `WindowDesc` | `artic-platform` | `title: String`, `size: LogicalSize` with `Option<f32>` axes (`None`: the host picks), `chrome: Chrome`, `resizable: Axes`. Only the runner builds it, from a `Surface` ([surface design](surface.md), #48, which moved it from `artic-core` and added `Windows::update`). |
+| `WindowDesc` | `artic-platform` | `title: String`, `size: LogicalSize` with `Option<f32>` axes (`None`: the host picks), `chrome: Chrome`, `resizable: Axes`. The runner builds it, from a `Surface` ([surface design](surface.md), #48, which moved it from `artic-core` and added `Windows::update`); only the `smoke` example, a check of the host without the runner, builds one by hand. |
 | `SurfaceInfo` | `artic-platform` | `size: PhysicalSize`, `scale: f32` (device pixels per logical unit), `display: DisplayId`, `refresh_rate: Option<f32>` (some platforms don't report it) |
 | `SurfaceLoss` | `artic-platform` | why a surface went away: `Suspended`, reported again after `Resumed`, or `Gone`, closed, destroyed, never created or the loop exiting |
 | `DisplayId` | `artic-platform` | an opaque id the host assigns per display |
@@ -115,7 +115,7 @@ The translation from a winit `WindowEvent` to a `SurfaceInfo`, a `HostEvent` or 
 - The `WindowId` → `SurfaceId` map gives distinct ids and maps each back.
 - `artic-platform`: `Waker` is `Clone + Send + Sync` and `wake()` runs the host's hook; a minimal fake host drives a recording `AppHandler`, showing a host can be written against the seam alone, as `TestHost` (#101) will be.
 - `artic-platform` has no `winit` dependency, and no `winit` type appears in `artic-winit`'s public items.
-- A smoke example, `artic-winit/examples/smoke.rs`: an `AppHandler` that opens one window in `started` and asks for a frame after each frame; with `ARTIC_SMOKE_FRAMES=N` it exits after N frames, otherwise it runs until the window closes. It calls only `Host::new()` and `run`, with no target-specific code, and draws nothing (rendering is #40). #53 runs it in CI; the PR records manual runs on Windows, macOS and Linux.
+- A smoke example, `artic-winit/examples/smoke.rs`: an `AppHandler` that opens one window in `started`, through `HostContext::windows()` with a `WindowDesc` it builds itself, and asks for a frame after each frame; with `ARTIC_SMOKE_FRAMES=N` it exits after N frames, otherwise it runs until the window closes. It calls only `Host::new()` and `run`, with no target-specific code, and draws nothing: it checks the host alone, without the runner, and the `frames` example draws through the runner. #53 runs it in CI; the PR records manual runs on Windows, macOS and Linux.
 
 ## 7. What this changes
 

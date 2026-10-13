@@ -48,7 +48,7 @@ The vocabulary splits by layer. App code says `Surface`, with platform settings 
 | `UserControl` | `artic-controls` | An `#[element]` with a single content. Accesskit role `GenericContainer`. `artic-controls` gains its `artic-element` dependency |
 | `Affects::SURFACE` | `artic-core` | The third dirty stage, beside `LAYOUT` and `RENDER` |
 | `MeasureCx`, `ArrangeCx` | `artic-layout` | Replace `LayoutCx`, one per pass (section 5) |
-| `WindowDesc` | `artic-platform`, moved from `artic-core` | `title: String`, `size: LogicalSize` with `Option<f32>` axes (`None`: the host picks), `chrome: Chrome`, `resizable: Axes`. Only the runner builds it |
+| `WindowDesc` | `artic-platform`, moved from `artic-core` | `title: String`, `size: LogicalSize` with `Option<f32>` axes (`None`: the host picks), `chrome: Chrome`, `resizable: Axes`. The runner builds it; only a host check such as the `smoke` example builds one by hand |
 | `Windows` | `artic-platform` | `open(&WindowDesc) -> SurfaceId`, `update(SurfaceId, &WindowDesc)`, `close(SurfaceId)` |
 | `SurfaceView<'a>` | `artic-render`, renamed from `Surface<'a>` | Unchanged: the id, size, scale and `Target` that `Renderer::render` gets for one frame. It's a view of the host surface `SurfaceId` names, lent for one render, and the rename frees `Surface` for the element |
 
@@ -125,7 +125,7 @@ The user can't resize a `SizeToContent` axis: `WindowDesc.resizable` leaves it o
 | `artic-controls` | `user_control_accesskit_node` (role `GenericContainer`), `user_control_lays_out_its_content` |
 | `artic-platform`, through `Runner` and the fake host | `surface_opens_measured_to_content`, `surface_opens_at_desktop_size`, `title_change_updates_once`, `unchanged_surface_is_not_updated`, `size_to_content_settles` (the OS clamps, and no second request follows), `os_close_writes_is_open_and_reopens`, `failed_open_is_not_retried`, `content_growth_resizes_window`, `last_surface_closing_exits`, `removed_surface_closes`, `windowless_host_binds_in_tree_order`, `windowless_surface_ignores_size_to_content` |
 
-The `smoke` and `frames` examples build an `Application` with one `Surface` and run unchanged in CI.
+The `frames` example builds an `Application` with one `Surface` and runs unchanged in CI. The `smoke` example stays a check of the host alone, without the runner: it opens its window through `Windows::open` with a `WindowDesc` it builds itself.
 
 ## 8. Pull requests
 
