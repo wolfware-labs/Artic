@@ -200,14 +200,14 @@ mod tests {
       opacity: 0.5,
       ..LinearGradientBrush::new(
         RelativePoint::relative(0.0, 0.5),
-        RelativePoint::absolute(100.0, 25.0),
+        RelativePoint::fixed(100.0, 25.0),
         red_to_blue(),
       )
     };
     let radial = RadialGradientBrush::new(
       RelativePoint::relative(0.5, 0.5),
       RelativeScalar::relative(0.5),
-      RelativeScalar::absolute(10.0),
+      RelativeScalar::fixed(10.0),
       red_to_blue(),
     );
 
@@ -271,7 +271,7 @@ mod tests {
     assert_eq!(paint(&linear(-1.0), rect), expected(0.0));
     for radius in [-1.0, f32::NAN] {
       let radial = RadialGradientBrush {
-        radius_y: RelativeScalar::absolute(radius),
+        radius_y: RelativeScalar::fixed(radius),
         stops: red_to_blue().into(),
         ..RadialGradientBrush::default()
       };
@@ -294,12 +294,12 @@ mod tests {
       ..RadialGradientBrush::default()
     };
     let zero = RadialGradientBrush {
-      radius_x: RelativeScalar::absolute(0.0),
+      radius_x: RelativeScalar::fixed(0.0),
       ..radial.clone()
     };
     let meeting = LinearGradientBrush::new(
       RelativePoint::relative(0.5, 0.5),
-      RelativePoint::absolute(5.0, 5.0),
+      RelativePoint::fixed(5.0, 5.0),
       red_to_blue(),
     );
     let single = LinearGradientBrush::new(
@@ -336,7 +336,7 @@ mod tests {
     );
     assert_eq!(
       paint(
-        &linear(RelativePoint::relative(0.0, 0.0), RelativePoint::absolute(f32::INFINITY, 0.0)),
+        &linear(RelativePoint::relative(0.0, 0.0), RelativePoint::fixed(f32::INFINITY, 0.0)),
         rect
       ),
       blue
@@ -344,7 +344,7 @@ mod tests {
     assert_eq!(
       paint(
         &RadialGradientBrush {
-          radius_x: RelativeScalar::absolute(f32::INFINITY),
+          radius_x: RelativeScalar::fixed(f32::INFINITY),
           ..radial.clone()
         }
         .into(),

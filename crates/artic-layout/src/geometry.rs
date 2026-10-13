@@ -5,7 +5,7 @@ mod relative;
 mod transform;
 
 pub use parse::{GeometryProblem, ParseGeometryError};
-pub use relative::{RelativePoint, RelativeScalar, RelativeUnit};
+pub use relative::{RelativePoint, RelativeScalar, Scaling};
 use std::fmt::{Display, Formatter, Result};
 use std::ops::{Add, Sub};
 pub use transform::Transform;

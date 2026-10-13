@@ -80,12 +80,12 @@ The structs have the shape the [value objects](value-objects.md) design gives va
 Gradient points and radii are resolved against the box being filled, so one brush fits any size. The types are geometry, so they live in `artic_layout::geometry` beside `Point`, where the number parser and `ParseGeometryError` they reuse already are:
 
 ```rust
-pub enum RelativeUnit { Relative, Absolute }
-pub struct RelativePoint { pub point: Point, pub unit: RelativeUnit }
-pub struct RelativeScalar { pub value: f32, pub unit: RelativeUnit }
+pub enum Scaling { Relative, Fixed }
+pub struct RelativePoint { pub point: Point, pub scaling: Scaling }
+pub struct RelativeScalar { pub value: f32, pub scaling: Scaling }
 ```
 
-`"50%,25%"` is relative, the fractions `0.5, 0.25` of the box; `"10,20"` is absolute, in logical units from the box's top-left corner. A point mixing the two, such as `"50%,20"`, is an error. The unit is visible in the text, so there is no separate mapping mode to remember. They have a parser of their own, beside the number parser: it splits the text the same way (commas, whitespace or both) and reads each value as a number with an optional `%`. The existing number parser stays unitless, so `Point`, `Thickness` and the other geometry values still reject `%`. Errors are `ParseGeometryError`s, with two new problems: `MixedUnits` (`"50%,20"`) and `NotAPercent` for a `%` that doesn't follow a number.
+`"50%,25%"` is relative, the fractions `0.5, 0.25` of the box; `"10,20"` is fixed, in logical units from the box's top-left corner, whatever its size. Both are resolved against the box; `Scaling` says whether the value grows with it. A point mixing the two, such as `"50%,20"`, is an error. The scaling is visible in the text, so there is no separate mapping mode to remember. They have a parser of their own, beside the number parser: it splits the text the same way (commas, whitespace or both) and reads each value as a number with an optional `%`. The existing number parser stays unitless, so `Point`, `Thickness` and the other geometry values still reject `%`. Errors are `ParseGeometryError`s, with two new problems: `MixedUnits` (`"50%,20"`) and `NotAPercent` for a `%` that doesn't follow a number.
 
 ## 4. Drawing
 
@@ -118,7 +118,7 @@ FillRect { rect: Rect, brush: Brush }
 
 | Crate | Tests |
 | --- | --- |
-| `artic-layout` | `relative_point_parses_percent_and_absolute`, `relative_point_rejects_mixed_units`, `relative_scalar_parses_percent_and_absolute`, `relative_scalar_rejects_invalid` (empty, two values, a bare or doubled `%`) |
+| `artic-layout` | `relative_point_parses_percent_and_fixed`, `relative_point_rejects_mixed_units`, `relative_scalar_parses_percent_and_fixed`, `relative_scalar_rejects_invalid` (empty, two values, a bare or doubled `%`) |
 | `artic-render` | `color_parses_short_hex` (`#RGB`, `#ARGB`), `color_parses_rrggbb`, `color_parses_aarrggbb`, `color_parses_named_case_insensitive`, `color_rejects_invalid` (bad length, a non-hex digit, an unknown name, each message naming the input), `brush_from_color_string_is_solid` |
 | `artic-vello` | `brush_to_peniko_roundtrip` (color, stops, resolved points, opacity), `gradient_values_are_clamped_and_sorted` (out-of-range and NaN offsets, opacity and radii; unordered stops), `linear_gradient_fills_rect` (pixels: the left edge is the first stop, the right edge the last), `radial_gradient_fills_an_ellipse` (pixels in a wide box: the center is the first stop, and the points at the ends of both radii are the last, so unequal radii scale the circle into an ellipse) |
 
