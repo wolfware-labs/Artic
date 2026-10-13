@@ -9,7 +9,7 @@ use artic_element::{Desktop, SizeToContent};
 use artic_layout::geometry::Size;
 use artic_platform::{AppHandler, Axes, Chrome, FrameStats, LogicalSize, Runner, Waker, WindowDesc};
 use artic_render::SurfaceId;
-use common::{Context, Counter, Leaf, LeafHandles, application, info, leaf, panel, pixels, surface, target};
+use common::{Context, Counter, Leaf, LeafHandles, Wrap, application, info, leaf, panel, pixels, surface, target};
 use pretty_assertions::assert_eq;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -853,4 +853,36 @@ fn windowless_surface_ignores_size_to_content() {
 
   assert_eq!(seen.get(), Some(Size::new(64.0, 64.0)));
   assert!(cx.updated.is_empty());
+}
+
+// A new width for a window whose content sizes its height measures the content at that width
+// before updating the window, so the height sent with it fits.
+#[test]
+fn width_change_measures_content_at_the_new_width() {
+  let mut tree = UiTree::new();
+  let content = tree.alloc(Box::new(Wrap));
+  let (application, surfaces) = application(&mut tree, &[("main", content)]);
+  Desktop::set_size_to_content(&mut tree, surfaces[0], SizeToContent::Height);
+  let width = tree.attached_property(surfaces[0], Desktop::WIDTH);
+  width.set(Some(50.0));
+  let (mut runner, mut cx) = started(tree, application);
+
+  width.set(Some(100.0));
+  runner.woken(&mut cx);
+
+  assert_eq!(
+    cx.opened[0].size,
+    LogicalSize {
+      width: Some(50.0),
+      height: Some(20.0)
+    }
+  );
+  let sizes: Vec<LogicalSize> = cx.updated.iter().map(|(_, desc)| desc.size).collect();
+  assert_eq!(
+    sizes,
+    [LogicalSize {
+      width: Some(100.0),
+      height: Some(10.0)
+    }]
+  );
 }

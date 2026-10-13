@@ -69,18 +69,23 @@ impl Settings {
     }
   }
 
-  /// What the surface is measured in before its window opens, or `None` when its content sizes
-  /// no axis.
-  fn available(&self) -> Option<Size> {
-    let axis = |content: bool, set: Option<f32>| {
+  /// What the surface's content is measured in to size its window, or `None` when it sizes no
+  /// axis: `∞` on the axes it sizes, and on the others the set size, else `host`'s, the window's
+  /// current logical size if it has one.
+  fn available(&self, host: Option<Size>) -> Option<Size> {
+    let axis = |content: bool, set: Option<f32>, host: Option<f32>| {
       if content {
         f32::INFINITY
       } else {
-        set.unwrap_or(f32::INFINITY)
+        set.or(host).unwrap_or(f32::INFINITY)
       }
     };
-    (self.content != Axes::NONE)
-      .then(|| Size::new(axis(self.content.width, self.width), axis(self.content.height, self.height)))
+    (self.content != Axes::NONE).then(|| {
+      Size::new(
+        axis(self.content.width, self.width, host.map(|size| size.width)),
+        axis(self.content.height, self.height, host.map(|size| size.height)),
+      )
+    })
   }
 
   /// The window titled `title`, sized to `desired` on the axes its content sizes.
@@ -214,7 +219,7 @@ impl<R: Renderer> Runner<R> {
     if let Some(windows) = cx.windows() {
       let mut pipeline = Pipeline::new();
       let desired = settings
-        .available()
+        .available(None)
         .map(|available| pipeline.measure(&mut self.tree, node, available, &self.types));
       let desc = settings.desc(self.title(node), desired);
       let id = windows.open(&desc);
@@ -256,7 +261,13 @@ impl<R: Renderer> Runner<R> {
     if bound.applied.is_none() {
       return;
     }
-    let desc = settings.desc(title, bound.pipeline.desired(node));
+    let host = bound
+      .info
+      .map(|info| Size::new(info.size.width as f32 / info.scale, info.size.height as f32 / info.scale));
+    let desired = settings
+      .available(host)
+      .map(|available| bound.pipeline.measure(&mut self.tree, node, available, &self.types));
+    let desc = settings.desc(title, desired);
     if bound.applied.as_ref() != Some(&desc) {
       windows.update(bound.id, &desc);
       bound.applied = Some(desc);

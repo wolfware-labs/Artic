@@ -116,6 +116,34 @@ impl Element for Leaf {
 
 artic_element::element_type!(Leaf);
 
+/// Text-like content of a fixed area: as wide as offered, up to 100, and as tall as its area needs
+/// at that width.
+#[derive(Debug)]
+pub struct Wrap;
+
+impl Object for Wrap {
+  fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+}
+
+impl Layoutable for Wrap {
+  fn measure(&self, _cx: &mut MeasureCx<'_>, available: Size) -> Size {
+    let width = available.width.min(100.0);
+    Size::new(width, 1000.0 / width)
+  }
+
+  fn arrange(&self, _cx: &mut ArrangeCx<'_>, _rect: Rect) {}
+}
+
+impl Element for Wrap {
+  fn render(&self, _cx: &mut RenderCx<'_>, _scene: &mut SceneBuilder) {}
+
+  fn accessibility(&self, _cx: &AccessCx<'_>) -> accesskit::Node {
+    accesskit::Node::new(accesskit::Role::GenericContainer)
+  }
+}
+
+artic_element::element_type!(Wrap);
+
 /// A leaf's id and the properties a test changes.
 #[derive(Debug, Clone, Copy)]
 pub struct LeafHandles {

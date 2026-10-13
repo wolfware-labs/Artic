@@ -333,23 +333,44 @@ fn limits(resizable: Axes, size: LogicalSize<f64>) -> (Option<LogicalSize<f64>>,
   }
 }
 
-/// Which parts of a window's description differ from the one applied before.
+/// One change a window makes to follow a new description.
 #[derive(Debug, PartialEq)]
-struct Changes {
-  title: bool,
-  chrome: bool,
-  size: bool,
-  resizable: bool,
+enum Step {
+  Title(String),
+  Decorations(bool),
+  Size(LogicalSize<f64>),
+  Resizable(bool),
+  Limits(Option<LogicalSize<f64>>, Option<LogicalSize<f64>>),
 }
 
-/// What changes from `before` to `after`: everything when nothing was applied before.
-fn changes(before: Option<&WindowDesc>, after: &WindowDesc) -> Changes {
-  Changes {
-    title: before.is_none_or(|before| before.title != after.title),
-    chrome: before.is_none_or(|before| before.chrome != after.chrome),
-    size: before.is_none_or(|before| before.size != after.size),
-    resizable: before.is_none_or(|before| before.resizable != after.resizable),
+/// The changes, in order, that take a window of `current` size from the description `before` to
+/// `after`: only what differs, and everything when nothing was applied before. A new size or
+/// resizable axes clear the old limits first, so they can't clamp the new size.
+fn steps(before: Option<&WindowDesc>, after: &WindowDesc, current: LogicalSize<f64>) -> Vec<Step> {
+  let differs = |part: fn(&WindowDesc, &WindowDesc) -> bool| before.is_none_or(|before| part(before, after));
+  let mut steps = Vec::new();
+  if differs(|before, after| before.title != after.title) {
+    steps.push(Step::Title(after.title.clone()));
   }
+  if differs(|before, after| before.chrome != after.chrome) {
+    steps.push(Step::Decorations(after.chrome == Chrome::System));
+  }
+  let resized = differs(|before, after| before.size != after.size);
+  if resized || differs(|before, after| before.resizable != after.resizable) {
+    let size = if resized {
+      logical_size(after, current).unwrap_or(current)
+    } else {
+      current
+    };
+    steps.push(Step::Limits(None, None));
+    if resized {
+      steps.push(Step::Size(size));
+    }
+    steps.push(Step::Resizable(after.resizable != Axes::NONE));
+    let (min, max) = limits(after.resizable, size);
+    steps.push(Step::Limits(min, max));
+  }
+  steps
 }
 
 /// The attributes a window opens with for `desc`.
@@ -393,27 +414,20 @@ impl Windows for Context<'_> {
     let Some(window) = self.surfaces.window(surface) else {
       return;
     };
-    let changes = changes(before.as_ref(), desc);
-    if changes.title {
-      window.set_title(&desc.title);
-    }
-    if changes.chrome {
-      window.set_decorations(desc.chrome == Chrome::System);
-    }
-    if changes.size || changes.resizable {
-      let current = window.inner_size().to_logical::<f64>(window.scale_factor());
-      let size = if changes.size {
-        logical_size(desc, current).unwrap_or(current)
-      } else {
-        current
-      };
-      if changes.size {
-        let _ = window.request_inner_size(size);
+    let current = window.inner_size().to_logical::<f64>(window.scale_factor());
+    for step in steps(before.as_ref(), desc, current) {
+      match step {
+        Step::Title(title) => window.set_title(&title),
+        Step::Decorations(decorations) => window.set_decorations(decorations),
+        Step::Size(size) => {
+          let _ = window.request_inner_size(size);
+        }
+        Step::Resizable(resizable) => window.set_resizable(resizable),
+        Step::Limits(min, max) => {
+          window.set_min_inner_size(min);
+          window.set_max_inner_size(max);
+        }
       }
-      window.set_resizable(desc.resizable != Axes::NONE);
-      let (min, max) = limits(desc.resizable, size);
-      window.set_min_inner_size(min);
-      window.set_max_inner_size(max);
     }
   }
 
@@ -473,41 +487,54 @@ mod tests {
     assert_eq!(limits(Axes::BOTH, size), (None, None));
   }
 
-  // An update applies only what changed, so a new title leaves a size the user chose alone; a
-  // window's first description applies everything.
-  #[test]
-  fn update_applies_only_what_changed() {
-    let before = WindowDesc {
+  /// A window locked at 300 by 200, as a window whose content sizes it is.
+  fn locked() -> WindowDesc {
+    WindowDesc {
       title: "notes".into(),
       size: artic_platform::LogicalSize {
         width: Some(300.0),
         height: Some(200.0),
       },
       chrome: Chrome::System,
-      resizable: Axes::BOTH,
-    };
+      resizable: Axes::NONE,
+    }
+  }
+
+  // An update applies only what changed, so a new title leaves a size the user chose alone.
+  #[test]
+  fn title_change_only_sets_the_title() {
     let renamed = WindowDesc {
       title: "notes*".into(),
-      ..before.clone()
+      ..locked()
     };
 
     assert_eq!(
-      changes(Some(&before), &renamed),
-      Changes {
-        title: true,
-        chrome: false,
-        size: false,
-        resizable: false
-      }
+      steps(Some(&locked()), &renamed, LogicalSize::new(300.0, 200.0)),
+      [Step::Title("notes*".into())]
     );
+  }
+
+  // A locked window that grows clears its old limits before asking for the new size, so the old
+  // ones can't clamp it, then locks at the new size.
+  #[test]
+  fn resize_clears_old_limits_first() {
+    let grown = WindowDesc {
+      size: artic_platform::LogicalSize {
+        width: Some(300.0),
+        height: Some(400.0),
+      },
+      ..locked()
+    };
+    let size = LogicalSize::new(300.0, 400.0);
+
     assert_eq!(
-      changes(None, &renamed),
-      Changes {
-        title: true,
-        chrome: true,
-        size: true,
-        resizable: true
-      }
+      steps(Some(&locked()), &grown, LogicalSize::new(300.0, 200.0)),
+      [
+        Step::Limits(None, None),
+        Step::Size(size),
+        Step::Resizable(false),
+        Step::Limits(Some(size), Some(size)),
+      ]
     );
   }
 
