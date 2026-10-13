@@ -47,7 +47,7 @@ Parsing SVG path data (`"M0,0 L10,10 Z"`) can come later as a `FromStr` beside t
 
 ## 2. The drawing vocabulary
 
-A shape says *what* is drawn; a command says *how*. Every operation works on every shape:
+A shape says *what* is drawn; a command says *how*. Fills, strokes and clips work on every shape; a box shadow is a rounded rectangle's (section 2, Box shadows):
 
 ```rust
 pub enum Shape { Rect(Rect), RoundedRect(RoundedRect), Path(Path) }
@@ -125,7 +125,7 @@ Values out of range are made drawable when drawn, never rejected, as for brushes
 | A negative spread | shrinks the rectangle, as in CSS, down to nothing |
 | A shadow's radii | grown by the spread; a corner with radius `0` stays sharp |
 | A shape with a NaN or infinite coordinate | nothing |
-| An opacity below `0`, above `1`, NaN or infinite | clamped to `0..=1`, NaN as `0`, as a brush's opacity (#35) |
+| A layer's opacity below `0`, above `1`, NaN or infinite | clamped to `0..=1`, NaN as `1`. One function in `artic-render` does this for `with_opacity` and for the element's `Opacity` when it builds `Layers` (the [element design](element.md) §7), so the two can't differ. A brush's opacity differs on purpose: NaN counts as `0` there (#35), since a broken brush should paint nothing, while a broken layer opacity shouldn't hide a whole subtree |
 
 `artic-vello` translates, in `translate.rs`:
 
