@@ -1,6 +1,6 @@
 //! One surface's frames: layout, composition and presenting, without a host.
 
-use crate::SurfaceInfo;
+use crate::{Axes, SurfaceInfo};
 use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_element::{ElementTypes, RenderCx};
 use artic_layout::LayoutManager;
@@ -73,7 +73,9 @@ impl Pipeline {
   /// Lays out `root`'s visual subtree in the surface's logical size and composes it.
   ///
   /// Layout measures only what changed; composition records only render-dirty nodes and the
-  /// nodes layout resized since they were last recorded, including while hidden.
+  /// nodes layout resized since they were last recorded, including while hidden. On the `content`
+  /// axes, which the surface's content sizes, layout offers `∞`, so the root takes its desired
+  /// size there.
   pub fn prepare(
     &mut self,
     tree: &mut UiTree,
@@ -81,8 +83,10 @@ impl Pipeline {
     surface: SurfaceId,
     info: &SurfaceInfo,
     types: &ElementTypes,
+    content: Axes,
   ) -> Frame {
-    let available = Size::new(info.size.width as f32 / info.scale, info.size.height as f32 / info.scale);
+    let fit = |sizes: bool, device: u32| if sizes { f32::INFINITY } else { device as f32 / info.scale };
+    let available = Size::new(fit(content.width, info.size.width), fit(content.height, info.size.height));
     let layout = self.layout.run(tree, types, root, available, info.scale, true);
     self.stale.extend(layout.resized);
     self
@@ -106,6 +110,19 @@ impl Pipeline {
         rendered: false,
       },
     }
+  }
+
+  /// Measures `root`'s visual subtree in `available` without arranging it, as before its window
+  /// opens, and returns the size it wants. The next [`prepare`](Pipeline::prepare) in the same
+  /// available size answers from the cache.
+  pub fn measure(&mut self, tree: &mut UiTree, root: NodeId, available: Size, types: &ElementTypes) -> Size {
+    self.layout.measure(tree, types, root, available)
+  }
+
+  /// The size `root` wanted in its last measure.
+  #[must_use]
+  pub fn desired(&self, root: NodeId) -> Option<Size> {
+    self.layout.desired(root)
   }
 
   /// Renders `frame` on `target` and, once it's drawn, keeps its scene for a later

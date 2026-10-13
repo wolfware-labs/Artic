@@ -19,6 +19,7 @@ mod pipeline;
 mod runner;
 mod surface;
 mod waker;
+mod window;
 
 pub use error::Error;
 pub use event::HostEvent;
@@ -28,3 +29,4 @@ pub use pipeline::{Frame, FrameStats, Pipeline};
 pub use runner::{Runner, run};
 pub use surface::{DisplayId, SurfaceInfo, SurfaceLoss};
 pub use waker::Waker;
+pub use window::Axes;

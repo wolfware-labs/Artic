@@ -3,9 +3,9 @@
 mod common;
 
 use artic_core::tree::UiTree;
-use artic_element::ElementTypes;
+use artic_element::{ElementTypes, SizeToContent};
 use artic_layout::geometry::{Size, Transform};
-use artic_platform::{Frame, FrameStats, Pipeline};
+use artic_platform::{Axes, Frame, FrameStats, Pipeline};
 use artic_render::{Layer, SceneItem, SurfaceId};
 use common::{Counter, info, leaf, panel, pixels, target};
 use pretty_assertions::assert_eq;
@@ -24,7 +24,14 @@ fn layout_offset_applies_after_render_transform() {
   let (root, _) = panel(&mut tree, &[top.id, turned.id]);
   turned.turn.set(true);
 
-  let frame = Pipeline::new().prepare(&mut tree, root, SURFACE, &info(64, 64, 1.0), &ElementTypes::from_link_time());
+  let frame = Pipeline::new().prepare(
+    &mut tree,
+    root,
+    SURFACE,
+    &info(64, 64, 1.0),
+    &ElementTypes::from_link_time(),
+    Axes::NONE,
+  );
 
   let expected = Transform::scale(2.0, 2.0).then(Transform::translate(0.0, 20.0));
   assert!(frame.scene().items().contains(&SceneItem::Push(Layer::Transform(expected))));
@@ -43,6 +50,7 @@ fn render_cx_has_the_arranged_size() {
     SURFACE,
     &info(128, 128, 2.0),
     &ElementTypes::from_link_time(),
+    Axes::NONE,
   );
 
   let seen = tree.get_as::<common::Leaf>(child.id).unwrap().seen.get();
@@ -58,7 +66,14 @@ fn first_frame_does_all_the_work() {
   let mut pipeline = Pipeline::new();
   let mut buffer = pixels();
 
-  let frame = pipeline.prepare(&mut tree, root, SURFACE, &info(64, 64, 1.0), &ElementTypes::from_link_time());
+  let frame = pipeline.prepare(
+    &mut tree,
+    root,
+    SURFACE,
+    &info(64, 64, 1.0),
+    &ElementTypes::from_link_time(),
+    Axes::NONE,
+  );
   let stats = pipeline.present(&mut Counter::default(), frame, target(&mut buffer)).unwrap();
 
   assert_eq!(
@@ -86,7 +101,14 @@ fn redraw_presents_the_last_scene() {
       .redraw(&mut renderer, SURFACE, &info(64, 64, 1.0), target(&mut buffer))
       .is_none()
   );
-  let frame = pipeline.prepare(&mut tree, root, SURFACE, &info(64, 64, 1.0), &ElementTypes::from_link_time());
+  let frame = pipeline.prepare(
+    &mut tree,
+    root,
+    SURFACE,
+    &info(64, 64, 1.0),
+    &ElementTypes::from_link_time(),
+    Axes::NONE,
+  );
   pipeline.present(&mut renderer, frame, target(&mut buffer)).unwrap();
 
   let stats = pipeline
@@ -113,7 +135,14 @@ fn failed_present_keeps_no_scene() {
   let mut renderer = Counter::default();
   *renderer.fail.borrow_mut() = Some(artic_render::RenderError::SurfaceLost);
   let mut buffer = pixels();
-  let frame = pipeline.prepare(&mut tree, root, SURFACE, &info(64, 64, 1.0), &ElementTypes::from_link_time());
+  let frame = pipeline.prepare(
+    &mut tree,
+    root,
+    SURFACE,
+    &info(64, 64, 1.0),
+    &ElementTypes::from_link_time(),
+    Axes::NONE,
+  );
 
   assert!(pipeline.present(&mut renderer, frame, target(&mut buffer)).is_err());
 
@@ -122,4 +151,36 @@ fn failed_present_keeps_no_scene() {
       .redraw(&mut renderer, SURFACE, &info(64, 64, 1.0), target(&mut buffer))
       .is_none()
   );
+}
+
+// A surface measured before its window opens, in the size its content axes get, answers the
+// first frame's measures from the cache, and the frame lays it out at its desired size there.
+#[test]
+fn measure_before_open_serves_the_first_frame() {
+  let mut tree = UiTree::new();
+  let child = leaf(&mut tree, 20.0);
+  let (root, _) = panel(&mut tree, &[child.id]);
+  let types = ElementTypes::from_link_time();
+  let mut pipeline = Pipeline::new();
+
+  let desired = pipeline.measure(&mut tree, root, Size::new(f32::INFINITY, f32::INFINITY), &types);
+  let frame = pipeline.prepare(&mut tree, root, SURFACE, &info(64, 64, 1.0), &types, Axes::BOTH);
+
+  assert_eq!(desired, Size::new(10.0, 20.0));
+  assert_eq!(pipeline.desired(root), Some(desired));
+  assert_eq!(frame.stats().measured, 0);
+}
+
+// A SizeToContent value names the axes content sizes.
+#[test]
+fn axes_from_size_to_content() {
+  assert_eq!(
+    Axes::from(SizeToContent::Height),
+    Axes {
+      width: false,
+      height: true
+    }
+  );
+  assert_eq!(Axes::from(SizeToContent::WidthAndHeight), Axes::BOTH);
+  assert_eq!(Axes::from(SizeToContent::Manual), Axes::NONE);
 }

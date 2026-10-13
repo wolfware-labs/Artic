@@ -244,7 +244,9 @@ impl<R: Renderer> AppHandler for Runner<R> {
     let window = &mut self.surfaces[index];
     let result = if window.needs_frame {
       window.needs_frame = false;
-      let frame = window.pipeline.prepare(&mut self.tree, root, surface, &info, &self.types);
+      let frame = window
+        .pipeline
+        .prepare(&mut self.tree, root, surface, &info, &self.types, crate::Axes::NONE);
       Some(window.pipeline.present(&mut self.renderer, frame, target))
     } else {
       window.pipeline.redraw(&mut self.renderer, surface, &info, target)
