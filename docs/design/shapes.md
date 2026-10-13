@@ -47,7 +47,7 @@ Parsing SVG path data (`"M0,0 L10,10 Z"`) can come later as a `FromStr` beside t
 
 ## 2. The drawing vocabulary
 
-A shape says *what* is drawn; a command says *how*. Fills, strokes and clips work on every shape; a box shadow is a rounded rectangle's (section 2, Box shadows):
+A shape says *what* is drawn; a command says *how*. Fills, strokes and clips work on every shape. A box shadow is cast only by a rounded rectangle, as [Box shadows](#box-shadows) explains:
 
 ```rust
 pub enum Shape { Rect(Rect), RoundedRect(RoundedRect), Path(Path) }
