@@ -70,7 +70,7 @@ pub struct GradientStop { pub offset: f32, pub color: Color }
 | Stops are an `Arc<[GradientStop]>` | A brush is cloned into each draw command; a shared slice keeps that cheap |
 | Two radii | A radial gradient fills a box that isn't square as an ellipse, as in Avalonia |
 
-The structs have the shape the [value objects](value-objects.md) design gives value elements, so they become `#[xaml(value)]` types with no change when that lands.
+The structs have the shape the [value objects](value-objects.md) design gives value elements, with one addition when that lands (#57): an `Arc<[GradientStop]>` can't grow, so the staged `LinearGradientBrush` or `RadialGradientBrush` collects its `GradientStop` children in a `Vec`. The `Arc` is made from that `Vec` when the value is moved into its property. The public fields and constructors stay as they are.
 
 ## 3. Relative units
 
@@ -82,7 +82,7 @@ pub struct RelativePoint { pub point: Point, pub unit: RelativeUnit }
 pub struct RelativeScalar { pub value: f32, pub unit: RelativeUnit }
 ```
 
-`"50%,25%"` is relative, the fractions `0.5, 0.25` of the box; `"10,20"` is absolute, in logical units from the box's top-left corner. A point mixing the two, such as `"50%,20"`, is an error. The unit is visible in the text, so there is no separate mapping mode to remember. Parse errors are `ParseGeometryError`s, with a new problem, `MixedUnits`.
+`"50%,25%"` is relative, the fractions `0.5, 0.25` of the box; `"10,20"` is absolute, in logical units from the box's top-left corner. A point mixing the two, such as `"50%,20"`, is an error. The unit is visible in the text, so there is no separate mapping mode to remember. They have a parser of their own, beside the number parser: it splits the text the same way (commas, whitespace or both) and reads each value as a number with an optional `%`. The existing number parser stays unitless, so `Point`, `Thickness` and the other geometry values still reject `%`. Errors are `ParseGeometryError`s, with two new problems: `MixedUnits` (`"50%,20"`) and `NotAPercent` for a `%` that doesn't follow a number.
 
 ## 4. Drawing
 
