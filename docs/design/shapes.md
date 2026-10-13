@@ -133,7 +133,7 @@ Values out of range are made drawable when drawn, never rejected, as for brushes
 `artic-vello` translates, in `translate.rs`:
 
 - A `Shape` becomes a kurbo `Rect`, `RoundedRect` (with per-corner radii) or `BezPath`.
-- `Fill` and `Stroke` use the brush conversion from #35, resolved against `shape.bounds()`. A `Stroke` becomes a kurbo `Stroke` with the same width, join, cap and miter limit.
+- `Fill` and `Stroke` use the brush conversion from #35, resolved against `shape.bounds()`. A `Stroke` becomes a kurbo `Stroke` with the same width, join and miter limit. Its cap is both kurbo's start and end cap, so every open figure gets the same cap at both ends (WPF's separate start and end caps aren't needed yet); `LineCap::Flat` is kurbo's `Cap::Butt`, `Round` is `Cap::Round` and `Square` is `Cap::Square`. Closed figures have no ends, so they take no cap.
 - `Layer::Clip` becomes `push_clip_layer` with the shape, and a path's `FillRule` becomes vello's `Fill::EvenOdd` or `Fill::NonZero` for fills and clips.
 - A `BoxShadow` becomes `draw_blurred_rounded_rect`, with the standard deviation CSS defines, `blur / 2`. Vello's fast blur takes one radius, so a shadow with unequal radii is drawn in four quadrants, each clipped to its quarter of the shadow and blurred with its corner's radius. Near a corner, a blurred rounded rectangle depends almost only on that corner's radius, so the seams don't show.
 
