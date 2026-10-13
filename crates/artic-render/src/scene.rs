@@ -1,4 +1,4 @@
-use crate::Color;
+use crate::Brush;
 use artic_core::tree::NodeId;
 use artic_layout::geometry::{Rect, Transform};
 use std::sync::Arc;
@@ -31,12 +31,12 @@ pub enum Command {
   Push(Layer),
   /// Ends the innermost layer.
   Pop,
-  /// Fills `rect` with `color`.
+  /// Fills `rect` with `brush`.
   FillRect {
-    /// The area to fill.
+    /// The area to fill, which the brush's relative points and radii are resolved against.
     rect: Rect,
-    /// The color to fill it with.
-    color: Color,
+    /// The paint to fill it with.
+    brush: Brush,
   },
 }
 

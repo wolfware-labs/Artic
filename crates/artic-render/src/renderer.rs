@@ -158,7 +158,7 @@ pub enum PixelFormat {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::{Color, Command, Compositor, Layers, Nodes, SceneBuilder, SceneItem};
+  use crate::{Brush, Color, Command, Compositor, Layers, Nodes, SceneBuilder, SceneItem, SolidColorBrush};
   use artic_core::Object;
   use artic_core::property::AnyProperty;
   use artic_core::tree::{NodeId, UiTree};
@@ -182,7 +182,10 @@ mod tests {
       }
       let color = scene.items().iter().find_map(|item| match item {
         SceneItem::Fragment(fragment) => fragment.commands().iter().find_map(|command| match command {
-          Command::FillRect { color, .. } => Some(*color),
+          Command::FillRect {
+            brush: Brush::Solid(SolidColorBrush { color, .. }),
+            ..
+          } => Some(*color),
           _ => None,
         }),
         _ => None,

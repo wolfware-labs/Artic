@@ -6,11 +6,11 @@
 use artic_core::Object;
 use artic_core::property::AnyProperty;
 use artic_core::tree::{NodeId, TreeKind, UiTree};
-use artic_layout::geometry::{Rect, Transform};
+use artic_layout::geometry::{Rect, RelativePoint, Transform};
 use artic_render::Renderer as _;
 use artic_render::{
-  Clip, Color, Compositor, Layers, Nodes, PhysicalSize, PixelBuffer, PixelFormat, RenderError, SceneBuilder, SurfaceId,
-  SurfaceView, Target, TargetKind,
+  Brush, Clip, Color, Compositor, GradientStop, Layers, LinearGradientBrush, Nodes, PhysicalSize, PixelBuffer, PixelFormat,
+  RadialGradientBrush, RenderError, SceneBuilder, SurfaceId, SurfaceView, Target, TargetKind,
 };
 use artic_vello::Renderer;
 use pretty_assertions::assert_eq;
@@ -29,10 +29,10 @@ impl Object for Node {
   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
 }
 
-/// Each node fills a rectangle with a color, inside optional layers.
+/// Each node fills a rectangle with a brush, inside optional layers.
 #[derive(Default)]
 struct Fills {
-  fills: HashMap<NodeId, (Rect, Color)>,
+  fills: HashMap<NodeId, (Rect, Brush)>,
   layers: HashMap<NodeId, Layers>,
 }
 
@@ -42,8 +42,8 @@ impl Nodes for Fills {
   }
 
   fn record(&mut self, _arena: &UiTree, node: NodeId, builder: &mut SceneBuilder) {
-    if let Some((rect, color)) = self.fills.get(&node) {
-      builder.fill_rect(*rect, *color);
+    if let Some((rect, brush)) = self.fills.get(&node) {
+      builder.fill_rect(*rect, brush.clone());
     }
   }
 }
@@ -103,6 +103,29 @@ fn full() -> Rect {
   Rect::new(0.0, 0.0, SIZE as f32, SIZE as f32)
 }
 
+fn render_brush(renderer: &mut Renderer, rect: Rect, brush: Brush) -> Vec<[u8; 4]> {
+  let mut tree = UiTree::new();
+  let root = tree.alloc(Box::new(Node));
+  let mut nodes = Fills::default();
+  nodes.fills.insert(root, (rect, brush));
+  render(renderer, &mut tree, root, &mut nodes, PixelFormat::Rgba8)
+}
+
+fn assert_near(actual: [u8; 4], expected: [u8; 4], what: &str) {
+  let near = actual.iter().zip(expected).all(|(a, e)| a.abs_diff(e) <= 2);
+  assert!(near, "{what}: got {actual:?}, expected {expected:?}");
+}
+
+// Red up to 40%, blue from 60%: pixels near either end are exactly one color.
+fn red_to_blue() -> [GradientStop; 4] {
+  [
+    GradientStop::new(0.0, RED),
+    GradientStop::new(0.4, RED),
+    GradientStop::new(0.6, BLUE),
+    GradientStop::new(1.0, BLUE),
+  ]
+}
+
 // A filled scene reads back exactly, in RGBA and in BGRA order.
 #[test]
 fn renders_scene_into_pixels() {
@@ -110,7 +133,7 @@ fn renders_scene_into_pixels() {
     let mut tree = UiTree::new();
     let root = tree.alloc(Box::new(Node));
     let mut nodes = Fills::default();
-    nodes.fills.insert(root, (full(), RED));
+    nodes.fills.insert(root, (full(), RED.into()));
 
     let rgba = render(renderer, &mut tree, root, &mut nodes, PixelFormat::Rgba8);
     tree.mark_dirty(root, artic_core::property::Affects::RENDER);
@@ -130,8 +153,8 @@ fn transform_and_clip_place_the_child() {
     tree.add_child(TreeKind::Visual, root, panel);
     tree.add_child(TreeKind::Visual, panel, child);
     let mut nodes = Fills::default();
-    nodes.fills.insert(root, (full(), BLUE));
-    nodes.fills.insert(child, (Rect::new(0.0, 0.0, 4.0, 4.0), GREEN));
+    nodes.fills.insert(root, (full(), BLUE.into()));
+    nodes.fills.insert(child, (Rect::new(0.0, 0.0, 4.0, 4.0), GREEN.into()));
     nodes.layers.insert(
       panel,
       Layers {
@@ -163,8 +186,8 @@ fn opacity_blends_the_layer() {
     let [root, overlay] = [(); 2].map(|()| tree.alloc(Box::new(Node)));
     tree.add_child(TreeKind::Visual, root, overlay);
     let mut nodes = Fills::default();
-    nodes.fills.insert(root, (full(), Color::rgb(0, 0, 0)));
-    nodes.fills.insert(overlay, (full(), Color::rgb(255, 255, 255)));
+    nodes.fills.insert(root, (full(), Color::rgb(0, 0, 0).into()));
+    nodes.fills.insert(overlay, (full(), Color::rgb(255, 255, 255).into()));
     nodes.layers.insert(
       overlay,
       Layers {
@@ -178,6 +201,47 @@ fn opacity_blends_the_layer() {
     let [r, g, b, a] = pixel(&pixels, 3, 3);
     assert!(r.abs_diff(128) <= 2 && r == g && g == b, "half-white grey, got {r} {g} {b}");
     assert_eq!(a, 255);
+  });
+}
+
+// A left-to-right gradient is its first stop at the left edge and its last at the right.
+#[test]
+fn linear_gradient_fills_rect() {
+  with_renderer(|renderer| {
+    let brush = LinearGradientBrush::new(
+      RelativePoint::relative(0.0, 0.0),
+      RelativePoint::relative(1.0, 0.0),
+      red_to_blue(),
+    );
+
+    let pixels = render_brush(renderer, full(), brush.into());
+
+    for y in 0..SIZE {
+      assert_near(pixel(&pixels, 0, y), [255, 0, 0, 255], "left edge");
+      assert_near(pixel(&pixels, SIZE - 1, y), [0, 0, 255, 255], "right edge");
+    }
+    let [r, _, b, _] = pixel(&pixels, 4, 0);
+    assert!(r > 2 && b > 2, "the middle blends, got red {r} and blue {b}");
+  });
+}
+
+// In a box twice as wide as it is tall, radii of 50% make an ellipse: its center is the first
+// stop, and the ends of both radii are the last. A circle of either radius would miss one end.
+// Vello samples gradients at a pixel's corner, not its center; these pixels hold either way.
+#[test]
+fn radial_gradient_fills_an_ellipse() {
+  with_renderer(|renderer| {
+    let wide = Rect::new(0.0, 0.0, 8.0, 4.0);
+    let brush = RadialGradientBrush {
+      stops: red_to_blue().into(),
+      ..RadialGradientBrush::default()
+    };
+
+    let pixels = render_brush(renderer, wide, brush.into());
+
+    assert_near(pixel(&pixels, 4, 2), [255, 0, 0, 255], "center");
+    assert_near(pixel(&pixels, 7, 2), [0, 0, 255, 255], "end of the horizontal radius");
+    assert_near(pixel(&pixels, 4, 0), [0, 0, 255, 255], "end of the vertical radius");
   });
 }
 
