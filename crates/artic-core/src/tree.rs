@@ -30,7 +30,7 @@
 //! also keeps the rules that span parts: a new node gets a place in every part and
 //! its properties share its dirty flags; a freed node leaves every part; a logical edit reconnects
 //! inheritance; a visual edit marks the parent for layout; a new attached value shares its node's
-//! dirty flags. Every link edit goes through two private methods, `attach` and `unlink`, so those
+//! dirty flags and, when its key inherits, joins inheritance. Every link edit goes through two private methods, `attach` and `unlink`, so those
 //! rules hold for each public one.
 //!
 //! The tests in `tests` check `UiTree`'s behavior, one file per concern.
@@ -43,7 +43,7 @@ mod objects;
 
 use crate::Object;
 use crate::arena::SlotId;
-use crate::property::{Affects, AnyProperty, AttachedKey, KeyId, Property};
+use crate::property::{Affects, AnyProperty, AttachedKey, Inheritance, KeyId, Property};
 use attached::AttachedValues;
 use dirty::DirtyFlags;
 pub use dirty::DirtyHandle;
@@ -217,6 +217,10 @@ impl UiTree {
     object.visit_properties(&mut |property| property.inherit_from(None));
     self.logical.remove(node_id);
     self.visual.remove(node_id);
+    self
+      .attached_values
+      .of(node_id)
+      .for_each(|property| property.inherit_from(None));
     self.attached_values.remove(node_id);
     Some(object)
   }
@@ -439,7 +443,7 @@ impl UiTree {
   pub fn detach(&mut self, tree: TreeKind, node: NodeId) -> Option<NodeId> {
     let parent = self.unlink(tree, node)?;
     if tree == TreeKind::Logical {
-      inheritance::resolve(&self.objects, &self.logical, node);
+      inheritance::resolve(&self.objects, &self.attached_values, &self.logical, node);
     }
     Some(parent)
   }
@@ -566,8 +570,9 @@ impl UiTree {
     self.dirty_flags.take_pending()
   }
 
-  /// Returns `node`'s value of the attached property `key`, or the key's default when nothing has
-  /// set it. Reading never stores anything on the node.
+  /// Returns `node`'s value of the attached property `key`: the value it holds, or for an
+  /// inheriting key the value of its nearest logical ancestor that holds one, or the key's
+  /// default. Reading never stores anything on the node.
   ///
   /// # Panics
   ///
@@ -578,14 +583,29 @@ impl UiTree {
   where
     T: PartialEq + Clone + 'static,
   {
-    self
-      .stored(node, key)
-      .map_or_else(|| key.default_value(), |property| property.get())
+    if let Some(property) = self.stored(node, key) {
+      return property.get();
+    }
+    let inherited = match key.key().inheritance() {
+      Inheritance::None => None,
+      inheritance => self
+        .logical
+        .ancestors(node)
+        .find_map(|ancestor| self.stored(ancestor, key))
+        .map(|source| (inheritance, source.get())),
+    };
+    match inherited {
+      Some((Inheritance::Combine(combine), value)) => combine(&key.default_value(), &value),
+      Some((_, value)) => value,
+      None => key.default_value(),
+    }
   }
 
   /// Returns `node`'s property for the attached property `key`, creating it at the key's default the
   /// first time. A new property is connected to the node's dirty flags like any of its fields, and
-  /// its levels let a style value and a local value compete as usual.
+  /// its levels let a style value and a local value compete as usual. An inheriting property
+  /// follows its nearest logical ancestor that holds the key, and the node's descendants that hold
+  /// it follow the new one.
   ///
   /// # Panics
   ///
@@ -595,10 +615,10 @@ impl UiTree {
   ///
   /// ```
   /// use artic_core::Object;
-  /// use artic_core::property::{Affects, AnyProperty, AttachedKey, Precedence};
+  /// use artic_core::property::{Affects, AnyProperty, AttachedKey, Inheritance, Precedence};
   /// use artic_core::tree::UiTree;
   ///
-  /// static ROW: AttachedKey<usize> = AttachedKey::new("Row", Affects::LAYOUT, || 0);
+  /// static ROW: AttachedKey<usize> = AttachedKey::new("Row", Affects::LAYOUT, Inheritance::None, || 0);
   ///
   /// #[derive(Debug)]
   /// struct Button;
@@ -626,6 +646,9 @@ impl UiTree {
     let property = Property::new(key.key(), key.default_value());
     property.attach(self.dirty_flags.shared(node));
     self.attached_values.insert(node, Box::new(property));
+    if key.key().inherits() {
+      inheritance::resolve(&self.objects, &self.attached_values, &self.logical, node);
+    }
     property
   }
 
@@ -664,7 +687,7 @@ impl UiTree {
     self.tree_mut(tree).link(parent, index, child);
     self.children_changed(tree, parent);
     if tree == TreeKind::Logical {
-      inheritance::resolve(&self.objects, &self.logical, child);
+      inheritance::resolve(&self.objects, &self.attached_values, &self.logical, child);
     }
   }
 

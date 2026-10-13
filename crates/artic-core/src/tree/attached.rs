@@ -25,6 +25,10 @@ impl AttachedValues {
     properties.iter().find(|property| property.key_id() == key).map(AsRef::as_ref)
   }
 
+  pub(super) fn of(&self, node: NodeId) -> impl Iterator<Item = &dyn AnyProperty> {
+    self.values.get(node.0).into_iter().flatten().map(AsRef::as_ref)
+  }
+
   pub(super) fn insert(&mut self, node: NodeId, property: Box<dyn AnyProperty>) {
     match self.values.get_mut(node.0) {
       Some(properties) => properties.push(property),

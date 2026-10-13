@@ -1,10 +1,10 @@
 use crate::Object;
-use crate::property::{Affects, AnyProperty, AttachedKey, Precedence};
-use crate::tree::{NodeId, UiTree};
+use crate::property::{Affects, AnyProperty, AttachedKey, Inheritance, Precedence};
+use crate::tree::{NodeId, TreeKind, UiTree};
 use pretty_assertions::assert_eq;
 
-static ROW: AttachedKey<usize> = AttachedKey::new("Row", Affects::LAYOUT, || 0);
-static LABEL: AttachedKey<String> = AttachedKey::new("Label", Affects::RENDER, || "none".to_owned());
+static ROW: AttachedKey<usize> = AttachedKey::new("Row", Affects::LAYOUT, Inheritance::None, || 0);
+static LABEL: AttachedKey<String> = AttachedKey::new("Label", Affects::RENDER, Inheritance::None, || "none".to_owned());
 
 #[derive(Debug)]
 struct Button;
@@ -89,4 +89,86 @@ fn values_go_with_their_node() {
   let next = tree.alloc(Box::new(Button));
 
   assert_eq!(tree.attached(next, &ROW), 0);
+}
+
+static CHROME: AttachedKey<u8> = AttachedKey::new("Chrome", Affects::SURFACE, Inheritance::Replace, || 0);
+
+/// Three buttons, each the logical child of the one before.
+fn chain(tree: &mut UiTree) -> [NodeId; 3] {
+  let nodes = [(); 3].map(|()| tree.alloc(Box::new(Button)));
+  tree.add_child(TreeKind::Logical, nodes[0], nodes[1]);
+  tree.add_child(TreeKind::Logical, nodes[1], nodes[2]);
+  nodes
+}
+
+// A node that holds an inheriting attached property follows the nearest logical ancestor that
+// holds it, and its own local value replaces what it inherits.
+#[test]
+fn attached_property_inherits() {
+  let mut tree = UiTree::new();
+  let [root, _, leaf] = chain(&mut tree);
+  tree.attached_property(root, &CHROME).set(2);
+
+  let held = tree.attached_property(leaf, &CHROME);
+  assert_eq!(held.get(), 2);
+  tree.attached_property(root, &CHROME).set(3);
+  assert_eq!(held.get(), 3);
+  held.set(1);
+  assert_eq!(tree.attached(leaf, &CHROME), 1);
+}
+
+// Reading an inheriting attached property a node doesn't hold finds the nearest ancestor's value
+// without storing anything; a key that doesn't inherit reads its default.
+#[test]
+fn attached_read_finds_the_nearest_ancestor_value() {
+  let mut tree = UiTree::new();
+  let [root, _, leaf] = chain(&mut tree);
+  tree.attached_property(root, &CHROME).set(2);
+  tree.attached_property(root, &ROW).set(5);
+
+  assert_eq!(tree.attached(leaf, &CHROME), 2);
+  assert_eq!(tree.attached(leaf, &ROW), 0);
+  assert_eq!(tree.attached_values.count(leaf), 0);
+}
+
+// A node already holding the property follows an ancestor that starts holding it later.
+#[test]
+fn held_property_follows_an_ancestor_set_later() {
+  let mut tree = UiTree::new();
+  let [root, _, leaf] = chain(&mut tree);
+  let held = tree.attached_property(leaf, &CHROME);
+
+  tree.attached_property(root, &CHROME).set(4);
+
+  assert_eq!(held.get(), 4);
+}
+
+// An inherited change marks the holder with the key's stages, as a field's would.
+#[test]
+fn inherited_attached_change_marks_the_holder() {
+  let mut tree = UiTree::new();
+  let [root, _, leaf] = chain(&mut tree);
+  let source = tree.attached_property(root, &CHROME);
+  let _held = tree.attached_property(leaf, &CHROME);
+  tree.clear_dirty(leaf, Affects::LAYOUT | Affects::RENDER | Affects::SURFACE);
+
+  source.set(5);
+
+  assert_eq!(tree.dirty(leaf), Affects::SURFACE);
+}
+
+// A holder moved under another ancestor follows the new one.
+#[test]
+fn moved_holder_follows_its_new_ancestor() {
+  let mut tree = UiTree::new();
+  let [first, _, leaf] = chain(&mut tree);
+  let second = tree.alloc(Box::new(Button));
+  tree.attached_property(first, &CHROME).set(1);
+  tree.attached_property(second, &CHROME).set(2);
+  let held = tree.attached_property(leaf, &CHROME);
+
+  tree.detach(TreeKind::Logical, leaf);
+  tree.add_child(TreeKind::Logical, second, leaf);
+
+  assert_eq!(held.get(), 2);
 }

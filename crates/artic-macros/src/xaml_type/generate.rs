@@ -230,7 +230,7 @@ fn attached_key(attached: &Attached) -> TokenStream {
   };
   let affects = affects_tokens(*affects);
   quote! {
-    static #key: __artic::AttachedKey<#ty> = __artic::AttachedKey::new(#name, #affects, || #default);
+    static #key: __artic::AttachedKey<#ty> = __artic::AttachedKey::new(#name, #affects, __artic::Inheritance::None, || #default);
   }
 }
 

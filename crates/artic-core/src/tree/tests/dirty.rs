@@ -121,7 +121,7 @@ fn freed_node_property_write_sets_no_pending() {
 }
 
 static NAME: PropertyKey<i32> = PropertyKey::new("Name", Affects::NONE, Inheritance::None);
-static ROW: AttachedKey<i32> = AttachedKey::new("Row", Affects::LAYOUT, || 0);
+static ROW: AttachedKey<i32> = AttachedKey::new("Row", Affects::LAYOUT, Inheritance::None, || 0);
 
 #[derive(Debug)]
 struct Named {

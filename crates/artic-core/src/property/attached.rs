@@ -9,8 +9,9 @@ use std::fmt::{Debug, Formatter, Result};
 /// [`UiTree::attached`] reads the default without creating anything. Declare one `static` per
 /// attached property, for the same reason as a [`PropertyKey`].
 ///
-/// Attached properties don't inherit: an inherited value could only reach a node that already holds
-/// the property.
+/// An inheriting attached property follows the nearest logical ancestor that holds it. A node that
+/// doesn't hold it reads that ancestor's value through [`UiTree::attached`]; one that needs to
+/// learn of changes, as a dirty flag, holds it through [`UiTree::attached_property`].
 ///
 /// [`UiTree::attached`]: crate::tree::UiTree::attached
 /// [`UiTree::attached_property`]: crate::tree::UiTree::attached_property
@@ -18,9 +19,9 @@ use std::fmt::{Debug, Formatter, Result};
 /// # Examples
 ///
 /// ```
-/// use artic_core::property::{Affects, AttachedKey};
+/// use artic_core::property::{Affects, AttachedKey, Inheritance};
 ///
-/// static ROW: AttachedKey<usize> = AttachedKey::new("Row", Affects::LAYOUT, || 0);
+/// static ROW: AttachedKey<usize> = AttachedKey::new("Row", Affects::LAYOUT, Inheritance::None, || 0);
 ///
 /// assert_eq!(ROW.key().name(), "Row");
 /// assert_eq!(ROW.default_value(), 0);
@@ -31,12 +32,13 @@ pub struct AttachedKey<T> {
 }
 
 impl<T> AttachedKey<T> {
-  /// Creates the key for an attached property named `name`, whose changes redo `affects`, and whose
-  /// value is `default()` on a node that doesn't set it.
+  /// Creates the key for an attached property named `name`, whose changes redo `affects`, which
+  /// takes part in inheritance as `inheritance` says, and whose value is `default()` on a node that
+  /// neither holds it nor inherits it.
   #[must_use]
-  pub const fn new(name: &'static str, affects: Affects, default: fn() -> T) -> Self {
+  pub const fn new(name: &'static str, affects: Affects, inheritance: Inheritance<T>, default: fn() -> T) -> Self {
     Self {
-      key: PropertyKey::new(name, affects, Inheritance::None),
+      key: PropertyKey::new(name, affects, inheritance),
       default,
     }
   }
