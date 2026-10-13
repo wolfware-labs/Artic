@@ -5,8 +5,9 @@
 //
 // Run with `ARTIC_SMOKE_FRAMES=120 cargo run -p artic-winit --example smoke`.
 
-use artic_core::window::WindowDesc;
-use artic_platform::{AppHandler, Host as _, HostContext, HostEvent, SurfaceInfo, SurfaceLoss, Waker};
+use artic_platform::{
+  AppHandler, Axes, Chrome, Host as _, HostContext, HostEvent, LogicalSize, SurfaceInfo, SurfaceLoss, Waker, WindowDesc,
+};
 use artic_render::{SurfaceId, Target};
 use std::time::Duration;
 
@@ -34,8 +35,12 @@ impl AppHandler for Smoke {
     let windows = cx.windows().expect("a desktop host has windows");
     windows.open(&WindowDesc {
       title: "artic smoke".into(),
-      width: 320.0,
-      height: 240.0,
+      size: LogicalSize {
+        width: Some(320.0),
+        height: Some(240.0),
+      },
+      chrome: Chrome::System,
+      resizable: Axes::BOTH,
     });
   }
 

@@ -3,8 +3,7 @@
 use crate::error::Error;
 use crate::surfaces::Surfaces;
 use crate::translate::{Translated, facts, translate};
-use artic_core::window::WindowDesc;
-use artic_platform::{AppHandler, HostContext, HostEvent, SurfaceInfo, SurfaceLoss, Waker, Windows};
+use artic_platform::{AppHandler, Axes, Chrome, HostContext, HostEvent, SurfaceInfo, SurfaceLoss, Waker, WindowDesc, Windows};
 use artic_render::{PhysicalSize, SurfaceId, Target, TargetKind};
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Formatter};
@@ -15,7 +14,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
-use winit::window::{Window, WindowId};
+use winit::window::{Window, WindowAttributes, WindowId};
 
 /// The desktop host: windows, frames and the event loop on Windows, macOS and Linux (X11 and
 /// Wayland), through `winit`.
@@ -298,14 +297,62 @@ impl HostContext for Context<'_> {
   }
 }
 
+/// The width a window opens at when its description sets only its height.
+const FALLBACK_WIDTH: f64 = 800.0;
+/// The height a window opens at when its description sets only its width.
+const FALLBACK_HEIGHT: f64 = 600.0;
+/// The limit on an axis the user can resize while the other is locked.
+const UNLIMITED: f64 = 100_000.0;
+
+/// The size a window with `desc` gets, with `current` filling the axes `desc` leaves to the host,
+/// or `None` when it sets neither.
+fn logical_size(desc: &WindowDesc, current: LogicalSize<f64>) -> Option<LogicalSize<f64>> {
+  let (width, height) = (desc.size.width, desc.size.height);
+  (width.is_some() || height.is_some()).then(|| {
+    LogicalSize::new(
+      width.map_or(current.width, f64::from),
+      height.map_or(current.height, f64::from),
+    )
+  })
+}
+
+/// The smallest and largest size the user can resize a window to: both locked on an axis its
+/// content sizes, none when every axis or no axis is resizable.
+fn limits(resizable: Axes, size: LogicalSize<f64>) -> (Option<LogicalSize<f64>>, Option<LogicalSize<f64>>) {
+  match (resizable.width, resizable.height) {
+    (true, false) => (
+      Some(LogicalSize::new(0.0, size.height)),
+      Some(LogicalSize::new(UNLIMITED, size.height)),
+    ),
+    (false, true) => (
+      Some(LogicalSize::new(size.width, 0.0)),
+      Some(LogicalSize::new(size.width, UNLIMITED)),
+    ),
+    _ => (None, None),
+  }
+}
+
+/// The attributes a window opens with for `desc`.
+fn attributes(desc: &WindowDesc) -> WindowAttributes {
+  let mut attributes = Window::default_attributes()
+    .with_title(desc.title.clone())
+    .with_decorations(desc.chrome == Chrome::System)
+    .with_resizable(desc.resizable != Axes::NONE);
+  if let Some(size) = logical_size(desc, LogicalSize::new(FALLBACK_WIDTH, FALLBACK_HEIGHT)) {
+    attributes = attributes.with_inner_size(size);
+    if let (Some(min), Some(max)) = limits(desc.resizable, size) {
+      attributes = attributes.with_min_inner_size(min).with_max_inner_size(max);
+    }
+  }
+  attributes
+}
+
 impl Windows for Context<'_> {
   fn open(&mut self, desc: &WindowDesc) -> SurfaceId {
     if *self.exiting {
       return self.surfaces.reserve();
     }
-    let attributes = Window::default_attributes()
-      .with_title(desc.title.clone())
-      .with_inner_size(LogicalSize::new(f64::from(desc.width), f64::from(desc.height)));
+    let attributes = attributes(desc);
     match self.event_loop.create_window(attributes) {
       Ok(window) => {
         let surface = self.surfaces.insert(window.id(), Rc::new(window));
@@ -320,7 +367,81 @@ impl Windows for Context<'_> {
     }
   }
 
+  fn update(&mut self, surface: SurfaceId, desc: &WindowDesc) {
+    let Some(window) = self.surfaces.window(surface) else {
+      return;
+    };
+    window.set_title(&desc.title);
+    window.set_decorations(desc.chrome == Chrome::System);
+    window.set_resizable(desc.resizable != Axes::NONE);
+    let current = window.inner_size().to_logical::<f64>(window.scale_factor());
+    let size = logical_size(desc, current).unwrap_or(current);
+    let _ = window.request_inner_size(size);
+    let (min, max) = limits(desc.resizable, size);
+    window.set_min_inner_size(min);
+    window.set_max_inner_size(max);
+  }
+
   fn close(&mut self, surface: SurfaceId) {
     self.surfaces.close(surface);
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use pretty_assertions::assert_eq;
+  use winit::dpi::Size;
+
+  // A description becomes winit attributes: the title, the decorations its chrome asks for, the
+  // set width with the fallback height, and the height locked where content sizes it.
+  #[test]
+  fn attributes_follow_the_description() {
+    let desc = WindowDesc {
+      title: "notes".into(),
+      size: artic_platform::LogicalSize {
+        width: Some(300.0),
+        height: None,
+      },
+      chrome: Chrome::None,
+      resizable: Axes {
+        width: true,
+        height: false,
+      },
+    };
+
+    let attributes = attributes(&desc);
+
+    assert_eq!(attributes.title, "notes");
+    assert!(!attributes.decorations);
+    assert!(attributes.resizable);
+    assert_eq!(
+      attributes.inner_size,
+      Some(Size::Logical(LogicalSize::new(300.0, FALLBACK_HEIGHT)))
+    );
+    assert_eq!(
+      attributes.min_inner_size,
+      Some(Size::Logical(LogicalSize::new(0.0, FALLBACK_HEIGHT)))
+    );
+    assert_eq!(
+      attributes.max_inner_size,
+      Some(Size::Logical(LogicalSize::new(UNLIMITED, FALLBACK_HEIGHT)))
+    );
+  }
+
+  // A description that sets no size leaves the size to the platform.
+  #[test]
+  fn unset_size_is_left_to_the_platform() {
+    let desc = WindowDesc {
+      title: String::new(),
+      size: artic_platform::LogicalSize::default(),
+      chrome: Chrome::System,
+      resizable: Axes::BOTH,
+    };
+
+    let attributes = attributes(&desc);
+
+    assert_eq!(attributes.inner_size, None);
+    assert!(attributes.decorations);
   }
 }

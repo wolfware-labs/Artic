@@ -2,11 +2,13 @@
 //!
 //! - [`Host`] owns the event loop and runs an [`AppHandler`], artic's side of it.
 //! - [`HostContext`] is handed to every [`AppHandler`] call: frames, exiting, and the capabilities,
-//!   such as [`Windows`], each `None` on hosts without it.
+//!   such as [`Windows`], each `None` on hosts without it. [`WindowDesc`] is what a [`Windows`]
+//!   host opens.
 //! - [`SurfaceInfo`], [`DisplayId`] and [`HostEvent`] are what a host reports, and [`Waker`] wakes
 //!   its loop from other threads.
-//! - [`Pipeline`] draws one surface's frames, and [`Runner`] drives them from a host through [`run`],
-//!   with [`Hooks`] for the stages above the platform.
+//! - [`Pipeline`] draws one surface's frames, and [`Runner`] presents an `Application`'s surfaces
+//!   and drives their frames from a host through [`run`], with [`Hooks`] for the stages above the
+//!   platform.
 //!
 //! This crate has no backend dependencies; adapter crates such as `artic-winit` implement it. The
 //! design is `docs/design/host.md`.
@@ -21,6 +23,7 @@ mod surface;
 mod waker;
 mod window;
 
+pub use artic_element::Chrome;
 pub use error::Error;
 pub use event::HostEvent;
 pub use hooks::Hooks;
@@ -29,4 +32,4 @@ pub use pipeline::{Frame, FrameStats, Pipeline};
 pub use runner::{Runner, run};
 pub use surface::{DisplayId, SurfaceInfo, SurfaceLoss};
 pub use waker::Waker;
-pub use window::Axes;
+pub use window::{Axes, LogicalSize, WindowDesc};

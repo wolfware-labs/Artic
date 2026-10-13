@@ -1,7 +1,6 @@
 //! The traits a host adapter implements and calls.
 
-use crate::{HostEvent, SurfaceInfo, SurfaceLoss, Waker};
-use artic_core::window::WindowDesc;
+use crate::{HostEvent, SurfaceInfo, SurfaceLoss, Waker, WindowDesc};
 use artic_render::{SurfaceId, Target, TargetKind};
 use std::time::Duration;
 
@@ -70,13 +69,17 @@ pub trait HostContext {
   }
 }
 
-/// Opening and closing windows.
+/// Opening, updating and closing windows.
 pub trait Windows {
   /// Opens a window and returns its surface's id at once. The surface arrives through
   /// [`AppHandler::surface_changed`], or [`AppHandler::surface_lost`] if the window couldn't be
   /// created; opening never fails here. While the loop is exiting, no window opens and the id is
   /// never reported.
   fn open(&mut self, desc: &WindowDesc) -> SurfaceId;
+
+  /// Applies `desc` to the open window: its title, size, chrome and the axes the user can resize.
+  /// An axis of `desc.size` that is `None` keeps its current size.
+  fn update(&mut self, surface: SurfaceId, desc: &WindowDesc);
 
   /// Closes the window, which then reports its surface lost.
   fn close(&mut self, surface: SurfaceId);

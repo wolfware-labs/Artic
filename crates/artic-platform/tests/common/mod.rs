@@ -4,11 +4,10 @@
 use artic_core::Object;
 use artic_core::property::{Affects, AnyProperty, Inheritance, Property, PropertyKey};
 use artic_core::tree::{NodeId, TreeKind, UiTree};
-use artic_core::window::WindowDesc;
-use artic_element::{AccessCx, Element, RenderCx};
+use artic_element::{AccessCx, Application, Element, RenderCx, Surface};
 use artic_layout::geometry::{Rect, Size, Transform};
 use artic_layout::{ArrangeCx, Layoutable, MeasureCx};
-use artic_platform::{DisplayId, HostContext, SurfaceInfo, Windows};
+use artic_platform::{DisplayId, HostContext, SurfaceInfo, WindowDesc, Windows};
 use artic_render::{
   Color, Layers, PhysicalSize, PixelBuffer, PixelFormat, RenderError, Renderer, Scene, SceneBuilder, SurfaceId, SurfaceView,
   Target, TargetKind,
@@ -183,7 +182,8 @@ impl Renderer for Counter {
 pub struct Context {
   pub frames: Vec<SurfaceId>,
   pub exited: bool,
-  pub opened: Vec<String>,
+  pub opened: Vec<WindowDesc>,
+  pub updated: Vec<(SurfaceId, WindowDesc)>,
   pub closed: Vec<SurfaceId>,
   pub windowless: bool,
 }
@@ -211,8 +211,12 @@ impl HostContext for Context {
 
 impl Windows for Context {
   fn open(&mut self, desc: &WindowDesc) -> SurfaceId {
-    self.opened.push(desc.title.clone());
+    self.opened.push(desc.clone());
     SurfaceId::new(self.opened.len() as u64)
+  }
+
+  fn update(&mut self, surface: SurfaceId, desc: &WindowDesc) {
+    self.updated.push((surface, desc.clone()));
   }
 
   fn close(&mut self, surface: SurfaceId) {
@@ -220,13 +224,29 @@ impl Windows for Context {
   }
 }
 
-/// A window description titled `title`.
-pub fn desc(title: &str) -> WindowDesc {
-  WindowDesc {
-    title: title.into(),
-    width: 64.0,
-    height: 64.0,
-  }
+/// Allocates an Application holding one Surface per `(title, content)`, each showing its content,
+/// and returns the application and the surfaces in order.
+pub fn application(tree: &mut UiTree, surfaces: &[(&str, NodeId)]) -> (NodeId, Vec<NodeId>) {
+  let application = tree.alloc(Box::new(Application::default()));
+  let nodes = surfaces
+    .iter()
+    .map(|(title, content)| {
+      let surface = Surface::default();
+      surface.title.set((*title).to_owned());
+      let node = tree.alloc(Box::new(surface));
+      for kind in [TreeKind::Logical, TreeKind::Visual] {
+        tree.add_child(kind, application, node);
+        tree.add_child(kind, node, *content);
+      }
+      node
+    })
+    .collect();
+  (application, nodes)
+}
+
+/// The Surface element of `node`.
+pub fn surface(tree: &UiTree, node: NodeId) -> &Surface {
+  tree.get_as::<Surface>(node).expect("a Surface")
 }
 
 /// A surface `width` by `height` device pixels at `scale`.

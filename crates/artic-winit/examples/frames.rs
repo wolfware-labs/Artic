@@ -1,17 +1,16 @@
-// Draws one window through the frame pipeline, changes a color once after the first frame, and
-// checks that the loop then goes idle: 1.5 s after the first frame it exits with code 1 if any frame
-// ran in the last 500 ms, and with code 0 otherwise. The check and the exit run on the loop's
-// thread, woken by a timer through the host's `Waker`. On WARP, Windows' software adapter (all
-// GitHub's Windows runners have), vello crashes, so there it draws with a renderer that draws
-// nothing: the check is about when frames run, not what they show.
+// Draws one surface of an `Application` through the frame pipeline, changes a color once after the
+// first frame, and checks that the loop then goes idle: 1.5 s after the first frame it exits with
+// code 1 if any frame ran in the last 500 ms, and with code 0 otherwise. The check and the exit run
+// on the loop's thread, woken by a timer through the host's `Waker`. On WARP, Windows' software
+// adapter (all GitHub's Windows runners have), vello crashes, so there it draws with a renderer
+// that draws nothing: the check is about when frames run, not what they show.
 //
 // Run with `cargo run -p artic-winit --example frames`.
 
 use artic_core::Object;
 use artic_core::property::{Affects, AnyProperty, Inheritance, Property, PropertyKey};
-use artic_core::tree::UiTree;
-use artic_core::window::WindowDesc;
-use artic_element::{AccessCx, Element, RenderCx};
+use artic_core::tree::{TreeKind, UiTree};
+use artic_element::{AccessCx, Application, Desktop, Element, RenderCx, Surface};
 use artic_layout::geometry::{Rect, Size};
 use artic_layout::{ArrangeCx, Layoutable, MeasureCx};
 use artic_platform::{AppHandler, Host as _, HostContext, HostEvent, Runner, SurfaceInfo, SurfaceLoss, Waker};
@@ -139,15 +138,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn check(renderer: impl Renderer + 'static) -> Result<(), Box<dyn std::error::Error>> {
   let mut tree = UiTree::new();
   let red = Property::new(&RED, 128);
-  let root = tree.alloc(Box::new(Swatch { red }));
-  let mut runner = Runner::new(tree, renderer).window(
-    WindowDesc {
-      title: "artic frames".into(),
-      width: 320.0,
-      height: 240.0,
-    },
-    root,
-  );
+  let swatch = tree.alloc(Box::new(Swatch { red }));
+  let application = tree.alloc(Box::new(Application::default()));
+  let surface = Surface::default();
+  surface.title.set("artic frames".to_owned());
+  let surface = tree.alloc(Box::new(surface));
+  for kind in [TreeKind::Logical, TreeKind::Visual] {
+    tree.add_child(kind, application, surface);
+    tree.add_child(kind, surface, swatch);
+  }
+  Desktop::set_width(&mut tree, surface, Some(320.0));
+  Desktop::set_height(&mut tree, surface, Some(240.0));
+  let mut runner = Runner::new(tree, renderer, application);
   let changed = Rc::new(Cell::new(false));
   runner.hooks().after_present(move |_, _, stats| {
     println!("frame: {stats:?}");

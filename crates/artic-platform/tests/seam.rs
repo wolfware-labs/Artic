@@ -1,8 +1,10 @@
 // The host seam, driven from both sides: a fake host that a third-party adapter could have written
 // against the traits alone, and a handler like artic's.
 
-use artic_core::window::WindowDesc;
-use artic_platform::{AppHandler, DisplayId, Host, HostContext, HostEvent, SurfaceInfo, SurfaceLoss, Waker, Windows};
+use artic_platform::{
+  AppHandler, Axes, Chrome, DisplayId, Host, HostContext, HostEvent, LogicalSize, SurfaceInfo, SurfaceLoss, Waker, WindowDesc,
+  Windows,
+};
 use artic_render::{PhysicalSize, PixelBuffer, PixelFormat, SurfaceId, Target, TargetKind};
 use pretty_assertions::assert_eq;
 use std::cell::RefCell;
@@ -41,6 +43,8 @@ impl Windows for FakeContext<'_> {
     self.requests.opened.push(desc.title.clone());
     SurfaceId::new(7)
   }
+
+  fn update(&mut self, _surface: SurfaceId, _desc: &WindowDesc) {}
 
   fn close(&mut self, _surface: SurfaceId) {}
 }
@@ -91,8 +95,12 @@ impl AppHandler for Recorder {
     self.calls.borrow_mut().push("started".into());
     let opened = cx.windows().expect("the fake host has windows").open(&WindowDesc {
       title: "main".into(),
-      width: 2.0,
-      height: 1.0,
+      size: LogicalSize {
+        width: Some(2.0),
+        height: Some(1.0),
+      },
+      chrome: Chrome::System,
+      resizable: Axes::BOTH,
     });
     self.calls.borrow_mut().push(format!("opened {}", opened.get()));
   }

@@ -1,76 +1,130 @@
-//! The frame pipeline's `AppHandler`: when each surface draws, and what a frame runs.
+//! The frame pipeline's `AppHandler`: which host surface shows which `Surface`, when each one
+//! draws, and what a frame runs.
 
-use crate::{AppHandler, Error, FrameStats, Hooks, Host, HostContext, HostEvent, Pipeline, SurfaceInfo, SurfaceLoss, Waker};
+use crate::{
+  AppHandler, Axes, Error, FrameStats, Hooks, Host, HostContext, HostEvent, LogicalSize, Pipeline, SurfaceInfo, SurfaceLoss,
+  Waker, WindowDesc,
+};
 use artic_core::dispatcher::Dispatcher;
+use artic_core::property::Affects;
 use artic_core::reactive::flush_effects;
 use artic_core::tree::{NodeId, TreeKind, UiTree};
-use artic_core::window::WindowDesc;
-use artic_element::ElementTypes;
+use artic_element::{Application, Chrome, Desktop, ElementTypes, Surface};
+use artic_layout::geometry::Size;
 use artic_render::{RenderError, Renderer, SurfaceId, Target};
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::fmt::{self, Debug, Formatter};
 use std::rc::Rc;
 use std::time::Duration;
 
-/// Drives a tree's frames from a host: it opens the windows, asks for a frame when something
-/// changed, and runs each frame's stages.
+/// Drives a tree's frames from a host: it presents the open [`Surface`]s of the tree's
+/// [`Application`], asks for a frame when something changed, and runs each frame's stages.
 ///
-/// Build it with the tree and a renderer, declare each window with its root, register hooks, and
-/// hand it to [`run`].
+/// Build it with the tree, a renderer and the `Application` node, register hooks, and hand it to
+/// [`run`]. After every call from the host it reconciles the surfaces with the host: a surface
+/// opened is presented, one closed or taken out of the tree is taken down, and one whose title,
+/// size or chrome changed is updated.
 pub struct Runner<R> {
   tree: UiTree,
   renderer: R,
   types: ElementTypes,
   hooks: Hooks,
-  declared: Vec<(WindowDesc, NodeId)>,
-  surfaces: Vec<Window>,
+  application: NodeId,
+  bound: Vec<Bound>,
+  spare: Vec<(SurfaceId, Option<SurfaceInfo>)>,
+  lost: HashSet<NodeId>,
   error: Rc<RefCell<Option<Error>>>,
 }
 
-/// A window the runner draws, and what it knows about it.
-struct Window {
+/// A `Surface` the host presents, and what the runner knows about it.
+struct Bound {
   id: SurfaceId,
-  root: NodeId,
+  node: NodeId,
+  applied: Option<WindowDesc>,
   info: Option<SurfaceInfo>,
   needs_frame: bool,
-  lost: bool,
-  closing: bool,
+  suspended: bool,
   pipeline: Pipeline,
   stats: Option<FrameStats>,
 }
 
+/// A surface's `Desktop` settings, as one reconcile reads them.
+struct Settings {
+  width: Option<f32>,
+  height: Option<f32>,
+  content: Axes,
+  chrome: Chrome,
+}
+
+impl Settings {
+  /// Reads `node`'s settings, holding each property on it, so that a change to it, its own or
+  /// inherited, marks the surface.
+  fn of(tree: &mut UiTree, node: NodeId) -> Settings {
+    Settings {
+      width: tree.attached_property(node, Desktop::WIDTH).get(),
+      height: tree.attached_property(node, Desktop::HEIGHT).get(),
+      content: Axes::from(tree.attached_property(node, Desktop::SIZE_TO_CONTENT).get()),
+      chrome: tree.attached_property(node, Desktop::CHROME).get(),
+    }
+  }
+
+  /// What the surface is measured in before its window opens, or `None` when its content sizes
+  /// no axis.
+  fn available(&self) -> Option<Size> {
+    let axis = |content: bool, set: Option<f32>| {
+      if content {
+        f32::INFINITY
+      } else {
+        set.unwrap_or(f32::INFINITY)
+      }
+    };
+    (self.content != Axes::NONE)
+      .then(|| Size::new(axis(self.content.width, self.width), axis(self.content.height, self.height)))
+  }
+
+  /// The window titled `title`, sized to `desired` on the axes its content sizes.
+  fn desc(&self, title: String, desired: Option<Size>) -> WindowDesc {
+    let axis = |content: bool, set: Option<f32>, desired: Option<f32>| if content { desired } else { set };
+    WindowDesc {
+      title,
+      size: LogicalSize {
+        width: axis(self.content.width, self.width, desired.map(|size| size.width)),
+        height: axis(self.content.height, self.height, desired.map(|size| size.height)),
+      },
+      chrome: self.chrome,
+      resizable: Axes {
+        width: !self.content.width,
+        height: !self.content.height,
+      },
+    }
+  }
+}
+
 impl<R: Renderer> Runner<R> {
-  /// A runner for `tree`, drawing with `renderer`.
+  /// A runner for `tree`, drawing with `renderer` the surfaces of `application`.
+  ///
+  /// # Panics
+  ///
+  /// Panics if `application` isn't an [`Application`] in `tree`.
   #[must_use]
-  pub fn new(tree: UiTree, renderer: R) -> Self {
+  #[track_caller]
+  pub fn new(tree: UiTree, renderer: R, application: NodeId) -> Self {
+    assert!(
+      tree.get_as::<Application>(application).is_some(),
+      "node {application:?} isn't an Application"
+    );
     Runner {
       tree,
       renderer,
       types: ElementTypes::from_link_time(),
       hooks: Hooks::default(),
-      declared: Vec::new(),
-      surfaces: Vec::new(),
+      application,
+      bound: Vec::new(),
+      spare: Vec::new(),
+      lost: HashSet::new(),
       error: Rc::new(RefCell::new(None)),
     }
-  }
-
-  /// Declares a window described by `desc` showing `root`'s visual subtree, opened when the host
-  /// starts.
-  ///
-  /// # Panics
-  ///
-  /// Panics if `root` overlaps another window's root: the same node, inside it, or containing it.
-  #[must_use]
-  #[track_caller]
-  pub fn window(mut self, desc: WindowDesc, root: NodeId) -> Self {
-    for (_, other) in &self.declared {
-      let overlaps = *other == root
-        || self.tree.ancestors(TreeKind::Visual, root).any(|node| node == *other)
-        || self.tree.ancestors(TreeKind::Visual, *other).any(|node| node == root);
-      assert!(!overlaps, "the root {root:?} overlaps the root {other:?} of another window");
-    }
-    self.declared.push((desc, root));
-    self
   }
 
   /// The hooks each frame runs.
@@ -81,7 +135,7 @@ impl<R: Renderer> Runner<R> {
   /// What `surface`'s last frame did, or `None` if it hasn't drawn.
   #[must_use]
   pub fn stats(&self, surface: SurfaceId) -> Option<FrameStats> {
-    self.surfaces.iter().find(|window| window.id == surface)?.stats
+    self.bound.iter().find(|bound| bound.id == surface)?.stats
   }
 
   fn drain() {
@@ -95,10 +149,10 @@ impl<R: Renderer> Runner<R> {
   }
 
   fn mark_all(&mut self, cx: &mut dyn HostContext, except: Option<SurfaceId>) {
-    for window in self.surfaces.iter_mut().filter(|window| !window.lost && !window.closing) {
-      window.needs_frame = true;
-      if Some(window.id) != except {
-        cx.request_frame(window.id);
+    for bound in self.bound.iter_mut().filter(|bound| !bound.suspended) {
+      bound.needs_frame = true;
+      if Some(bound.id) != except {
+        cx.request_frame(bound.id);
       }
     }
   }
@@ -108,45 +162,120 @@ impl<R: Renderer> Runner<R> {
     if self.tree.take_pending() {
       self.mark_all(cx, None);
     }
+    self.reconcile(cx);
   }
 
-  fn bind(&mut self, surface: SurfaceId, root: NodeId) -> usize {
-    self.surfaces.push(Window {
-      id: surface,
-      root,
-      info: None,
-      needs_frame: true,
-      lost: false,
-      closing: false,
-      pipeline: Pipeline::new(),
-      stats: None,
-    });
-    self.surfaces.len() - 1
-  }
-
-  fn exit_without_windows(&self, cx: &mut dyn HostContext) {
-    if self.surfaces.iter().all(|window| window.closing) {
+  #[track_caller]
+  fn reconcile(&mut self, cx: &mut dyn HostContext) {
+    let surfaces: Vec<NodeId> = self.tree.children(TreeKind::Logical, self.application).collect();
+    let mut shown = Vec::new();
+    for node in &surfaces {
+      let surface = self
+        .tree
+        .get_as::<Surface>(*node)
+        .unwrap_or_else(|| panic!("the Application's child {node:?} isn't a Surface; an Application holds only Surfaces"));
+      if surface.is_open.get() {
+        shown.push(*node);
+      }
+    }
+    self.lost.retain(|node| shown.contains(node));
+    let mut index = 0;
+    while index < self.bound.len() {
+      if shown.contains(&self.bound[index].node) {
+        index += 1;
+        continue;
+      }
+      let bound = self.bound.remove(index);
+      match (bound.applied.is_some(), cx.windows()) {
+        (true, Some(windows)) => windows.close(bound.id),
+        _ => self.spare.push((bound.id, bound.info)),
+      }
+    }
+    self.tree.clear_dirty(self.application, Affects::SURFACE);
+    for node in surfaces {
+      let settings = Settings::of(&mut self.tree, node);
+      let dirty = self.tree.dirty(node).contains(Affects::SURFACE);
+      self.tree.clear_dirty(node, Affects::SURFACE);
+      if !shown.contains(&node) || self.lost.contains(&node) {
+        continue;
+      }
+      match self.bound.iter().position(|bound| bound.node == node) {
+        Some(index) if dirty => self.update(cx, index, &settings),
+        Some(_) => {}
+        None => self.present(cx, node, &settings),
+      }
+    }
+    if shown.iter().all(|node| self.lost.contains(node)) {
       cx.exit();
     }
   }
 
-  #[track_caller]
-  fn check_roots(&self) {
-    for root in self.surfaces.iter().map(|window| window.root) {
-      for ancestor in self.tree.ancestors(TreeKind::Visual, root) {
-        assert!(
-          !self.surfaces.iter().any(|window| window.root == ancestor),
-          "the root {root:?} is inside another window's root {ancestor:?}"
-        );
+  fn present(&mut self, cx: &mut dyn HostContext, node: NodeId, settings: &Settings) {
+    if let Some(windows) = cx.windows() {
+      let mut pipeline = Pipeline::new();
+      let desired = settings
+        .available()
+        .map(|available| pipeline.measure(&mut self.tree, node, available, &self.types));
+      let desc = settings.desc(self.title(node), desired);
+      let id = windows.open(&desc);
+      self.bound.push(Bound {
+        id,
+        node,
+        applied: Some(desc),
+        info: None,
+        needs_frame: true,
+        suspended: false,
+        pipeline,
+        stats: None,
+      });
+    } else if !self.spare.is_empty() {
+      let (id, info) = self.spare.remove(0);
+      self.bound.push(Bound {
+        id,
+        node,
+        applied: None,
+        info,
+        needs_frame: true,
+        suspended: false,
+        pipeline: Pipeline::new(),
+        stats: None,
+      });
+      if info.is_some() {
+        cx.request_frame(id);
       }
     }
   }
 
+  fn update(&mut self, cx: &mut dyn HostContext, index: usize, settings: &Settings) {
+    let Some(windows) = cx.windows() else {
+      return;
+    };
+    let node = self.bound[index].node;
+    let title = self.title(node);
+    let bound = &mut self.bound[index];
+    if bound.applied.is_none() {
+      return;
+    }
+    let desc = settings.desc(title, bound.pipeline.desired(node));
+    if bound.applied.as_ref() != Some(&desc) {
+      windows.update(bound.id, &desc);
+      bound.applied = Some(desc);
+    }
+  }
+
+  fn title(&self, node: NodeId) -> String {
+    self
+      .tree
+      .get_as::<Surface>(node)
+      .map(|surface| surface.title.get())
+      .unwrap_or_default()
+  }
+
   fn failed(&mut self, cx: &mut dyn HostContext, index: usize, error: RenderError) {
     if matches!(error, RenderError::SurfaceLost) {
-      let id = self.surfaces[index].id;
+      let id = self.bound[index].id;
       self.renderer.surface_lost(id);
-      self.surfaces[index].needs_frame = true;
+      self.bound[index].needs_frame = true;
       cx.request_frame(id);
       return;
     }
@@ -161,14 +290,6 @@ impl<R: Renderer> Runner<R> {
 
 impl<R: Renderer> AppHandler for Runner<R> {
   fn started(&mut self, cx: &mut dyn HostContext, _waker: Waker) {
-    if let Some(windows) = cx.windows() {
-      let declared = std::mem::take(&mut self.declared);
-      let opened: Vec<(SurfaceId, NodeId)> = declared.iter().map(|(desc, root)| (windows.open(desc), *root)).collect();
-      for (surface, root) in opened {
-        self.bind(surface, root);
-      }
-      self.exit_without_windows(cx);
-    }
     self.settle(cx);
   }
 
@@ -177,61 +298,51 @@ impl<R: Renderer> AppHandler for Runner<R> {
   }
 
   fn surface_changed(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, info: SurfaceInfo) {
-    let index = match self.surfaces.iter().position(|window| window.id == surface) {
-      Some(index) => index,
-      None if !self.declared.is_empty() => {
-        let (_, root) = self.declared.remove(0);
-        self.bind(surface, root)
-      }
-      None => return,
-    };
-    let window = &mut self.surfaces[index];
-    window.info = Some(info);
-    window.lost = false;
-    window.needs_frame = true;
-    cx.request_frame(surface);
+    if let Some(bound) = self.bound.iter_mut().find(|bound| bound.id == surface) {
+      bound.info = Some(info);
+      bound.suspended = false;
+      bound.needs_frame = true;
+      cx.request_frame(surface);
+    } else if let Some(spare) = self.spare.iter_mut().find(|(id, _)| *id == surface) {
+      spare.1 = Some(info);
+    } else {
+      self.spare.push((surface, Some(info)));
+    }
     self.settle(cx);
   }
 
   fn surface_lost(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, loss: SurfaceLoss) {
     self.renderer.surface_lost(surface);
-    if let Some(index) = self.surfaces.iter().position(|window| window.id == surface) {
-      match loss {
-        SurfaceLoss::Suspended => self.surfaces[index].lost = true,
-        SurfaceLoss::Gone => {
-          self.surfaces.remove(index);
-          self.exit_without_windows(cx);
-        }
+    match (self.bound.iter().position(|bound| bound.id == surface), loss) {
+      (Some(index), SurfaceLoss::Suspended) => self.bound[index].suspended = true,
+      (Some(index), SurfaceLoss::Gone) => {
+        let bound = self.bound.remove(index);
+        self.lost.insert(bound.node);
       }
+      (None, SurfaceLoss::Gone) => self.spare.retain(|(id, _)| *id != surface),
+      (None, SurfaceLoss::Suspended) => {}
     }
     self.settle(cx);
   }
 
   fn event(&mut self, cx: &mut dyn HostContext, event: HostEvent) {
     if let HostEvent::CloseRequested { surface } = event
-      && let Some(window) = self.surfaces.iter_mut().find(|window| window.id == surface)
+      && let Some(bound) = self.bound.iter().find(|bound| bound.id == surface)
+      && let Some(node) = self.tree.get_as::<Surface>(bound.node)
     {
-      window.closing = true;
-      if let Some(windows) = cx.windows() {
-        windows.close(surface);
-      }
-      self.exit_without_windows(cx);
+      node.is_open.set(false);
     }
     self.settle(cx);
   }
 
   fn frame(&mut self, cx: &mut dyn HostContext, surface: SurfaceId, target: Target<'_>, time: Duration) {
-    let Some(index) = self
-      .surfaces
-      .iter()
-      .position(|window| window.id == surface && !window.lost && !window.closing)
-    else {
+    let Some(index) = self.bound.iter().position(|bound| bound.id == surface && !bound.suspended) else {
       return;
     };
-    let Some(info) = self.surfaces[index].info else {
+    let Some(info) = self.bound[index].info else {
       return;
     };
-    let root = self.surfaces[index].root;
+    let root = self.bound[index].node;
     Self::drain();
     for hook in &mut self.hooks.before_layout {
       hook(&mut self.tree, root, &info, time);
@@ -240,8 +351,7 @@ impl<R: Renderer> AppHandler for Runner<R> {
     if self.tree.take_pending() {
       self.mark_all(cx, Some(surface));
     }
-    self.check_roots();
-    let window = &mut self.surfaces[index];
+    let window = &mut self.bound[index];
     let result = if window.needs_frame {
       window.needs_frame = false;
       let frame = window
@@ -256,7 +366,7 @@ impl<R: Renderer> AppHandler for Runner<R> {
     };
     match result {
       Ok(stats) => {
-        self.surfaces[index].stats = Some(stats);
+        self.bound[index].stats = Some(stats);
         for hook in &mut self.hooks.after_present {
           hook(&self.tree, root, &stats);
         }
@@ -265,7 +375,7 @@ impl<R: Renderer> AppHandler for Runner<R> {
     }
     let wants = self.hooks.wants_frame.iter_mut().fold(false, |wants, hook| hook() | wants);
     if wants {
-      self.surfaces[index].needs_frame = true;
+      self.bound[index].needs_frame = true;
       cx.request_frame(surface);
     }
     self.settle(cx);
@@ -276,8 +386,7 @@ impl<R> Debug for Runner<R> {
   fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
     formatter
       .debug_struct("Runner")
-      .field("surfaces", &self.surfaces.len())
-      .field("declared", &self.declared.len())
+      .field("surfaces", &self.bound.len())
       .field("hooks", &self.hooks)
       .finish_non_exhaustive()
   }
