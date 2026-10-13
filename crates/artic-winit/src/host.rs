@@ -301,7 +301,9 @@ impl HostContext for Context<'_> {
 const FALLBACK_WIDTH: f64 = 800.0;
 /// The height a window opens at when its description sets only its width.
 const FALLBACK_HEIGHT: f64 = 600.0;
-/// The limit on an axis the user can resize while the other is locked.
+/// The limit on an axis the user can resize while the other is locked. winit sets both axes of a
+/// limit at once, and the platforms keep it in a 32-bit integer, so the free axis needs a finite
+/// value: this one is beyond any display, more than six times the width of a 16K screen.
 const UNLIMITED: f64 = 100_000.0;
 
 /// The size a window with `desc` gets, with `current` filling the axes `desc` leaves to the host,
