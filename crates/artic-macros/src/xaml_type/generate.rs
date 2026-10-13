@@ -222,6 +222,7 @@ fn attached_key(attached: &Attached) -> TokenStream {
     ty,
     default,
     affects,
+    inherits,
     ..
   } = attached;
   let default = match default {
@@ -229,8 +230,9 @@ fn attached_key(attached: &Attached) -> TokenStream {
     None => quote_spanned!(ty.span()=> <#ty as ::core::default::Default>::default()),
   };
   let affects = affects_tokens(*affects);
+  let inheritance = inheritance_tokens(inherits.as_ref());
   quote! {
-    static #key: __artic::AttachedKey<#ty> = __artic::AttachedKey::new(#name, #affects, || #default);
+    static #key: __artic::AttachedKey<#ty> = __artic::AttachedKey::new(#name, #affects, #inheritance, || #default);
   }
 }
 
@@ -321,25 +323,36 @@ pub fn key_static(field: &XamlField) -> TokenStream {
   let key = generated_key(field.ident);
   let name = xaml_name(field);
   let affects = affects_tokens(field.attributes.affects.unwrap_or_default());
-  let inherits = match &field.attributes.inherits {
+  let inheritance = inheritance_tokens(field.attributes.inherits.as_ref());
+  quote! {
+    static #key: __artic::PropertyKey<#inner> = __artic::PropertyKey::new(#name, #affects, #inheritance);
+  }
+}
+
+fn affects_tokens(affects: Affects) -> TokenStream {
+  let stages: Vec<TokenStream> = [
+    (affects.layout, quote!(LAYOUT)),
+    (affects.render, quote!(RENDER)),
+    (affects.surface, quote!(SURFACE)),
+  ]
+  .into_iter()
+  .filter(|(listed, _)| *listed)
+  .map(|(_, stage)| quote!(__artic::Affects::#stage))
+  .collect();
+  match stages.split_first() {
+    None => quote!(__artic::Affects::NONE),
+    Some((first, rest)) => quote!(#first #(.union(#rest))*),
+  }
+}
+
+fn inheritance_tokens(inherits: Option<&Inherits>) -> TokenStream {
+  match inherits {
     None => quote!(__artic::Inheritance::None),
     Some(Inherits::Replace) => quote!(__artic::Inheritance::Replace),
     Some(Inherits::Combine(path)) => match path.get_ident() {
       Some(name) => quote_spanned!(path.span()=> __artic::Inheritance::Combine(__artic::inherit::#name)),
       None => quote_spanned!(path.span()=> __artic::Inheritance::Combine(#path)),
     },
-  };
-  quote! {
-    static #key: __artic::PropertyKey<#inner> = __artic::PropertyKey::new(#name, #affects, #inherits);
-  }
-}
-
-fn affects_tokens(affects: Affects) -> TokenStream {
-  match (affects.layout, affects.render) {
-    (false, false) => quote!(__artic::Affects::NONE),
-    (true, false) => quote!(__artic::Affects::LAYOUT),
-    (false, true) => quote!(__artic::Affects::RENDER),
-    (true, true) => quote!(__artic::Affects::LAYOUT.union(__artic::Affects::RENDER)),
   }
 }
 

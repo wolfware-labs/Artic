@@ -1,6 +1,7 @@
-//! The host's windows, each with its artic surface id and last reported facts.
+//! The host's windows, each with its artic surface id, last reported facts and last applied
+//! description.
 
-use artic_platform::{DisplayId, SurfaceInfo};
+use artic_platform::{DisplayId, SurfaceInfo, WindowDesc};
 use artic_render::SurfaceId;
 use std::collections::HashMap;
 
@@ -11,6 +12,7 @@ struct Entry<K, W> {
   key: K,
   window: W,
   info: Option<SurfaceInfo>,
+  desc: Option<WindowDesc>,
 }
 
 /// The open windows, keyed by the windowing library's id `K`, in the order they opened.
@@ -51,6 +53,7 @@ impl<K: PartialEq + Copy, W> Surfaces<K, W> {
       key,
       window,
       info: None,
+      desc: None,
     });
     id
   }
@@ -102,6 +105,13 @@ impl<K: PartialEq + Copy, W> Surfaces<K, W> {
     }
   }
 
+  /// Records `desc` as the description last applied to surface `id`'s window, and returns the one
+  /// before it.
+  pub(crate) fn apply(&mut self, id: SurfaceId, desc: WindowDesc) -> Option<WindowDesc> {
+    let entry = self.entries.iter_mut().find(|entry| entry.id == id)?;
+    entry.desc.replace(desc)
+  }
+
   /// Forgets the facts reported for every surface, so each is reported again, such as after the
   /// surfaces are recreated on resume.
   pub(crate) fn forget_facts(&mut self) {
@@ -125,7 +135,7 @@ impl<K: PartialEq + Copy, W> Surfaces<K, W> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use artic_platform::{DisplayId, SurfaceInfo};
+  use artic_platform::{Axes, Chrome, DisplayId, LogicalSize, SurfaceInfo, WindowDesc};
   use artic_render::PhysicalSize;
   use pretty_assertions::assert_eq;
   use std::rc::Rc;
@@ -220,6 +230,23 @@ mod tests {
     assert_eq!(lost.iter().map(|(id, _)| *id).collect::<Vec<_>>(), [id]);
     drop(lost);
     assert_eq!(Rc::strong_count(&window), 1);
+  }
+
+  // Each window keeps the description last applied to it, returned when the next one replaces it.
+  #[test]
+  fn applied_description_is_kept_per_window() {
+    let mut surfaces: Surfaces<u32, ()> = Surfaces::default();
+    let id = surfaces.insert(1, ());
+    let desc = |title: &str| WindowDesc {
+      title: title.into(),
+      size: LogicalSize::default(),
+      chrome: Chrome::System,
+      resizable: Axes::BOTH,
+    };
+
+    assert_eq!(surfaces.apply(id, desc("first")), None);
+    assert_eq!(surfaces.apply(id, desc("second")), Some(desc("first")));
+    assert_eq!(surfaces.apply(SurfaceId::new(99), desc("none")), None);
   }
 
   // Forgetting the facts makes the same facts count as a change again.

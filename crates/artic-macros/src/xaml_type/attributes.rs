@@ -21,6 +21,7 @@ pub struct Attached {
   pub ty: Type,
   pub default: Option<Expr>,
   pub affects: Affects,
+  pub inherits: Option<Inherits>,
   pub target: Target,
 }
 
@@ -57,11 +58,12 @@ pub enum Inherits {
   Combine(Path),
 }
 
-/// The stages listed in `affects = layout | render`.
+/// The stages listed in `affects = layout | render | surface`.
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
 pub struct Affects {
   pub layout: bool,
   pub render: bool,
+  pub surface: bool,
 }
 
 /// Reads the struct's `#[xaml(...)]` attributes.
@@ -135,12 +137,13 @@ fn parse_markup_extension(markup_extension: &ParseNestedMeta) -> syn::Result<Vec
   Ok(positional)
 }
 
-/// Reads `attached(name = "Row", ty = usize, default = 0, affects = layout, target = children)`.
+/// Reads `attached(name = "Row", ty = usize, default = 0, affects = layout, inherits, target = children)`.
 fn parse_attached(attached: &ParseNestedMeta) -> syn::Result<Attached> {
   let mut name = None;
   let mut ty = None;
   let mut default = None;
   let mut affects = Affects::default();
+  let mut inherits = None;
   let mut target = None;
   attached.parse_nested_meta(|meta| {
     if meta.path.is_ident("name") {
@@ -159,9 +162,16 @@ fn parse_attached(attached: &ParseNestedMeta) -> syn::Result<Attached> {
         _ => return Err(Error::new_spanned(value, "expected `children` or `any`")),
       });
     } else if meta.path.is_ident("inherits") {
-      return Err(meta.error("attached properties can't inherit yet"));
+      inherits = Some(if meta.input.peek(Token![=]) {
+        Inherits::Combine(meta.value()?.parse::<Path>()?)
+      } else {
+        Inherits::Replace
+      });
     } else {
-      return Err(unknown_key(&meta, "`name`, `ty`, `default`, `affects` or `target`"));
+      return Err(unknown_key(
+        &meta,
+        "`name`, `ty`, `default`, `affects`, `inherits` or `target`",
+      ));
     }
     Ok(())
   })?;
@@ -171,6 +181,7 @@ fn parse_attached(attached: &ParseNestedMeta) -> syn::Result<Attached> {
     ty: ty.ok_or_else(|| missing("ty"))?,
     default,
     affects,
+    inherits,
     target: target.ok_or_else(|| missing("target"))?,
   })
 }
@@ -241,7 +252,8 @@ fn parse_affects(input: syn::parse::ParseStream) -> syn::Result<Affects> {
     match stage.to_string().as_str() {
       "layout" => affects.layout = true,
       "render" => affects.render = true,
-      _ => return Err(Error::new_spanned(stage, "expected `layout` or `render`")),
+      "surface" => affects.surface = true,
+      _ => return Err(Error::new_spanned(stage, "expected `layout`, `render` or `surface`")),
     }
     if !input.peek(Token![|]) {
       return Ok(affects);
@@ -324,14 +336,15 @@ mod tests {
       row.affects,
       Affects {
         layout: true,
-        render: false
+        render: false,
+        surface: false
       }
     );
     assert_eq!((row.target, label.target), (Target::Children, Target::Any));
     assert!(label.default.is_none());
   }
 
-  // `attached(...)` needs a name, a type and a target, rejects `inherits`, and knows its targets.
+  // `attached(...)` needs a name, a type and a target, and knows its targets.
   #[test]
   fn attached_errors() {
     let message = |attached: proc_macro2::TokenStream| {
@@ -355,12 +368,34 @@ mod tests {
       "`attached(...)` needs `target = ...`"
     );
     assert_eq!(
-      message(quote::quote!(name = "Row", ty = u8, target = any, inherits)),
-      "attached properties can't inherit yet"
-    );
-    assert_eq!(
       message(quote::quote!(name = "Row", ty = u8, target = parent)),
       "expected `children` or `any`"
+    );
+  }
+
+  // `inherits` on an attached property is read like a field's: bare, or with a combining function.
+  #[test]
+  fn attached_inherits_is_parsed() {
+    let attached = |tokens: proc_macro2::TokenStream| {
+      let input: DeriveInput = parse_quote! {
+        #[xaml(namespace = "https://artic.rs/ui", attached(#tokens))]
+        struct Desktop;
+      };
+      parse_type_attributes(&input).expect("valid").attached.remove(0)
+    };
+
+    assert!(matches!(
+      attached(quote::quote!(name = "Chrome", ty = u8, target = any, inherits)).inherits,
+      Some(Inherits::Replace)
+    ));
+    assert!(matches!(
+      attached(quote::quote!(name = "Enabled", ty = bool, target = any, inherits = and)).inherits,
+      Some(Inherits::Combine(path)) if path.is_ident("and")
+    ));
+    assert!(
+      attached(quote::quote!(name = "Row", ty = u8, target = any))
+        .inherits
+        .is_none()
     );
   }
 
@@ -411,7 +446,8 @@ mod tests {
       attributes.affects,
       Some(Affects {
         layout: true,
-        render: true
+        render: true,
+        surface: false
       })
     );
     assert!(attributes.inherits.is_some() && attributes.default.is_some());

@@ -10,7 +10,7 @@ use artic_core::property::AnyProperty;
 use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_layout::geometry::{Rect, Transform};
 use artic_render::Renderer as _;
-use artic_render::{Clip, Color, Compositor, Layers, Nodes, PhysicalSize, SceneBuilder, Surface, SurfaceId, Target};
+use artic_render::{Clip, Color, Compositor, Layers, Nodes, PhysicalSize, SceneBuilder, SurfaceId, SurfaceView, Target};
 use artic_vello::Renderer;
 use std::sync::Arc;
 use std::time::Instant;
@@ -147,7 +147,7 @@ impl Demo {
     let scene = self
       .compositor
       .compose(&mut self.tree, self.scene.background, &mut self.scene);
-    let surface = Surface {
+    let surface = SurfaceView {
       id: SurfaceId::new(1),
       size: PhysicalSize::new(physical.width, physical.height),
       scale,

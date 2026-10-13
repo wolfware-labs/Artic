@@ -16,6 +16,6 @@ pub use builder::SceneBuilder;
 pub use color::Color;
 pub use compose::{Compositor, Layers, Nodes};
 pub use renderer::{
-  PhysicalSize, PixelBuffer, PixelFormat, RawHandles, RenderError, Renderer, Surface, SurfaceId, Target, TargetKind,
+  PhysicalSize, PixelBuffer, PixelFormat, RawHandles, RenderError, Renderer, SurfaceId, SurfaceView, Target, TargetKind,
 };
 pub use scene::{Clip, Command, Layer, Scene, SceneFragment, SceneItem};

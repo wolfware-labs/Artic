@@ -248,6 +248,28 @@ fn attached_key_carries_its_metadata() {
   assert_eq!(Grid::LABEL.default_value(), "unnamed");
 }
 
+/// An owner of one inheriting attached property, as a platform family owner is.
+#[derive(Debug, XamlType)]
+#[xaml(namespace = "https://artic.rs/ui")]
+#[xaml(attached(name = "Accent", ty = u32, affects = render | surface, target = any, inherits))]
+struct Theme;
+
+// An inheriting attached property set on an element reaches its logical descendants, and its key
+// carries the surface stage.
+#[test]
+fn attached_property_inherits_through_the_logical_tree() {
+  let mut tree = UiTree::new();
+  let outer = (Border::TYPE_INFO.new)(&mut tree);
+  let inner = (Border::TYPE_INFO.new)(&mut tree);
+  tree.add_child(TreeKind::Logical, outer, inner);
+
+  Theme::set_accent(&mut tree, outer, 7);
+
+  assert_eq!(Theme::accent(&tree, inner), 7);
+  assert_eq!(Theme::ACCENT.key().affects(), Affects::RENDER | Affects::SURFACE);
+  assert!(Theme::ACCENT.key().inherits());
+}
+
 /// A markup extension with one positional argument and an optional named one.
 #[derive(Debug, XamlType)]
 #[xaml(namespace = "https://artic.rs/ui", markup_extension(positional(key)))]

@@ -22,7 +22,8 @@ use syn::{DeriveInput, parse_macro_input};
 ///   per attached property the type owns: a property set on other elements as `Grid.Row`. `name`,
 ///   `ty` and `target` are required; `target = children` allows it only on the logical children
 ///   of an element of this type, `target = any` anywhere. The value type is checked like a
-///   property's. Attached properties can't `inherit` yet.
+///   property's. `inherits` or `inherits = f` works as on a property: a node that holds it follows
+///   its nearest logical ancestor that does, and one that doesn't reads that ancestor's value.
 /// - `markup_extension`, or `markup_extension(positional(key, ...))`: the type is a markup
 ///   extension like `{Localize greeting}`. Every property is a named argument; `positional` lists,
 ///   in order, the properties also set by position.
@@ -33,9 +34,10 @@ use syn::{DeriveInput, parse_macro_input};
 ///
 /// - `Property<T>` is a XAML property. `T`, or `X` in `Option<X>`, must implement `FromStr` or
 ///   `XamlType`, or be a `NodeId` child slot. Its settings: `default = expr` for the `Default`
-///   level (otherwise `T::default()`), `affects = layout | render` and `inherits` for its generated
-///   key, `key = STATIC` to share a `PropertyKey` with other types instead (inheritance across
-///   types needs it), and `name = "..."` to rename it (the field name in PascalCase otherwise).
+///   level (otherwise `T::default()`), `affects = layout | render | surface` and `inherits` for
+///   its generated key, `key = STATIC` to share a `PropertyKey` with other types instead
+///   (inheritance across types needs it), and `name = "..."` to rename it (the field name in
+///   PascalCase otherwise).
 ///   A bare `inherits` replaces what the property inherits with its own value; `inherits = f`
 ///   combines the two through `f(own, inherited)`, where a single name such as `and` is one of
 ///   `artic_core::property::inherit`'s functions and a longer path names any

@@ -23,7 +23,7 @@ pub trait Renderer {
   /// Returns [`RenderError::Unsupported`] or [`RenderError::UnsupportedFormat`] for a target it
   /// can't draw on, [`RenderError::SurfaceLost`] if the surface went away, and
   /// [`RenderError::Backend`] for its library's own failures.
-  fn render(&mut self, scene: &Scene, surface: Surface<'_>) -> Result<(), RenderError>;
+  fn render(&mut self, scene: &Scene, surface: SurfaceView<'_>) -> Result<(), RenderError>;
 
   /// Releases what the renderer holds for `surface`, such as its swapchain, once the host reports
   /// the surface lost: a closed window, a suspended mobile app. The default does nothing.
@@ -32,9 +32,9 @@ pub trait Renderer {
   }
 }
 
-/// One surface to draw on this frame.
+/// A view of the host surface `id` names, lent for one render: its size, scale and target.
 #[derive(Debug)]
-pub struct Surface<'a> {
+pub struct SurfaceView<'a> {
   /// The host's id for the surface, stable until the surface is lost.
   pub id: SurfaceId,
   /// The surface's size in device pixels.
@@ -173,7 +173,7 @@ mod tests {
       kind == TargetKind::Pixels
     }
 
-    fn render(&mut self, scene: &Scene, surface: Surface<'_>) -> Result<(), RenderError> {
+    fn render(&mut self, scene: &Scene, surface: SurfaceView<'_>) -> Result<(), RenderError> {
       let Target::Pixels(buffer) = surface.target else {
         return Err(RenderError::Unsupported(surface.target.kind()));
       };
@@ -220,8 +220,8 @@ mod tests {
     Compositor::default().compose(&mut tree, root, &mut Red)
   }
 
-  fn surface(target: Target<'_>) -> Surface<'_> {
-    Surface {
+  fn surface(target: Target<'_>) -> SurfaceView<'_> {
+    SurfaceView {
       id: SurfaceId::new(1),
       size: PhysicalSize::new(2, 1),
       scale: 1.0,

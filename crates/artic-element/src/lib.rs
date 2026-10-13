@@ -11,13 +11,18 @@
 //!   [`IdentityProperties`] hold the properties every control has; a control flattens each into
 //!   its own properties. [`Visibility`], [`Cursor`] and [`Classes`] are the value types of some of
 //!   them.
+//! - [`Application`] and its [`Surface`]s are the roots a host presents; [`Desktop`] holds the
+//!   desktop settings, attached to them.
 //!
 //! The design is `docs/design/element.md`.
+
+extern crate self as artic_element;
 
 mod classes;
 mod context;
 mod element;
 mod properties;
+mod surface;
 mod types;
 mod visibility;
 
@@ -25,6 +30,7 @@ pub use classes::Classes;
 pub use context::{AccessCx, EventCx, Handled, HitTestCx, HitTestResult, RenderCx};
 pub use element::{Element, ElementImpl, HasState};
 pub use properties::{AppearanceProperties, IdentityProperties, InteractionProperties, LayoutProperties};
+pub use surface::{Application, Chrome, Desktop, SizeToContent, Surface};
 pub use types::{ELEMENT_TYPES, ElementType, ElementTypes};
 pub use visibility::{Cursor, Visibility};
 

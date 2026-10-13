@@ -10,7 +10,6 @@
 //! - [`input`]: [`InputEvent`](input::InputEvent), the input an element receives.
 //! - [`dispatcher`]: [`Dispatcher`](dispatcher::Dispatcher), the UI thread's task queue, which flushes
 //!   effects after each task.
-//! - [`window`]: [`WindowDesc`](window::WindowDesc), a window to open, as plain data.
 //!
 //! The `testing` feature adds `reactive::assert_no_reactive_leaks` for leak checks in other crates'
 //! tests.
@@ -23,6 +22,5 @@ mod object;
 pub mod property;
 pub mod reactive;
 pub mod tree;
-pub mod window;
 
 pub use object::Object;

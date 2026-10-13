@@ -2,7 +2,7 @@ use crate::Error;
 use crate::backend::backends_for;
 use crate::translate::translate;
 use artic_render::{
-  PhysicalSize, PixelBuffer, PixelFormat, RawHandles, RenderError, Scene, Surface, SurfaceId, Target, TargetKind,
+  PhysicalSize, PixelBuffer, PixelFormat, RawHandles, RenderError, Scene, SurfaceId, SurfaceView, Target, TargetKind,
 };
 use std::collections::HashMap;
 use std::sync::mpsc;
@@ -258,7 +258,7 @@ impl artic_render::Renderer for Renderer {
     matches!(kind, TargetKind::Handles | TargetKind::Pixels)
   }
 
-  fn render(&mut self, scene: &Scene, surface: Surface<'_>) -> Result<(), RenderError> {
+  fn render(&mut self, scene: &Scene, surface: SurfaceView<'_>) -> Result<(), RenderError> {
     translate(scene, surface.scale, surface.size, &mut self.encoded);
     match surface.target {
       Target::Handles(handles) => self.render_to_window(surface.id, surface.size, handles),
