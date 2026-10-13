@@ -172,18 +172,17 @@ impl<R: Renderer> Runner<R> {
 
   #[track_caller]
   fn reconcile(&mut self, cx: &mut dyn HostContext) {
-    let surfaces: Vec<NodeId> = self.tree.children(TreeKind::Logical, self.application).collect();
-    let mut shown = Vec::new();
-    for node in &surfaces {
-      let surface = self
-        .tree
-        .get_as::<Surface>(*node)
-        .unwrap_or_else(|| panic!("the Application's child {node:?} isn't a Surface; an Application holds only Surfaces"));
-      if surface.is_open.get() {
-        shown.push(*node);
-      }
-      self.check_visual_parent(*node);
-    }
+    let surfaces = self.surfaces();
+    let shown: Vec<NodeId> = surfaces
+      .iter()
+      .copied()
+      .filter(|node| {
+        self
+          .tree
+          .get_as::<Surface>(*node)
+          .is_some_and(|surface| surface.is_open.get())
+      })
+      .collect();
     self.lost.retain(|node| shown.contains(node));
     let mut index = 0;
     while index < self.bound.len() {
@@ -276,11 +275,19 @@ impl<R: Renderer> Runner<R> {
   }
 
   #[track_caller]
-  fn check_visual_parent(&self, node: NodeId) {
-    assert!(
-      self.tree.parent(TreeKind::Visual, node) == Some(self.application),
-      "the Surface {node:?} isn't a visual child of the Application; each Surface is a logical and visual child of it, so no surface draws inside another"
-    );
+  fn surfaces(&self) -> Vec<NodeId> {
+    let surfaces: Vec<NodeId> = self.tree.children(TreeKind::Logical, self.application).collect();
+    for node in &surfaces {
+      assert!(
+        self.tree.get_as::<Surface>(*node).is_some(),
+        "the Application's child {node:?} isn't a Surface; an Application holds only Surfaces"
+      );
+      assert!(
+        self.tree.parent(TreeKind::Visual, *node) == Some(self.application),
+        "the Surface {node:?} isn't a visual child of the Application; each Surface is a logical and visual child of it, so no surface draws inside another"
+      );
+    }
+    surfaces
   }
 
   fn title(&self, node: NodeId) -> String {
@@ -371,9 +378,9 @@ impl<R: Renderer> AppHandler for Runner<R> {
     if self.tree.take_pending() {
       self.mark_all(cx, Some(surface));
     }
-    let surfaces: Vec<NodeId> = self.tree.children(TreeKind::Logical, self.application).collect();
-    for node in surfaces {
-      self.check_visual_parent(node);
+    if !self.surfaces().contains(&root) {
+      self.settle(cx);
+      return;
     }
     let content = if self.bound[index].applied.is_some() {
       Axes::from(self.tree.attached(root, Desktop::SIZE_TO_CONTENT))

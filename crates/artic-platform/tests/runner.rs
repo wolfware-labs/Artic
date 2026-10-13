@@ -915,3 +915,55 @@ fn surface_nested_in_another_panics_before_rendering() {
   assert!(message.contains("isn't a visual child of the Application"), "{message}");
   assert_eq!(renderer.rendered.get(), 0);
 }
+
+// A hook that takes the surface being drawn out of the Application closes its window instead of
+// drawing it once more.
+#[test]
+fn surface_removed_by_a_hook_isnt_drawn() {
+  let (tree, application, surfaces) = titled(&["first", "second"]);
+  let first = surfaces[0];
+  let renderer = Counter::default();
+  let mut runner = Runner::new(tree, renderer.clone(), application);
+  let mut cx = Context::default();
+  runner.started(&mut cx, Waker::new(|| {}));
+  runner.surface_changed(&mut cx, FIRST, info(64, 64, 1.0));
+  runner.hooks().before_layout(move |tree, _, _, _| {
+    if tree.parent(TreeKind::Logical, first).is_some() {
+      tree.detach(TreeKind::Logical, first);
+    }
+  });
+  let mut buffer = pixels();
+
+  runner.frame(&mut cx, FIRST, target(&mut buffer), Duration::ZERO);
+
+  assert_eq!(renderer.rendered.get(), 0);
+  assert_eq!(cx.closed, [FIRST]);
+}
+
+// A hook that gives the Application a child that isn't a Surface is caught before anything
+// renders.
+#[test]
+fn application_child_added_by_a_hook_panics_before_rendering() {
+  let (mut tree, application, _) = titled(&["main"]);
+  let stray = leaf(&mut tree, 20.0).id;
+  let renderer = Counter::default();
+  let mut runner = Runner::new(tree, renderer.clone(), application);
+  let mut cx = Context::default();
+  runner.started(&mut cx, Waker::new(|| {}));
+  runner.surface_changed(&mut cx, FIRST, info(64, 64, 1.0));
+  runner.hooks().before_layout(move |tree, _, _, _| {
+    if tree.parent(TreeKind::Logical, stray).is_none() {
+      tree.add_child(TreeKind::Logical, application, stray);
+    }
+  });
+  let mut buffer = pixels();
+
+  let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    runner.frame(&mut cx, FIRST, target(&mut buffer), Duration::ZERO);
+  }));
+
+  let message = result.expect_err("a stray child panics");
+  let message = message.downcast_ref::<String>().map_or("", String::as_str);
+  assert!(message.contains("isn't a Surface"), "{message}");
+  assert_eq!(renderer.rendered.get(), 0);
+}
