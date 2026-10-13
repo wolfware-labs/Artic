@@ -44,7 +44,7 @@ pub trait ElementImpl {
   /// Adds the control's role, name, value and actions to the default node built from the groups.
   fn accessibility(&self, cx: &AccessCx<'_>, node: &mut accesskit::Node) {}
   /// Clips the element and its descendants, in its own coordinates, for its arranged `size`.
-  fn clip(&self, size: Size) -> Option<Clip> { None }
+  fn clip(&self, size: Size) -> Option<Shape> { None }
   // #84 adds, with TemplateCx: fn on_apply_template(&mut self, cx: &mut TemplateCx<'_>) {}
 }
 ```
