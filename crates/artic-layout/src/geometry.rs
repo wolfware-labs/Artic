@@ -1,10 +1,12 @@
 //! The value types layout measures and positions with, in logical pixels.
 
 mod parse;
+mod path;
 mod relative;
 mod transform;
 
 pub use parse::{GeometryProblem, ParseGeometryError};
+pub use path::{FillRule, Path, PathBuilder, PathElement};
 pub use relative::{RelativePoint, RelativeScalar, Scaling};
 use std::fmt::{Display, Formatter, Result};
 use std::ops::{Add, Sub};
