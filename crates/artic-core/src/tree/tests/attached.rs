@@ -1,5 +1,5 @@
 use crate::Object;
-use crate::property::{Affects, AnyProperty, AttachedKey, Inheritance, Precedence, Property};
+use crate::property::{Affects, AnyProperty, AttachedKey, Inheritance, Precedence, Property, inherit};
 use crate::tree::{NodeId, TreeKind, UiTree};
 use pretty_assertions::assert_eq;
 
@@ -185,8 +185,8 @@ impl Object for Themed {
   }
 }
 
-// A field sharing an inheriting attached key is a source like an attached value, so reading the
-// key on a descendant agrees with holding it there.
+// A field sharing an inheriting attached key is held like an attached value: reading it on its
+// node finds it, and reading it on a descendant agrees with holding it there.
 #[test]
 fn attached_read_finds_an_ancestor_field() {
   let mut tree = UiTree::new();
@@ -196,6 +196,23 @@ fn attached_read_finds_an_ancestor_field() {
   let leaf = tree.alloc(Box::new(Button));
   tree.add_child(TreeKind::Logical, root, leaf);
 
+  assert_eq!(tree.attached(root, &CHROME), 6);
   assert_eq!(tree.attached(leaf, &CHROME), 6);
   assert_eq!(tree.attached_property(leaf, &CHROME).get(), 6);
+}
+
+static ALLOWED: AttachedKey<bool> = AttachedKey::new("Allowed", Affects::RENDER, Inheritance::Combine(inherit::and), || false);
+
+// A combining key read on a node that doesn't hold it gives what holding it would: the key's
+// default combined with the nearest ancestor's value.
+#[test]
+fn combining_read_agrees_with_holding() {
+  let mut tree = UiTree::new();
+  let [root, _, leaf] = chain(&mut tree);
+  tree.attached_property(root, &ALLOWED).set(true);
+
+  let read = tree.attached(leaf, &ALLOWED);
+
+  assert_eq!(read, tree.attached_property(leaf, &ALLOWED).get());
+  assert!(!read);
 }

@@ -345,7 +345,8 @@ enum Step {
 
 /// The changes, in order, that take a window of `current` size from the description `before` to
 /// `after`: only what differs, and everything when nothing was applied before. A new size or
-/// resizable axes clear the old limits first, so they can't clamp the new size.
+/// resizable axes clear the old limits first, so they can't clamp the new size; a size that sets
+/// neither axis requests none.
 fn steps(before: Option<&WindowDesc>, after: &WindowDesc, current: LogicalSize<f64>) -> Vec<Step> {
   let differs = |part: fn(&WindowDesc, &WindowDesc) -> bool| before.is_none_or(|before| part(before, after));
   let mut steps = Vec::new();
@@ -357,13 +358,10 @@ fn steps(before: Option<&WindowDesc>, after: &WindowDesc, current: LogicalSize<f
   }
   let resized = differs(|before, after| before.size != after.size);
   if resized || differs(|before, after| before.resizable != after.resizable) {
-    let size = if resized {
-      logical_size(after, current).unwrap_or(current)
-    } else {
-      current
-    };
+    let requested = if resized { logical_size(after, current) } else { None };
+    let size = requested.unwrap_or(current);
     steps.push(Step::Limits(None, None));
-    if resized {
+    if let Some(size) = requested {
       steps.push(Step::Size(size));
     }
     steps.push(Step::Resizable(after.resizable != Axes::NONE));
@@ -511,6 +509,22 @@ mod tests {
     assert_eq!(
       steps(Some(&locked()), &renamed, LogicalSize::new(300.0, 200.0)),
       [Step::Title("notes*".into())]
+    );
+  }
+
+  // A window whose size goes back to the host's keeps its current size: no resize is requested.
+  #[test]
+  fn unset_size_requests_no_resize() {
+    let unset = WindowDesc {
+      size: artic_platform::LogicalSize::default(),
+      resizable: Axes::BOTH,
+      ..locked()
+    };
+
+    assert!(
+      !steps(Some(&locked()), &unset, LogicalSize::new(300.0, 200.0))
+        .iter()
+        .any(|step| matches!(step, Step::Size(_)))
     );
   }
 

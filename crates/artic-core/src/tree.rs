@@ -583,7 +583,7 @@ impl UiTree {
   where
     T: PartialEq + Clone + 'static,
   {
-    if let Some(property) = self.stored(node, key) {
+    if let Some(property) = self.held(node, key) {
       return property.get();
     }
     let inherited = match key.key().inheritance() {
