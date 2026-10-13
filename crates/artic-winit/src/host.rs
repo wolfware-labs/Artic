@@ -316,8 +316,8 @@ fn logical_size(desc: &WindowDesc, current: LogicalSize<f64>) -> Option<LogicalS
   })
 }
 
-/// The smallest and largest size the user can resize a window to: both locked on an axis its
-/// content sizes, none when every axis or no axis is resizable.
+/// The smallest and largest size the user can resize a window to: both locked at `size` on an axis
+/// its content sizes, and none when the user can resize every axis.
 fn limits(resizable: Axes, size: LogicalSize<f64>) -> (Option<LogicalSize<f64>>, Option<LogicalSize<f64>>) {
   match (resizable.width, resizable.height) {
     (true, false) => (
@@ -328,7 +328,27 @@ fn limits(resizable: Axes, size: LogicalSize<f64>) -> (Option<LogicalSize<f64>>,
       Some(LogicalSize::new(size.width, 0.0)),
       Some(LogicalSize::new(size.width, UNLIMITED)),
     ),
-    _ => (None, None),
+    (false, false) => (Some(size), Some(size)),
+    (true, true) => (None, None),
+  }
+}
+
+/// Which parts of a window's description differ from the one applied before.
+#[derive(Debug, PartialEq)]
+struct Changes {
+  title: bool,
+  chrome: bool,
+  size: bool,
+  resizable: bool,
+}
+
+/// What changes from `before` to `after`: everything when nothing was applied before.
+fn changes(before: Option<&WindowDesc>, after: &WindowDesc) -> Changes {
+  Changes {
+    title: before.is_none_or(|before| before.title != after.title),
+    chrome: before.is_none_or(|before| before.chrome != after.chrome),
+    size: before.is_none_or(|before| before.size != after.size),
+    resizable: before.is_none_or(|before| before.resizable != after.resizable),
   }
 }
 
@@ -356,6 +376,7 @@ impl Windows for Context<'_> {
     match self.event_loop.create_window(attributes) {
       Ok(window) => {
         let surface = self.surfaces.insert(window.id(), Rc::new(window));
+        self.surfaces.apply(surface, desc.clone());
         self.opened.push(surface);
         surface
       }
@@ -368,18 +389,32 @@ impl Windows for Context<'_> {
   }
 
   fn update(&mut self, surface: SurfaceId, desc: &WindowDesc) {
+    let before = self.surfaces.apply(surface, desc.clone());
     let Some(window) = self.surfaces.window(surface) else {
       return;
     };
-    window.set_title(&desc.title);
-    window.set_decorations(desc.chrome == Chrome::System);
-    window.set_resizable(desc.resizable != Axes::NONE);
-    let current = window.inner_size().to_logical::<f64>(window.scale_factor());
-    let size = logical_size(desc, current).unwrap_or(current);
-    let _ = window.request_inner_size(size);
-    let (min, max) = limits(desc.resizable, size);
-    window.set_min_inner_size(min);
-    window.set_max_inner_size(max);
+    let changes = changes(before.as_ref(), desc);
+    if changes.title {
+      window.set_title(&desc.title);
+    }
+    if changes.chrome {
+      window.set_decorations(desc.chrome == Chrome::System);
+    }
+    if changes.size || changes.resizable {
+      let current = window.inner_size().to_logical::<f64>(window.scale_factor());
+      let size = if changes.size {
+        logical_size(desc, current).unwrap_or(current)
+      } else {
+        current
+      };
+      if changes.size {
+        let _ = window.request_inner_size(size);
+      }
+      window.set_resizable(desc.resizable != Axes::NONE);
+      let (min, max) = limits(desc.resizable, size);
+      window.set_min_inner_size(min);
+      window.set_max_inner_size(max);
+    }
   }
 
   fn close(&mut self, surface: SurfaceId) {
@@ -426,6 +461,53 @@ mod tests {
     assert_eq!(
       attributes.max_inner_size,
       Some(Size::Logical(LogicalSize::new(UNLIMITED, FALLBACK_HEIGHT)))
+    );
+  }
+
+  // A window whose content sizes both axes is locked at its size, so the user can't resize it.
+  #[test]
+  fn locked_window_keeps_its_size_limits() {
+    let size = LogicalSize::new(300.0, 200.0);
+
+    assert_eq!(limits(Axes::NONE, size), (Some(size), Some(size)));
+    assert_eq!(limits(Axes::BOTH, size), (None, None));
+  }
+
+  // An update applies only what changed, so a new title leaves a size the user chose alone; a
+  // window's first description applies everything.
+  #[test]
+  fn update_applies_only_what_changed() {
+    let before = WindowDesc {
+      title: "notes".into(),
+      size: artic_platform::LogicalSize {
+        width: Some(300.0),
+        height: Some(200.0),
+      },
+      chrome: Chrome::System,
+      resizable: Axes::BOTH,
+    };
+    let renamed = WindowDesc {
+      title: "notes*".into(),
+      ..before.clone()
+    };
+
+    assert_eq!(
+      changes(Some(&before), &renamed),
+      Changes {
+        title: true,
+        chrome: false,
+        size: false,
+        resizable: false
+      }
+    );
+    assert_eq!(
+      changes(None, &renamed),
+      Changes {
+        title: true,
+        chrome: true,
+        size: true,
+        resizable: true
+      }
     );
   }
 

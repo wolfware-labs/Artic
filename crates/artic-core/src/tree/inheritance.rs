@@ -4,8 +4,7 @@
 //! logical ancestor that has one, as a field or an attached value: that ancestor's value fills its
 //! `Inherited` level. This file finds that ancestor for every inheritable property of a subtree,
 //! and is run again whenever a logical edit moves the subtree, so each property follows its new
-//! ancestor. Nodes without the property
-//! are skipped, and inheritance never follows the visual tree.
+//! ancestor. Nodes without the property are skipped, and inheritance never follows the visual tree.
 //!
 //! It holds no state of its own: it reads the objects, their attached values and the logical
 //! tree's links.

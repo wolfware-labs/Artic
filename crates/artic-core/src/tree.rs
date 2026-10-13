@@ -27,11 +27,11 @@
 //!
 //! The other parts keep their data under the same `NodeId`, in a `SlotMap` each; only `objects`
 //! knows whether an id is live, so `UiTree` checks an id there before it reaches them. `UiTree`
-//! also keeps the rules that span parts: a new node gets a place in every part and
-//! its properties share its dirty flags; a freed node leaves every part; a logical edit reconnects
-//! inheritance; a visual edit marks the parent for layout; a new attached value shares its node's
-//! dirty flags and, when its key inherits, joins inheritance. Every link edit goes through two private methods, `attach` and `unlink`, so those
-//! rules hold for each public one.
+//! also keeps the rules that span parts: a new node gets a place in every part and its properties
+//! share its dirty flags; a freed node leaves every part; a logical edit reconnects inheritance; a
+//! visual edit marks the parent for layout; a new attached value shares its node's dirty flags and,
+//! when its key inherits, joins inheritance. Every link edit goes through two private methods,
+//! `attach` and `unlink`, so those rules hold for each public one.
 //!
 //! The tests in `tests` check `UiTree`'s behavior, one file per concern.
 
