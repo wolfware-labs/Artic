@@ -93,6 +93,63 @@ impl LayoutManager {
     scale: f32,
     snap: bool,
   ) -> LayoutStats {
+    if self.grid.replace((scale, snap)) != Some((scale, snap)) {
+      for slot in self.slots.values_mut() {
+        slot.arrange_dirty = true;
+      }
+    }
+    let (cx, depths, desired) = self.measure_pass(tree, nodes, root, available);
+    let mut cx = ArrangeCx {
+      pass: cx.pass,
+      scale,
+      snap,
+    };
+    let width = if available.width.is_finite() {
+      available.width
+    } else {
+      desired.width
+    };
+    let height = if available.height.is_finite() {
+      available.height
+    } else {
+      desired.height
+    };
+    cx.arrange(root, Rect::new(0.0, 0.0, width, height));
+
+    // The nodes the upward pass stopped at, still waiting in their unchanged rectangles.
+    let mut waiting: Vec<(usize, NodeId)> = cx
+      .pass
+      .slots
+      .iter()
+      .filter(|(_, slot)| slot.arrange_dirty && slot.offered.is_some())
+      .map(|(node, _)| (depths[node], *node))
+      .collect();
+    waiting.sort_by_key(|(depth, _)| *depth);
+    for (_, node) in waiting {
+      let slot = cx.pass.slots[&node];
+      if slot.arrange_dirty
+        && let Some(rect) = slot.offered
+      {
+        cx.arrange(node, rect);
+      }
+    }
+    cx.pass.stats
+  }
+
+  /// Measures `root`'s visual subtree in `available`, as a [`run`](LayoutManager::run) does first,
+  /// without arranging it, and returns the size it wants. A later `run` in the same `available`
+  /// answers every measure from the cache.
+  pub fn measure(&mut self, tree: &mut UiTree, nodes: &impl LayoutNodes, root: NodeId, available: Size) -> Size {
+    self.measure_pass(tree, nodes, root, available).2
+  }
+
+  fn measure_pass<'a>(
+    &'a mut self,
+    tree: &'a mut UiTree,
+    nodes: &'a impl LayoutNodes,
+    root: NodeId,
+    available: Size,
+  ) -> (MeasureCx<'a>, HashMap<NodeId, usize>, Size) {
     let mut depths = HashMap::new();
     let mut dirty = HashSet::new();
     let mut pending = vec![(root, 0_usize)];
@@ -108,11 +165,6 @@ impl LayoutManager {
     }
     self.slots.retain(|node, _| depths.contains_key(node));
     self.sizes.retain(|node, _| depths.contains_key(node));
-    if self.grid.replace((scale, snap)) != Some((scale, snap)) {
-      for slot in self.slots.values_mut() {
-        slot.arrange_dirty = true;
-      }
-    }
 
     let mut nested = HashSet::new();
     let mut between = Vec::new();
@@ -169,43 +221,9 @@ impl LayoutManager {
       }
     }
 
-    // Downward: measure and arrange from the root; clean nodes answer from their cache.
+    // Downward: measure from the root; clean nodes answer from their cache.
     let desired = cx.measure(root, available);
-    let mut cx = ArrangeCx {
-      pass: cx.pass,
-      scale,
-      snap,
-    };
-    let width = if available.width.is_finite() {
-      available.width
-    } else {
-      desired.width
-    };
-    let height = if available.height.is_finite() {
-      available.height
-    } else {
-      desired.height
-    };
-    cx.arrange(root, Rect::new(0.0, 0.0, width, height));
-
-    // The nodes the upward pass stopped at, still waiting in their unchanged rectangles.
-    let mut waiting: Vec<(usize, NodeId)> = cx
-      .pass
-      .slots
-      .iter()
-      .filter(|(_, slot)| slot.arrange_dirty && slot.offered.is_some())
-      .map(|(node, _)| (depths[node], *node))
-      .collect();
-    waiting.sort_by_key(|(depth, _)| *depth);
-    for (_, node) in waiting {
-      let slot = cx.pass.slots[&node];
-      if slot.arrange_dirty
-        && let Some(rect) = slot.offered
-      {
-        cx.arrange(node, rect);
-      }
-    }
-    cx.pass.stats
+    (cx, depths, desired)
   }
 
   /// Marks `node` to be measured again in the next [`run`](LayoutManager::run).
@@ -376,6 +394,16 @@ impl<'a> MeasureCx<'a> {
     desired
   }
 
+  /// Measures every visual child of the node being measured in `available`, as children sharing
+  /// one box, and returns the largest width and the largest height they want.
+  pub fn measure_children(&mut self, available: Size) -> Size {
+    let children: Vec<NodeId> = self.children().collect();
+    children.into_iter().fold(Size::ZERO, |largest, child| {
+      let desired = self.measure(child, available);
+      Size::new(largest.width.max(desired.width), largest.height.max(desired.height))
+    })
+  }
+
   /// Forgets what layout knew about `node`'s visual children that its measure didn't measure, and
   /// about their subtrees, so neither the upward nor the waiting pass lays them out.
   fn forget_unmeasured(&mut self, node: NodeId, measured: &HashSet<NodeId>) {
@@ -505,6 +533,14 @@ impl<'a> ArrangeCx<'a> {
       && self.pass.sizes.insert(child, after).is_some_and(|before| before != after)
     {
       self.pass.stats.resized.push(child);
+    }
+  }
+
+  /// Arranges every visual child of the node being arranged in `rect`, in its own coordinates.
+  pub fn arrange_children(&mut self, rect: Rect) {
+    let children: Vec<NodeId> = self.children().collect();
+    for child in children {
+      self.arrange(child, rect);
     }
   }
 

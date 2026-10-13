@@ -598,3 +598,80 @@ fn snap_change_arranges_again() {
   assert_eq!((stats.measured, stats.arranged), (0, 3));
   assert_eq!(manager.rect(children[1]).map(|rect| rect.y), Some(10.0));
 }
+
+// Measuring alone sizes the subtree without arranging it, and a run in the same available size
+// then measures nothing.
+#[test]
+fn measure_alone_leaves_arranging_to_the_next_run() {
+  let mut tree = UiTree::new();
+  let child = leaf(&mut tree, 100.0, 20.0);
+  let root = stack(&mut tree, &[child]);
+  let mut manager = LayoutManager::default();
+  let unbounded = Size::new(f32::INFINITY, f32::INFINITY);
+
+  let desired = manager.measure(&mut tree, &Nodes, root, unbounded);
+
+  assert_eq!(desired, Size::new(100.0, 20.0));
+  assert_eq!(manager.rect(root), None);
+  let stats = manager.run(&mut tree, &Nodes, root, unbounded, 1.0, false);
+  assert_eq!((stats.measured, stats.arranged), (0, 2));
+}
+
+mod overlay {
+  use super::leaf;
+  use crate::geometry::{Rect, Size};
+  use crate::{ArrangeCx, LayoutManager, LayoutNodes, Layoutable, MeasureCx};
+  use artic_core::Object;
+  use artic_core::property::AnyProperty;
+  use artic_core::tree::{NodeId, TreeKind, UiTree};
+  use pretty_assertions::assert_eq;
+
+  /// Lays its children over each other, in its whole box.
+  #[derive(Debug)]
+  struct Overlay;
+
+  impl Object for Overlay {
+    fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  }
+
+  impl Layoutable for Overlay {
+    fn measure(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size {
+      cx.measure_children(available)
+    }
+
+    fn arrange(&self, cx: &mut ArrangeCx<'_>, rect: Rect) {
+      cx.arrange_children(Rect::new(0.0, 0.0, rect.width, rect.height));
+    }
+  }
+
+  /// Lays out `Overlay` nodes and the parent module's test nodes.
+  struct Nodes;
+
+  impl LayoutNodes for Nodes {
+    fn layoutable<'a>(&self, tree: &'a UiTree, node: NodeId) -> Option<&'a dyn Layoutable> {
+      tree
+        .get_as::<Overlay>(node)
+        .map(|overlay| overlay as &dyn Layoutable)
+        .or_else(|| super::Nodes.layoutable(tree, node))
+    }
+  }
+
+  // Children sharing one box want the largest of their sizes, and each fills the box.
+  #[test]
+  fn children_share_one_box() {
+    let mut tree = UiTree::new();
+    let wide = leaf(&mut tree, 40.0, 10.0);
+    let tall = leaf(&mut tree, 20.0, 30.0);
+    let root = tree.alloc(Box::new(Overlay));
+    tree.add_child(TreeKind::Visual, root, wide);
+    tree.add_child(TreeKind::Visual, root, tall);
+    let mut manager = LayoutManager::default();
+
+    manager.run(&mut tree, &Nodes, root, Size::new(f32::INFINITY, f32::INFINITY), 1.0, false);
+
+    assert_eq!(manager.desired(root), Some(Size::new(40.0, 30.0)));
+    for child in [wide, tall] {
+      assert_eq!(manager.rect(child), Some(Rect::new(0.0, 0.0, 40.0, 30.0)));
+    }
+  }
+}
