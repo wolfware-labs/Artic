@@ -1,4 +1,4 @@
-use crate::{Clip, Color, Command, Layer};
+use crate::{Brush, Clip, Command, Layer};
 use artic_layout::geometry::{Rect, Transform};
 
 /// Records one node's drawing, in the node's own coordinates.
@@ -9,9 +9,9 @@ use artic_layout::geometry::{Rect, Transform};
 /// # Examples
 ///
 /// ```ignore
-/// builder.fill_rect(bounds, Color::rgb(255, 255, 255));
+/// builder.fill_rect(bounds, Color::WHITE);
 /// builder.with_clip(Clip::Rect(bounds), |builder| {
-///   builder.with_opacity(0.5, |builder| builder.fill_rect(inner, Color::rgb(0, 0, 0)));
+///   builder.with_opacity(0.5, |builder| builder.fill_rect(inner, Color::BLACK));
 /// });
 /// ```
 #[derive(Debug, Default)]
@@ -20,9 +20,13 @@ pub struct SceneBuilder {
 }
 
 impl SceneBuilder {
-  /// Fills `rect` with `color`.
-  pub fn fill_rect(&mut self, rect: Rect, color: Color) {
-    self.commands.push(Command::FillRect { rect, color });
+  /// Fills `rect` with `brush`, or with anything that converts into one, such as a
+  /// [`Color`](crate::Color).
+  pub fn fill_rect(&mut self, rect: Rect, brush: impl Into<Brush>) {
+    self.commands.push(Command::FillRect {
+      rect,
+      brush: brush.into(),
+    });
   }
 
   /// Records `draw` inside `transform`.
@@ -55,6 +59,7 @@ impl SceneBuilder {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::Color;
   use pretty_assertions::assert_eq;
 
   // Fills record in order, and each layer wraps exactly what its closure draws.
@@ -74,13 +79,13 @@ mod tests {
       [
         Command::FillRect {
           rect: bounds,
-          color: black
+          brush: black.into()
         },
         Command::Push(Layer::Clip(Clip::Rect(bounds))),
         Command::Push(Layer::Opacity(0.5)),
         Command::FillRect {
           rect: bounds,
-          color: black
+          brush: black.into()
         },
         Command::Pop,
         Command::Pop,

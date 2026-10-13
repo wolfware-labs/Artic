@@ -455,7 +455,7 @@ mod tests {
       fragment.commands(),
       [Command::FillRect {
         rect: Rect::new(0.0, 0.0, 1.0, 1.0),
-        color: Color::rgb(0, 0, 0)
+        brush: Color::rgb(0, 0, 0).into()
       }]
     );
   }

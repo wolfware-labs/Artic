@@ -2,9 +2,10 @@
 //!
 //! Numbers are separated by a comma, by whitespace, or by both: `"4,8"`, `"4 8"` and `"4, 8"` are
 //! the same. Whitespace around the text is ignored. An empty value, such as two commas in a row or
-//! a leading or trailing comma, is an error, and so are NaN and infinity.
+//! a leading or trailing comma, is an error, and so are NaN and infinity. Percentages are read only
+//! by the relative values, such as `RelativePoint`; the rest reject them.
 
-use crate::geometry::{CornerRadius, Point, Rect, Size, Thickness, Transform};
+use crate::geometry::{CornerRadius, Point, Rect, RelativePoint, RelativeScalar, Scaling, Size, Thickness, Transform};
 use std::str::FromStr;
 
 /// The error returned when text isn't a valid geometry value.
@@ -44,6 +45,12 @@ pub enum GeometryProblem {
   /// A transform function artic doesn't know, or text that isn't a function.
   #[error("'{0}' is not translate(x, y), rotate(degrees) or scale(x, y)")]
   UnknownFunction(String),
+  /// A point mixes percentages with logical units.
+  #[error("it mixes percentages and fixed values")]
+  MixedUnits,
+  /// A `%` that doesn't follow a number.
+  #[error("'{0}' is not a percentage")]
+  NotAPercent(String),
 }
 
 impl FromStr for Thickness {
@@ -176,6 +183,38 @@ impl FromStr for Transform {
   }
 }
 
+impl FromStr for RelativePoint {
+  type Err = ParseGeometryError;
+
+  /// Parses `"x,y"` as percentages of the box, such as `"50%,25%"`, or as logical units from its
+  /// top-left corner, such as `"10,20"`. The two can't be mixed.
+  fn from_str(text: &str) -> Result<Self, Self::Err> {
+    let fail = |problem| error(text, "RelativePoint", r#""50%,25%" or "10,20""#, problem);
+    let (numbers, scaling) = read_relative(text).map_err(fail)?;
+    match *numbers {
+      [x, y] => Ok(RelativePoint {
+        point: Point::new(x, y),
+        scaling,
+      }),
+      _ => Err(fail(GeometryProblem::Count(numbers.len()))),
+    }
+  }
+}
+
+impl FromStr for RelativeScalar {
+  type Err = ParseGeometryError;
+
+  /// Parses a percentage of an extent, such as `"50%"`, or logical units, such as `"10"`.
+  fn from_str(text: &str) -> Result<Self, Self::Err> {
+    let fail = |problem| error(text, "RelativeScalar", r#""50%" or "10""#, problem);
+    let (numbers, scaling) = read_relative(text).map_err(fail)?;
+    match *numbers {
+      [value] => Ok(RelativeScalar { value, scaling }),
+      _ => Err(fail(GeometryProblem::Count(numbers.len()))),
+    }
+  }
+}
+
 /// Whether the values may be negative.
 #[derive(Clone, Copy, PartialEq)]
 enum Sign {
@@ -197,24 +236,53 @@ fn parse<T>(
 }
 
 fn read_numbers(text: &str, sign: Sign) -> Result<Vec<f32>, GeometryProblem> {
-  let mut numbers = Vec::new();
+  values(text)?.into_iter().map(|value| number(value, sign)).collect()
+}
+
+fn values(text: &str) -> Result<Vec<&str>, GeometryProblem> {
+  let mut values = Vec::new();
   for segment in text.split(',') {
-    let mut parts = segment.split_whitespace().peekable();
-    if parts.peek().is_none() {
+    let before = values.len();
+    values.extend(segment.split_whitespace());
+    if values.len() == before {
       return Err(GeometryProblem::Empty);
     }
-    for part in parts {
-      let number: f32 = part.parse().map_err(|_| GeometryProblem::NotANumber(part.to_owned()))?;
-      if !number.is_finite() {
-        return Err(GeometryProblem::NotFinite(part.to_owned()));
-      }
-      if sign == Sign::NotNegative && number < 0.0 {
-        return Err(GeometryProblem::Negative(part.to_owned()));
-      }
-      numbers.push(number);
-    }
   }
-  Ok(numbers)
+  Ok(values)
+}
+
+fn number(text: &str, sign: Sign) -> Result<f32, GeometryProblem> {
+  let number: f32 = text.parse().map_err(|_| GeometryProblem::NotANumber(text.to_owned()))?;
+  if !number.is_finite() {
+    return Err(GeometryProblem::NotFinite(text.to_owned()));
+  }
+  if sign == Sign::NotNegative && number < 0.0 {
+    return Err(GeometryProblem::Negative(text.to_owned()));
+  }
+  Ok(number)
+}
+
+fn read_relative(text: &str) -> Result<(Vec<f32>, Scaling), GeometryProblem> {
+  let mut numbers = Vec::new();
+  let mut scaling = None;
+  for value in values(text)? {
+    let (digits, this) = match value.strip_suffix('%') {
+      Some(digits) if digits.is_empty() || digits.ends_with('%') => {
+        return Err(GeometryProblem::NotAPercent(value.to_owned()));
+      }
+      Some(digits) => (digits, Scaling::Relative),
+      None => (value, Scaling::Fixed),
+    };
+    let number = number(digits, Sign::Any)?;
+    if *scaling.get_or_insert(this) != this {
+      return Err(GeometryProblem::MixedUnits);
+    }
+    numbers.push(match this {
+      Scaling::Relative => number / 100.0,
+      Scaling::Fixed => number,
+    });
+  }
+  Ok((numbers, scaling.expect("values returns at least one value")))
 }
 
 fn error(text: &str, type_name: &'static str, forms: &'static str, problem: GeometryProblem) -> ParseGeometryError {
@@ -290,6 +358,7 @@ mod tests {
     assert_eq!(problem::<Thickness>("abc"), GeometryProblem::NotANumber("abc".to_owned()));
     assert_eq!(problem::<Thickness>("4,NaN"), GeometryProblem::NotFinite("NaN".to_owned()));
     assert_eq!(problem::<Size>("inf,4"), GeometryProblem::NotFinite("inf".to_owned()));
+    assert_eq!(problem::<Point>("50%,50%"), GeometryProblem::NotANumber("50%".to_owned()));
   }
 
   // Sizes, radii and a rectangle's extent can't be negative.
@@ -308,6 +377,48 @@ mod tests {
     assert_eq!(
       error.to_string(),
       r#"invalid Thickness '1,2,3': it has 3 values; expected "4", "4,8" or "1,2,3,4""#
+    );
+  }
+
+  // A point is all percentages, read as fractions of the box, or all logical units.
+  #[test]
+  fn relative_point_parses_percent_and_fixed() {
+    assert_eq!("50%,25%".parse(), Ok(RelativePoint::relative(0.5, 0.25)));
+    assert_eq!(" 100% 0% ".parse(), Ok(RelativePoint::relative(1.0, 0.0)));
+    assert_eq!("10, -20".parse(), Ok(RelativePoint::fixed(10.0, -20.0)));
+  }
+
+  // A point can't mix percentages with logical units, and the message says so.
+  #[test]
+  fn relative_point_rejects_mixed_units() {
+    assert_eq!(problem::<RelativePoint>("50%,20"), GeometryProblem::MixedUnits);
+    assert_eq!(problem::<RelativePoint>("10 25%"), GeometryProblem::MixedUnits);
+    assert_eq!(
+      "50%,20".parse::<RelativePoint>().expect_err("mixed").to_string(),
+      r#"invalid RelativePoint '50%,20': it mixes percentages and fixed values; expected "50%,25%" or "10,20""#
+    );
+  }
+
+  // A scalar is a percentage, read as a fraction, or logical units.
+  #[test]
+  fn relative_scalar_parses_percent_and_fixed() {
+    assert_eq!("50%".parse(), Ok(RelativeScalar::relative(0.5)));
+    assert_eq!(" 12.5 ".parse(), Ok(RelativeScalar::fixed(12.5)));
+  }
+
+  // Empty text, a second value, and a `%` that doesn't follow a number are rejected.
+  #[test]
+  fn relative_scalar_rejects_invalid() {
+    assert_eq!(problem::<RelativeScalar>(""), GeometryProblem::Empty);
+    assert_eq!(problem::<RelativeScalar>("10 20"), GeometryProblem::Count(2));
+    assert_eq!(problem::<RelativeScalar>("%"), GeometryProblem::NotAPercent("%".to_owned()));
+    assert_eq!(
+      problem::<RelativeScalar>("50%%"),
+      GeometryProblem::NotAPercent("50%%".to_owned())
+    );
+    assert_eq!(
+      problem::<RelativeScalar>("abc%"),
+      GeometryProblem::NotANumber("abc".to_owned())
     );
   }
 

@@ -6,14 +6,16 @@
 //! renderer, from any adapter crate, draws the scene. This crate holds no backend: see the
 //! [backend design](https://github.com/wolfware-labs/artic/blob/main/docs/design/backends.md).
 
+mod brush;
 mod builder;
 mod color;
 mod compose;
 mod renderer;
 mod scene;
 
+pub use brush::{Brush, GradientStop, LinearGradientBrush, RadialGradientBrush, SolidColorBrush};
 pub use builder::SceneBuilder;
-pub use color::Color;
+pub use color::{Color, ColorProblem, ParseColorError};
 pub use compose::{Compositor, Layers, Nodes};
 pub use renderer::{
   PhysicalSize, PixelBuffer, PixelFormat, RawHandles, RenderError, Renderer, SurfaceId, SurfaceView, Target, TargetKind,
