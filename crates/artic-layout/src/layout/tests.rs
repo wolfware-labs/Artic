@@ -549,3 +549,52 @@ fn run_reports_resized() {
 
   assert_eq!(stats.resized, [grows]);
 }
+
+// A new scale arranges every node again on the new device grid and measures nothing: a desired
+// size doesn't depend on the display.
+#[test]
+fn scale_change_arranges_without_measuring() {
+  let mut tree = UiTree::new();
+  let children = [10.3, 10.3].map(|height| leaf(&mut tree, 33.3, height));
+  let root = stack(&mut tree, &children);
+  let mut manager = LayoutManager::default();
+  manager.run(&mut tree, &Nodes, root, WINDOW, 1.0, true);
+
+  let stats = manager.run(&mut tree, &Nodes, root, WINDOW, 1.25, true);
+
+  assert_eq!((stats.measured, stats.arranged), (0, 3));
+  let rect = manager.rect(children[1]).expect("arranged");
+  let device = rect.y * 1.25;
+  assert!((device - device.round()).abs() < 1e-3, "{rect}");
+}
+
+// A scale reported before the size that matches it, as Windows does, changes the logical size:
+// the root is measured again, like on any resize.
+#[test]
+fn scale_reported_before_size_measures_again() {
+  let mut tree = UiTree::new();
+  let children = [10.0, 10.0].map(|height| leaf(&mut tree, 33.0, height));
+  let root = stack(&mut tree, &children);
+  let mut manager = LayoutManager::default();
+  manager.run(&mut tree, &Nodes, root, WINDOW, 1.0, true);
+
+  let stats = manager.run(&mut tree, &Nodes, root, Size::new(200.0, 150.0), 2.0, true);
+
+  assert_eq!(stats.measured, 3);
+  assert_eq!(manager.rect(root), Some(Rect::new(0.0, 0.0, 200.0, 150.0)));
+}
+
+// Turning snapping on at the same scale moves the rectangles onto the device grid.
+#[test]
+fn snap_change_arranges_again() {
+  let mut tree = UiTree::new();
+  let children = [10.3, 10.3].map(|height| leaf(&mut tree, 33.3, height));
+  let root = stack(&mut tree, &children);
+  let mut manager = LayoutManager::default();
+  manager.run(&mut tree, &Nodes, root, WINDOW, 1.0, false);
+
+  let stats = manager.run(&mut tree, &Nodes, root, WINDOW, 1.0, true);
+
+  assert_eq!((stats.measured, stats.arranged), (0, 3));
+  assert_eq!(manager.rect(children[1]).map(|rect| rect.y), Some(10.0));
+}

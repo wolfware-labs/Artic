@@ -54,10 +54,14 @@ struct Slot {
 /// A node is measured again when it's marked [`Affects::LAYOUT`] (a layout property changed, or its
 /// visual children did) or when its parent offers it a different size. When a measured node's
 /// size doesn't change, its ancestors keep theirs and only the node is arranged again.
+///
+/// A new scale or snapping arranges every node again, and measures only what the new logical
+/// size reaches: a desired size doesn't depend on the display.
 #[derive(Debug, Default)]
 pub struct LayoutManager {
   slots: HashMap<NodeId, Slot>,
   sizes: HashMap<NodeId, Size>,
+  grid: Option<(f32, bool)>,
 }
 
 /// What a [`LayoutManager::run`] did.
@@ -104,6 +108,11 @@ impl LayoutManager {
     }
     self.slots.retain(|node, _| depths.contains_key(node));
     self.sizes.retain(|node, _| depths.contains_key(node));
+    if self.grid.replace((scale, snap)) != Some((scale, snap)) {
+      for slot in self.slots.values_mut() {
+        slot.arrange_dirty = true;
+      }
+    }
 
     let mut nested = HashSet::new();
     let mut between = Vec::new();
