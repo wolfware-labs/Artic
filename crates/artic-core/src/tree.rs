@@ -601,11 +601,11 @@ impl UiTree {
     }
   }
 
-  /// Returns `node`'s property for the attached property `key`, creating it at the key's default the
-  /// first time. A new property is connected to the node's dirty flags like any of its fields, and
-  /// its levels let a style value and a local value compete as usual. An inheriting property
-  /// follows its nearest logical ancestor that holds the key, and the node's descendants that hold
-  /// it follow the new one.
+  /// Returns `node`'s property for the attached property `key`: a field that shares the key, or
+  /// its attached value, created at the key's default the first time. A new property is connected
+  /// to the node's dirty flags like any of its fields, and its levels let a style value and a local
+  /// value compete as usual. An inheriting property follows its nearest logical ancestor that
+  /// holds the key, and the node's descendants that hold it follow the new one.
   ///
   /// # Panics
   ///
@@ -639,10 +639,9 @@ impl UiTree {
   where
     T: PartialEq + 'static,
   {
-    if let Some(property) = self.stored(node, key) {
+    if let Some(property) = self.held(node, key) {
       return property;
     }
-    self.check(node);
     let property = Property::new(key.key(), key.default_value());
     property.attach(self.dirty_flags.shared(node));
     self.attached_values.insert(node, Box::new(property));

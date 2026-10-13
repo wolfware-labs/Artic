@@ -216,3 +216,18 @@ fn combining_read_agrees_with_holding() {
   assert_eq!(read, tree.attached_property(leaf, &ALLOWED).get());
   assert!(!read);
 }
+
+// Setting an attached key on a node whose field shares the key writes that field, rather than a
+// second property reads would ignore.
+#[test]
+fn attached_property_on_a_field_owner_is_the_field() {
+  let mut tree = UiTree::new();
+  let chrome = Property::new(CHROME.key(), 6);
+  let node = tree.alloc(Box::new(Themed { chrome }));
+
+  tree.attached_property(node, &CHROME).set(9);
+
+  assert_eq!(chrome.get(), 9);
+  assert_eq!(tree.attached(node, &CHROME), 9);
+  assert_eq!(tree.attached_values.count(node), 0);
+}
