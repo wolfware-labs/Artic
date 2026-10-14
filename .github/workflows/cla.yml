@@ -9,12 +9,20 @@ on:
 permissions:
   actions: write
   contents: write
+  issues: write
   pull-requests: write
   statuses: write
+
+# One group per pull request; the merged-close run has its own group so a
+# comment run cannot replace it.
+concurrency:
+  group: cla-${{ github.event.action == 'closed' && 'close-' || '' }}${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
 
 jobs:
   cla:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # Comments only count on pull requests. The sentence must match
     # custom-pr-sign-comment below (expression comparison ignores case).
     # A closed pull request is only locked once it's merged.
@@ -26,7 +34,7 @@ jobs:
          github.event.comment.body == 'I have read the CLA document and I hereby sign the CLA'))
     steps:
       - name: Check CLA signatures
-        uses: wolfware-labs/cla-action@ebeb701a6dddbd47e86651cf6f85e951538cd2b8 # node24 runtime
+        uses: wolfware-labs/cla-action@37c50cc2e3ad11317b0becf9fb7fd6ca9ebd92f3 # reads every commit and comment
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
