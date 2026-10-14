@@ -478,6 +478,48 @@ fn unequal_radii_shadow_matches_each_corner() {
   });
 }
 
+// A shadow without blur is the rounded rectangle filled: its curves and its edges between pixels
+// are anti-aliased as a fill's are.
+#[test]
+fn sharp_shadow_draws_like_a_fill() {
+  with_renderer(|renderer| {
+    let card = RoundedRect::new(Rect::new(2.3, 2.7, 10.0, 10.0), CornerRadius::new(4.0, 0.0, 2.0, 5.0));
+
+    let shadow = render_one(renderer, move |builder| {
+      builder.box_shadow(card, BoxShadow::new(Point::ZERO, 0.0, BLACK));
+    });
+    let fill = render_one(renderer, move |builder| builder.fill(card, BLACK));
+
+    for y in 0..SIZE {
+      for x in 0..SIZE {
+        assert_near(pixel(&shadow, x, y), pixel(&fill, x, y), &format!("{x},{y}"));
+      }
+    }
+  });
+}
+
+// The quarters of a shadow with unequal radii add up where they meet, so no seam shows inside it
+// even when a rotation cuts the pixels along the seam.
+#[test]
+fn rotated_unequal_radii_shadow_has_no_seam() {
+  with_renderer(|renderer| {
+    let card = RoundedRect::new(Rect::new(-6.0, -6.0, 12.0, 12.0), CornerRadius::new(0.0, 2.0, 4.0, 6.0));
+    let turned = Transform::rotate(0.5).then(Transform::translate(8.0, 8.0));
+
+    let pixels = render_one(renderer, move |builder| {
+      builder.with_transform(turned, |builder| {
+        builder.box_shadow(card, BoxShadow::new(Point::ZERO, 1.0, BLACK));
+      });
+    });
+
+    for y in 5..11 {
+      for x in 5..11 {
+        assert_near(pixel(&pixels, x, y), OPAQUE_BLACK, &format!("{x},{y}"));
+      }
+    }
+  });
+}
+
 // A shadow is drawn in the coordinates of the transform around it.
 #[test]
 fn box_shadow_follows_the_transform() {

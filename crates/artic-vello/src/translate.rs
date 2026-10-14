@@ -3,7 +3,7 @@ use artic_render::{
   BoxShadow, Brush, Color, Command, GradientStop, Layer, LineCap, LineJoin, PhysicalSize, Scene, SceneItem, Shape, Stroke,
 };
 use vello::kurbo::{self, Affine, BezPath, Cap, Join, PathEl, Shape as _};
-use vello::peniko::{self, BlendMode, Fill, Gradient};
+use vello::peniko::{self, BlendMode, Compose, Fill, Gradient, Mix};
 
 /// The tolerance vello flattens a shape with, so converting one to a path first changes nothing.
 const TOLERANCE: f64 = 0.1;
@@ -114,19 +114,43 @@ impl Translation<'_> {
   }
 
   fn box_shadow(&mut self, rect: &RoundedRect, shadow: &BoxShadow) {
+    let Some(shadow) = shadow.drawable() else {
+      return;
+    };
+    let Some(shape) = shadow.shape(*rect) else {
+      return;
+    };
     let color = color(shadow.color, 1.0);
-    let to_centers = half_pixel_back(self.current);
-    for Blur {
-      area,
-      rect,
-      radius,
-      std_dev,
-    } in blurs(rect, shadow, self.current)
-    {
+    if shadow.blur == 0.0 {
+      let outline = outline(&shape.into());
+      self.out.fill(Fill::NonZero, self.current, color, None, &outline);
+      return;
+    }
+    let back = half_pixel_back(self.current);
+    let blurs = blurs(shape, shadow.blur);
+    let whole = blurs
+      .iter()
+      .map(|blur| blur.area)
+      .reduce(|whole, area| whole.union(area))
+      .unwrap_or_default();
+    if let [blur] = blurs.as_slice() {
       self
         .out
-        .draw_blurred_rounded_rect_in(&area, self.current, rect + to_centers, color, radius, std_dev);
+        .draw_blurred_rounded_rect_in(&whole, self.current, blur.rect + back, color, blur.radius, blur.std_dev);
+      return;
     }
+    let plus = BlendMode::new(Mix::Normal, Compose::Plus);
+    self
+      .out
+      .push_layer(Fill::NonZero, BlendMode::default(), 1.0, self.current, &whole);
+    for blur in blurs {
+      self.out.push_layer(Fill::NonZero, plus, 1.0, self.current, &blur.area);
+      self
+        .out
+        .draw_blurred_rounded_rect_in(&whole, self.current, blur.rect + back, color, blur.radius, blur.std_dev);
+      self.out.pop_layer();
+    }
+    self.out.pop_layer();
   }
 }
 
@@ -225,15 +249,10 @@ struct Blur {
   std_dev: f64,
 }
 
-fn blurs(rect: &RoundedRect, shadow: &BoxShadow, current: Affine) -> Vec<Blur> {
-  let Some(shadow) = shadow.drawable() else {
-    return Vec::new();
-  };
-  let Some(RoundedRect { rect, radius }) = shadow.shape(*rect) else {
-    return Vec::new();
-  };
+fn blurs(shape: RoundedRect, blur: f32) -> Vec<Blur> {
+  let RoundedRect { rect, radius } = shape;
   let rect = kurbo_rect(rect);
-  let std_dev = f64::from(shadow.blur) / 2.0;
+  let std_dev = f64::from(blur) / 2.0;
   let area = rect.inflate(BLUR_EXTENT * std_dev, BLUR_EXTENT * std_dev);
   let blur = |area, radius: f32| Blur {
     area,
@@ -253,19 +272,13 @@ fn blurs(rect: &RoundedRect, shadow: &BoxShadow, current: Affine) -> Vec<Blur> {
   {
     return vec![blur(area, top_left)];
   }
-  let middle = snapped(rect.center(), current);
+  let middle = rect.center();
   vec![
     blur(kurbo::Rect::new(area.x0, area.y0, middle.x, middle.y), top_left),
     blur(kurbo::Rect::new(middle.x, area.y0, area.x1, middle.y), top_right),
     blur(kurbo::Rect::new(middle.x, middle.y, area.x1, area.y1), bottom_right),
     blur(kurbo::Rect::new(area.x0, middle.y, middle.x, area.y1), bottom_left),
   ]
-}
-
-fn snapped(point: kurbo::Point, current: Affine) -> kurbo::Point {
-  let device = current * point;
-  let snapped = current.inverse() * kurbo::Point::new(device.x.round(), device.y.round());
-  if snapped.is_finite() { snapped } else { point }
 }
 
 fn half_pixel_back(current: Affine) -> kurbo::Vec2 {
@@ -685,24 +698,23 @@ mod tests {
   }
 
   // A shadow is blurred with half its blur as the standard deviation, over the area vello's own
-  // blur covers, 2.5 standard deviations past the rectangle. Equal radii make one blur. Unequal
-  // radii make four, one per quarter of that area, each with its corner's radius.
+  // blur covers, 2.5 standard deviations past the shadow's rectangle. Equal radii make one blur.
+  // Unequal radii make four, one per quarter of that area, each with its corner's radius.
   #[test]
   fn box_shadow_grows_moves_and_blurs() {
     let card = RoundedRect::new(Rect::new(10.0, 20.0, 100.0, 50.0), CornerRadius::uniform(4.0));
     let shadow = BoxShadow::new(Point::new(3.0, 5.0), 8.0, RED).with_spread(2.0);
     let grown = kurbo::Rect::new(11.0, 23.0, 115.0, 77.0);
     let tab = RoundedRect::new(Rect::new(0.0, 0.0, 20.0, 10.0), CornerRadius::new(1.0, 2.0, 3.0, 0.0));
-    let sharp = BoxShadow::new(Point::ZERO, 0.0, RED);
     let quarter = |x0, y0, x1, y1, radius| Blur {
       area: kurbo::Rect::new(x0, y0, x1, y1),
       rect: kurbo::Rect::new(0.0, 0.0, 20.0, 10.0),
       radius,
-      std_dev: 0.0,
+      std_dev: 2.0,
     };
 
     assert_eq!(
-      blurs(&card, &shadow, Affine::IDENTITY),
+      blurs(shadow.shape(card).expect("drawn"), shadow.blur),
       [Blur {
         area: grown.inflate(10.0, 10.0),
         rect: grown,
@@ -711,37 +723,18 @@ mod tests {
       }]
     );
     assert_eq!(
-      blurs(&tab, &sharp, Affine::IDENTITY),
+      blurs(tab, 4.0),
       [
-        quarter(0.0, 0.0, 10.0, 5.0, 1.0),
-        quarter(10.0, 0.0, 20.0, 5.0, 2.0),
-        quarter(10.0, 5.0, 20.0, 10.0, 3.0),
-        quarter(0.0, 5.0, 10.0, 10.0, 0.0),
+        quarter(-5.0, -5.0, 10.0, 5.0, 1.0),
+        quarter(10.0, -5.0, 25.0, 5.0, 2.0),
+        quarter(10.0, 5.0, 25.0, 15.0, 3.0),
+        quarter(-5.0, 5.0, 10.0, 15.0, 0.0),
       ]
     );
   }
 
-  // The quarters meet on a device pixel's corner, so their seam never splits a pixel between two
-  // blurs, under the transform the shadow is drawn in.
-  #[test]
-  fn shadow_quarters_meet_on_device_pixels() {
-    let odd = RoundedRect::new(Rect::new(0.0, 0.0, 11.0, 7.0), CornerRadius::new(1.0, 0.0, 0.0, 0.0));
-    let sharp = BoxShadow::new(Point::ZERO, 0.0, RED);
-    let meeting = |current| {
-      let area = blurs(&odd, &sharp, current)[0].area;
-      kurbo::Point::new(area.x1, area.y1)
-    };
-
-    assert_eq!(meeting(Affine::IDENTITY), kurbo::Point::new(6.0, 4.0));
-    assert_eq!(meeting(Affine::scale(2.0)), kurbo::Point::new(5.5, 3.5));
-    assert_eq!(
-      snapped(kurbo::Point::new(1.25, 1.0), Affine::scale(0.0)),
-      kurbo::Point::new(1.25, 1.0)
-    );
-  }
-
   // A shadow that draws nothing by the rules of `BoxShadow` reaches vello as no path at all. A
-  // drawn one is one path, or four when its radii differ.
+  // drawn one with equal radii is one path.
   #[test]
   fn invalid_box_shadows_draw_nothing() {
     let card = RoundedRect::from(Rect::new(0.0, 0.0, 10.0, 10.0));
@@ -757,13 +750,12 @@ mod tests {
       "negative width"
     );
     assert_eq!(paths(card, shadow(0.0)), 1, "a valid shadow draws");
-    assert_eq!(
+    assert!(
       paths(
         RoundedRect::new(card.rect, CornerRadius::new(1.0, 2.0, 3.0, 4.0)),
         shadow(0.0)
-      ),
-      4,
-      "one path per quarter"
+      ) > 0,
+      "unequal radii draw"
     );
   }
 }
