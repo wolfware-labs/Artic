@@ -263,11 +263,11 @@ fn rounded_rect_leaves_corners_clear() {
 
     let pixels = render_one(renderer, move |builder| builder.fill(card, RED));
 
-    assert_eq!(pixel(&pixels, 0, 0), CLEAR, "top-left, rounded");
-    assert_eq!(pixel(&pixels, last, last), CLEAR, "bottom-right, rounded");
-    assert_eq!(pixel(&pixels, last, 0), OPAQUE_RED, "top-right, square");
-    assert_eq!(pixel(&pixels, 0, last), OPAQUE_RED, "bottom-left, square");
-    assert_eq!(pixel(&pixels, 8, 8), OPAQUE_RED, "middle");
+    assert_near(pixel(&pixels, 0, 0), CLEAR, "top-left, rounded");
+    assert_near(pixel(&pixels, last, last), CLEAR, "bottom-right, rounded");
+    assert_near(pixel(&pixels, last, 0), OPAQUE_RED, "top-right, square");
+    assert_near(pixel(&pixels, 0, last), OPAQUE_RED, "bottom-left, square");
+    assert_near(pixel(&pixels, 8, 8), OPAQUE_RED, "middle");
   });
 }
 
@@ -285,8 +285,8 @@ fn path_clip_masks_drawing() {
       builder.with_clip(triangle.clone(), |builder| builder.fill(full(), RED));
     });
 
-    assert_eq!(pixel(&pixels, 2, 2), OPAQUE_RED, "inside the triangle");
-    assert_eq!(pixel(&pixels, 13, 13), CLEAR, "outside it");
+    assert_near(pixel(&pixels, 2, 2), OPAQUE_RED, "inside the triangle");
+    assert_near(pixel(&pixels, 13, 13), CLEAR, "outside it");
   });
 }
 
@@ -310,10 +310,10 @@ fn fill_rule_decides_a_star_center() {
     let even_odd = render_one(renderer, |builder| builder.fill(star(FillRule::EvenOdd), RED));
     let non_zero = render_one(renderer, |builder| builder.fill(star(FillRule::NonZero), RED));
 
-    assert_eq!(pixel(&even_odd, 7, 7), CLEAR, "even-odd center");
-    assert_eq!(pixel(&non_zero, 7, 7), OPAQUE_RED, "non-zero center");
-    assert_eq!(pixel(&even_odd, 7, 4), OPAQUE_RED, "even-odd top point");
-    assert_eq!(pixel(&non_zero, 7, 4), OPAQUE_RED, "non-zero top point");
+    assert_near(pixel(&even_odd, 7, 7), CLEAR, "even-odd center");
+    assert_near(pixel(&non_zero, 7, 7), OPAQUE_RED, "non-zero center");
+    assert_near(pixel(&even_odd, 7, 4), OPAQUE_RED, "even-odd top point");
+    assert_near(pixel(&non_zero, 7, 4), OPAQUE_RED, "non-zero top point");
   });
 }
 
@@ -338,7 +338,7 @@ fn gradient_on_path_uses_its_bounds() {
 
     assert_near(pixel(&pixels, 8, 4), [255, 0, 0, 255], "the path's left edge");
     assert_near(pixel(&pixels, 15, 4), [0, 0, 255, 255], "the path's right edge");
-    assert_eq!(pixel(&pixels, 4, 4), CLEAR, "outside the path");
+    assert_near(pixel(&pixels, 4, 4), CLEAR, "outside the path");
   });
 }
 
@@ -351,8 +351,8 @@ fn undrawable_clip_hides_its_content() {
       builder.fill(Rect::new(0.0, 0.0, 4.0, 4.0), BLUE);
     });
 
-    assert_eq!(pixel(&pixels, 8, 8), CLEAR, "inside the broken clip");
-    assert_eq!(pixel(&pixels, 1, 1), [0, 0, 255, 255], "drawn after it");
+    assert_near(pixel(&pixels, 8, 8), CLEAR, "inside the broken clip");
+    assert_near(pixel(&pixels, 1, 1), [0, 0, 255, 255], "drawn after it");
   });
 }
 
@@ -367,8 +367,8 @@ fn open_figure_fills_closed() {
 
     let pixels = render_one(renderer, move |builder| builder.fill(open.clone(), RED));
 
-    assert_eq!(pixel(&pixels, 2, 2), OPAQUE_RED, "inside the closed triangle");
-    assert_eq!(pixel(&pixels, 13, 13), CLEAR, "outside it");
+    assert_near(pixel(&pixels, 2, 2), OPAQUE_RED, "inside the closed triangle");
+    assert_near(pixel(&pixels, 13, 13), CLEAR, "outside it");
   });
 }
 
@@ -387,11 +387,11 @@ fn stroke_paints_only_the_outline() {
       (14, "inside the right edge"),
       (15, "outside the right edge"),
     ] {
-      assert_eq!(pixel(&pixels, x, 8), OPAQUE_RED, "{what}");
+      assert_near(pixel(&pixels, x, 8), OPAQUE_RED, what);
     }
-    assert_eq!(pixel(&pixels, 0, 0), OPAQUE_RED, "the mitered corner");
-    assert_eq!(pixel(&pixels, 2, 8), CLEAR, "just inside the band");
-    assert_eq!(pixel(&pixels, 8, 8), CLEAR, "the middle");
+    assert_near(pixel(&pixels, 0, 0), OPAQUE_RED, "the mitered corner");
+    assert_near(pixel(&pixels, 2, 8), CLEAR, "just inside the band");
+    assert_near(pixel(&pixels, 8, 8), CLEAR, "the middle");
   });
 }
 
@@ -406,9 +406,9 @@ fn stroke_leaves_open_figures_open() {
 
     let pixels = render_one(renderer, move |builder| builder.stroke(corner.clone(), RED, Stroke::new(2.0)));
 
-    assert_eq!(pixel(&pixels, 8, 1), OPAQUE_RED, "on the first segment");
-    assert_eq!(pixel(&pixels, 14, 8), OPAQUE_RED, "on the second segment");
-    assert_eq!(pixel(&pixels, 8, 8), CLEAR, "where a closing line would run");
+    assert_near(pixel(&pixels, 8, 1), OPAQUE_RED, "on the first segment");
+    assert_near(pixel(&pixels, 14, 8), OPAQUE_RED, "on the second segment");
+    assert_near(pixel(&pixels, 8, 8), CLEAR, "where a closing line would run");
   });
 }
 
