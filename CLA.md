@@ -1,7 +1,5 @@
 # artic Contributor License Agreement
 
-> **Draft.** This agreement is a working draft. The final text is published before the project accepts outside contributions.
-
 This agreement is between you ("You") and Wolfware LLC ("Wolfware"), the steward of artic (the "Project"). It applies to every Contribution You submit to the Project, now or in the future. You keep the copyright in Your Contributions.
 
 ## 1. Definitions

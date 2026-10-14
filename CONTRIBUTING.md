@@ -29,7 +29,7 @@ CI runs these on every pull request. Run them locally before pushing:
 
 On Windows PowerShell, set the docs flag with `$env:RUSTDOCFLAGS="-D warnings"` before running `cargo doc`.
 
-The required status checks for `main` are `Test (windows-latest)`, `Test (macos-latest)`, `Test (ubuntu-latest)`, `Lint`, `Docs` and `Deny`.
+The required status checks for `main` are `Test (windows-latest)`, `Test (macos-latest)`, `Test (ubuntu-latest)`, `Lint`, `Docs`, `Deny` and `Socket Security: Pull Request Alerts`. Socket checks the dependencies a pull request adds or changes for known vulnerabilities and supply-chain risks.
 
 ## Snapshot tests
 
