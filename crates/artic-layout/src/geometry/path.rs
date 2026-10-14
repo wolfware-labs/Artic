@@ -294,6 +294,19 @@ mod tests {
     assert_eq!(lines.bounds(), Rect::new(-1.0, -2.0, 5.0, 7.0));
   }
 
+  // A cubic whose turning points are symmetric around zero, so the linear term of its derivative
+  // vanishes, still reaches its turn.
+  #[test]
+  fn path_bounds_reach_a_turn_without_a_linear_term() {
+    let cubic = Path::builder(Point::new(0.0, 0.0))
+      .cubic_to(Point::new(1.0, 1.0), Point::new(2.0, 2.0), Point::new(3.0, 1.0))
+      .build();
+
+    let bounds = cubic.bounds();
+
+    assert!((bounds.height - std::f32::consts::SQRT_2).abs() < 1e-5, "{bounds}");
+  }
+
   // A quadratic arch raised to a cubic, as SVG and font tools write one, has the quadratic's box,
   // though its cubic term is only rounding noise.
   #[test]
