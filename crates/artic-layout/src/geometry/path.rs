@@ -212,15 +212,14 @@ fn quad_turns(start: f32, control: f32, end: f32) -> impl Iterator<Item = f32> {
 }
 
 fn cubic_turns(start: f32, first: f32, second: f32, end: f32) -> impl Iterator<Item = f32> {
+  let [start, first, second, end] = [start, first, second, end].map(f64::from);
   let (a, b, c) = (first - start, second - first, end - second);
   let (qa, qb, qc) = (a - 2.0 * b + c, 2.0 * (b - a), a);
-  let roots = if qa.abs() < f32::EPSILON {
-    [-qc / qb, f32::NAN]
-  } else {
-    let root = (qb * qb - 4.0 * qa * qc).sqrt();
-    [(-qb + root) / (2.0 * qa), (-qb - root) / (2.0 * qa)]
-  };
-  roots.into_iter().filter(|t| *t > 0.0 && *t < 1.0)
+  let q = -0.5 * (qb + qb.signum() * (qb * qb - 4.0 * qa * qc).sqrt());
+  [q / qa, qc / q]
+    .into_iter()
+    .filter(|t| *t > 0.0 && *t < 1.0)
+    .map(|t| t as f32)
 }
 
 fn lerp(from: Point, to: Point, t: f32) -> Point {
@@ -293,6 +292,22 @@ mod tests {
     assert_eq!(quad.bounds(), Rect::new(0.0, 0.0, 10.0, 5.0));
     assert_eq!(cubic.bounds(), Rect::new(0.0, 0.0, 10.0, 7.5));
     assert_eq!(lines.bounds(), Rect::new(-1.0, -2.0, 5.0, 7.0));
+  }
+
+  // A quadratic arch raised to a cubic, as SVG and font tools write one, has the quadratic's box,
+  // though its cubic term is only rounding noise.
+  #[test]
+  fn path_bounds_reach_a_nearly_quadratic_peak() {
+    for (start, control, end) in [(4.33, 78.0, 3.53), (0.1, 61.7, 0.7), (12.0, -40.3, 11.2)] {
+      let [start, control, end] = [Point::new(0.0, start), Point::new(50.0, control), Point::new(100.0, end)];
+      let raise = |from: Point| lerp(from, control, 2.0 / 3.0);
+      let quad = Path::builder(start).quad_to(control, end).build();
+      let cubic = Path::builder(start).cubic_to(raise(start), raise(end), end).build();
+
+      let (expected, actual) = (quad.bounds(), cubic.bounds());
+
+      assert!((expected.height - actual.height).abs() < 1e-3, "{expected} vs {actual}");
+    }
   }
 
   // A path that is only its start point has a box of no size at that point.

@@ -8,6 +8,9 @@ use vello::peniko::{self, BlendMode, Fill, Gradient};
 /// The tolerance vello flattens a shape with, so converting one to a path first changes nothing.
 const TOLERANCE: f64 = 0.1;
 
+/// How far a quarter circle's cubic control points sit from its ends toward its corner.
+const KAPPA: f64 = 0.552_284_749_830_793_6;
+
 /// Writes `scene` into `out`, drawn at `scale` device pixels per logical unit on a surface of
 /// `size`.
 pub(crate) fn translate(scene: &Scene, scale: f32, size: PhysicalSize, out: &mut vello::Scene) {
@@ -123,9 +126,7 @@ fn kurbo_rect(rect: Rect) -> kurbo::Rect {
 fn outline(shape: &Shape) -> BezPath {
   match shape {
     Shape::Rect(rect) => kurbo_rect(*rect).to_path(TOLERANCE),
-    Shape::RoundedRect(rounded) => {
-      kurbo::RoundedRect::from_rect(kurbo_rect(rounded.rect), radii(rounded.radius)).to_path(TOLERANCE)
-    }
+    Shape::RoundedRect(rounded) => rounded_outline(kurbo_rect(rounded.rect), rounded.radius),
     Shape::Path(path) => path.elements().iter().map(|element| path_el(*element)).collect(),
   }
 }
@@ -167,19 +168,31 @@ fn path_el(element: PathElement) -> PathEl {
   }
 }
 
-fn radii(radius: CornerRadius) -> kurbo::RoundedRectRadii {
+fn rounded_outline(rect: kurbo::Rect, radius: CornerRadius) -> BezPath {
   let CornerRadius {
     top_left,
     top_right,
     bottom_right,
     bottom_left,
   } = radius;
-  kurbo::RoundedRectRadii::new(
-    f64::from(top_left),
-    f64::from(top_right),
-    f64::from(bottom_right),
-    f64::from(bottom_left),
-  )
+  let [top_left, top_right, bottom_right, bottom_left] = [top_left, top_right, bottom_right, bottom_left].map(f64::from);
+  let kurbo::Rect { x0, y0, x1, y1 } = rect;
+  let mut path = BezPath::new();
+  path.move_to((x0 + top_left, y0));
+  corner(&mut path, (x1 - top_right, y0), (x1, y0), (x1, y0 + top_right));
+  corner(&mut path, (x1, y1 - bottom_right), (x1, y1), (x1 - bottom_right, y1));
+  corner(&mut path, (x0 + bottom_left, y1), (x0, y1), (x0, y1 - bottom_left));
+  corner(&mut path, (x0, y0 + top_left), (x0, y0), (x0 + top_left, y0));
+  path.close_path();
+  path
+}
+
+fn corner(path: &mut BezPath, from: impl Into<kurbo::Point>, vertex: impl Into<kurbo::Point>, to: impl Into<kurbo::Point>) {
+  let (from, vertex, to) = (from.into(), vertex.into(), to.into());
+  path.line_to(from);
+  if from != to {
+    path.curve_to(from.lerp(vertex, KAPPA), to.lerp(vertex, KAPPA), to);
+  }
 }
 
 fn paint(brush: &Brush, rect: Rect) -> Option<(peniko::Brush, Option<Affine>)> {
@@ -461,8 +474,8 @@ mod tests {
     out
   }
 
-  // Each shape becomes the kurbo path vello would make of it: a rectangle, a rounded rectangle
-  // with its own radius on each corner, or the path's elements one for one. A path keeps its
+  // Each shape becomes a kurbo path: a rectangle as vello would make it, a rounded rectangle
+  // filling the same box, or the path's elements one for one. A path keeps its
   // fill rule; rectangles fill by non-zero.
   #[test]
   fn shapes_convert_to_kurbo() {
@@ -484,10 +497,7 @@ mod tests {
     expected.close_path();
 
     assert_eq!(outline(&rect.into()), corners.to_path(TOLERANCE));
-    assert_eq!(
-      outline(&rounded.into()),
-      kurbo::RoundedRect::from_rect(corners, (1.0, 2.0, 3.0, 4.0)).to_path(TOLERANCE)
-    );
+    assert_eq!(outline(&rounded.into()).control_box(), corners);
     assert_eq!(outline(&path.clone().into()), expected);
     assert_eq!(
       [
@@ -498,6 +508,23 @@ mod tests {
       ],
       [Fill::NonZero, Fill::NonZero, Fill::NonZero, Fill::EvenOdd]
     );
+  }
+
+  // A rounded rectangle keeps the radii `RoundedRect::fitted` gives it, corner by corner, even a
+  // radius over half the shortest side, which a side with a square corner leaves room for.
+  #[test]
+  fn rounded_rects_keep_their_fitted_radii() {
+    let tab = RoundedRect::new(Rect::new(0.0, 0.0, 10.0, 40.0), CornerRadius::new(4.0, 0.0, 20.0, 0.0));
+    let shape = Shape::from(tab).drawable().expect("drawable");
+
+    let outline = outline(&shape);
+
+    assert_eq!(outline.control_box(), kurbo::Rect::new(0.0, 0.0, 10.0, 40.0));
+    assert!(!outline.contains((0.2, 0.2).into()), "top-left, radius 2");
+    assert!(outline.contains((9.9, 0.1).into()), "top-right, square");
+    assert!(!outline.contains((8.5, 37.5).into()), "bottom-right, radius 10");
+    assert!(outline.contains((0.1, 39.9).into()), "bottom-left, square");
+    assert!(outline.contains((5.0, 20.0).into()), "middle");
   }
 
   // A shape that draws nothing by the rules of `Shape::drawable` reaches vello as no path at all,
