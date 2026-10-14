@@ -9,16 +9,26 @@ on:
 permissions:
   actions: write
   contents: write
+  issues: write
   pull-requests: write
   statuses: write
+
+# One group per pull request; the merged-close run has its own group so a
+# comment run cannot replace it.
+concurrency:
+  group: cla-${{ github.event.action == 'closed' && 'close-' || '' }}${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
 
 jobs:
   cla:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # Comments only count on pull requests. The sentence must match
     # custom-pr-sign-comment below (expression comparison ignores case).
+    # A closed pull request is only locked once it's merged.
     if: >-
-      github.event_name == 'pull_request_target' ||
+      (github.event_name == 'pull_request_target' &&
+        (github.event.action != 'closed' || github.event.pull_request.merged)) ||
       (github.event.issue.pull_request &&
         (github.event.comment.body == 'recheck' ||
          github.event.comment.body == 'I have read the CLA document and I hereby sign the CLA'))
