@@ -207,8 +207,9 @@ impl PathBuilder {
 }
 
 fn quad_turns(start: f32, control: f32, end: f32) -> impl Iterator<Item = f32> {
+  let [start, control, end] = [start, control, end].map(f64::from);
   let t = (start - control) / (start - 2.0 * control + end);
-  Some(t).filter(|t| *t > 0.0 && *t < 1.0).into_iter()
+  Some(t).filter(|t| *t > 0.0 && *t < 1.0).map(|t| t as f32).into_iter()
 }
 
 fn cubic_turns(start: f32, first: f32, second: f32, end: f32) -> impl Iterator<Item = f32> {
@@ -223,7 +224,9 @@ fn cubic_turns(start: f32, first: f32, second: f32, end: f32) -> impl Iterator<I
 }
 
 fn lerp(from: Point, to: Point, t: f32) -> Point {
-  Point::new(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t)
+  let t = f64::from(t);
+  let at = |from: f32, to: f32| (f64::from(from) * (1.0 - t) + f64::from(to) * t) as f32;
+  Point::new(at(from.x, to.x), at(from.y, to.y))
 }
 
 fn quad_at(start: Point, control: Point, end: Point, t: f32) -> Point {
@@ -321,6 +324,23 @@ mod tests {
 
       assert!((expected.height - actual.height).abs() < 1e-3, "{expected} vs {actual}");
     }
+  }
+
+  // Curves keep their box when their coordinates are near the largest finite `f32`, where the
+  // differences between them would overflow.
+  #[test]
+  fn path_bounds_hold_for_huge_coordinates() {
+    let quad = Path::builder(Point::new(0.0, -f32::MAX))
+      .quad_to(Point::new(1.0, f32::MAX), Point::new(2.0, -f32::MAX))
+      .build();
+    let [low, high] = [-0.5 * f32::MAX, 0.75 * f32::MAX];
+    let cubic = Path::builder(Point::new(0.0, low))
+      .cubic_to(Point::new(1.0, high), Point::new(2.0, high), Point::new(3.0, low))
+      .build();
+
+    assert_eq!(quad.bounds(), Rect::new(0.0, -f32::MAX, 2.0, f32::MAX));
+    assert_eq!(cubic.bounds().y, low);
+    assert!((cubic.bounds().height / f32::MAX - 0.9375).abs() < 1e-6, "{}", cubic.bounds());
   }
 
   // A path that is only its start point has a box of no size at that point.
