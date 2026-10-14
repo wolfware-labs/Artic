@@ -22,6 +22,6 @@ pub use compose::{Compositor, Layers, Nodes};
 pub use renderer::{
   PhysicalSize, PixelBuffer, PixelFormat, RawHandles, RenderError, Renderer, SurfaceId, SurfaceView, Target, TargetKind,
 };
-pub use scene::{Clip, Command, Layer, Scene, SceneFragment, SceneItem};
+pub use scene::{Command, Layer, Scene, SceneFragment, SceneItem, drawable_opacity};
 pub use shape::Shape;
 pub use stroke::{LineCap, LineJoin, Stroke};

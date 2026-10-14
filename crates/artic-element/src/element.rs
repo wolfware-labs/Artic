@@ -6,7 +6,7 @@ use artic_core::Object;
 use artic_core::input::InputEvent;
 use artic_layout::geometry::{Point, Size};
 use artic_layout::{ArrangeCx, Layoutable, MeasureCx};
-use artic_render::{Clip, Layers, SceneBuilder};
+use artic_render::{Layers, SceneBuilder, Shape};
 
 /// A node the frame pipeline lays out, draws, hit-tests, sends input to and describes to
 /// assistive technology.
@@ -86,7 +86,7 @@ pub trait ElementImpl {
 
   /// Clips the element and its descendants, in its own coordinates, for its arranged `size`. By
   /// default, no clip.
-  fn clip(&self, size: Size) -> Option<Clip> {
+  fn clip(&self, size: Size) -> Option<Shape> {
     let _ = size;
     None
   }

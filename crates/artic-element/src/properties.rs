@@ -5,7 +5,7 @@ use artic_core::property::Property;
 use artic_layout::geometry::{Point, Rect, Size, Thickness, Transform};
 use artic_layout::{ArrangeCx, HorizontalAlignment, MeasureCx, Sizing, VerticalAlignment, arrange_with, measure_with};
 use artic_macros::XamlProperties;
-use artic_render::{Clip, Layers};
+use artic_render::{Layers, Shape, drawable_opacity};
 
 /// Where an element sits and how big it is: size, limits, margin and alignment.
 ///
@@ -153,8 +153,7 @@ impl AppearanceProperties {
   /// counts as 1), its render transform around its centre in its own coordinates, whether it's
   /// visible, its z-index, and the control's `clip`.
   #[must_use]
-  pub fn layers(&self, size: Size, clip: Option<Clip>) -> Layers {
-    let opacity = self.opacity.get();
+  pub fn layers(&self, size: Size, clip: Option<Shape>) -> Layers {
     let (x, y) = (size.width / 2.0, size.height / 2.0);
     Layers {
       transform: self
@@ -162,7 +161,7 @@ impl AppearanceProperties {
         .get()
         .map(|transform| Transform::translate(-x, -y).then(transform).then(Transform::translate(x, y))),
       clip,
-      opacity: if opacity.is_nan() { 1.0 } else { opacity.clamp(0.0, 1.0) },
+      opacity: drawable_opacity(self.opacity.get()),
       visible: self.visibility.get() == Visibility::Visible,
       z_index: self.z_index.get(),
     }

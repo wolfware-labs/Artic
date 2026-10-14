@@ -1,7 +1,10 @@
-use artic_layout::geometry::{Point, Rect, Transform};
-use artic_render::{Brush, Clip, Color, Command, GradientStop, Layer, PhysicalSize, Scene, SceneItem};
-use vello::kurbo::{self, Affine};
+use artic_layout::geometry::{CornerRadius, FillRule, PathElement, Point, Rect, Transform};
+use artic_render::{Brush, Color, Command, GradientStop, Layer, PhysicalSize, Scene, SceneItem, Shape};
+use vello::kurbo::{self, Affine, BezPath, PathEl, Shape as _};
 use vello::peniko::{self, BlendMode, Fill, Gradient};
+
+/// The tolerance vello flattens a shape with, so converting one to a path first changes nothing.
+const TOLERANCE: f64 = 0.1;
 
 /// Writes `scene` into `out`, drawn at `scale` device pixels per logical unit on a surface of
 /// `size`.
@@ -15,14 +18,14 @@ pub(crate) fn translate(scene: &Scene, scale: f32, size: PhysicalSize, out: &mut
   };
   for item in scene.items() {
     match item {
-      SceneItem::Push(layer) => translation.push(*layer),
+      SceneItem::Push(layer) => translation.push(layer),
       SceneItem::Pop => translation.pop(),
       SceneItem::Fragment(fragment) => {
         for command in fragment.commands() {
           match command {
-            Command::Push(layer) => translation.push(*layer),
+            Command::Push(layer) => translation.push(layer),
             Command::Pop => translation.pop(),
-            Command::FillRect { rect, brush } => translation.fill_rect(*rect, brush),
+            Command::Fill { shape, brush } => translation.fill(shape, brush),
           }
         }
       }
@@ -48,20 +51,23 @@ struct Translation<'a> {
 }
 
 impl Translation<'_> {
-  fn push(&mut self, layer: Layer) {
+  fn push(&mut self, layer: &Layer) {
     match layer {
       Layer::Transform(transform) => {
         self.stack.push(Pushed::Transform(self.current));
-        self.current *= affine(transform);
+        self.current *= affine(*transform);
       }
-      Layer::Clip(Clip::Rect(rect)) => {
-        self.out.push_clip_layer(Fill::NonZero, self.current, &kurbo_rect(rect));
+      Layer::Clip(shape) => {
+        let (style, clip) = shape
+          .drawable()
+          .map_or((Fill::NonZero, BezPath::new()), |shape| (fill_rule(&shape), outline(&shape)));
+        self.out.push_clip_layer(style, self.current, &clip);
         self.stack.push(Pushed::Layer);
       }
       Layer::Opacity(opacity) => {
         self
           .out
-          .push_layer(Fill::NonZero, BlendMode::default(), opacity, Affine::IDENTITY, &self.surface);
+          .push_layer(Fill::NonZero, BlendMode::default(), *opacity, Affine::IDENTITY, &self.surface);
         self.stack.push(Pushed::Layer);
       }
     }
@@ -75,11 +81,14 @@ impl Translation<'_> {
     }
   }
 
-  fn fill_rect(&mut self, rect: Rect, brush: &Brush) {
-    if let Some((brush, transform)) = paint(brush, rect) {
+  fn fill(&mut self, shape: &Shape, brush: &Brush) {
+    let Some(shape) = shape.drawable() else {
+      return;
+    };
+    if let Some((brush, transform)) = paint(brush, shape.bounds()) {
       self
         .out
-        .fill(Fill::NonZero, self.current, &brush, transform, &kurbo_rect(rect));
+        .fill(fill_rule(&shape), self.current, &brush, transform, &outline(&shape));
     }
   }
 }
@@ -94,6 +103,51 @@ fn kurbo_rect(rect: Rect) -> kurbo::Rect {
   kurbo::Rect::from_origin_size(
     (f64::from(rect.x), f64::from(rect.y)),
     (f64::from(rect.width), f64::from(rect.height)),
+  )
+}
+
+fn outline(shape: &Shape) -> BezPath {
+  match shape {
+    Shape::Rect(rect) => kurbo_rect(*rect).to_path(TOLERANCE),
+    Shape::RoundedRect(rounded) => {
+      kurbo::RoundedRect::from_rect(kurbo_rect(rounded.rect), radii(rounded.radius)).to_path(TOLERANCE)
+    }
+    Shape::Path(path) => path.elements().iter().map(|element| path_el(*element)).collect(),
+  }
+}
+
+fn fill_rule(shape: &Shape) -> Fill {
+  match shape {
+    Shape::Path(path) => match path.fill_rule() {
+      FillRule::EvenOdd => Fill::EvenOdd,
+      FillRule::NonZero => Fill::NonZero,
+    },
+    Shape::Rect(_) | Shape::RoundedRect(_) => Fill::NonZero,
+  }
+}
+
+fn path_el(element: PathElement) -> PathEl {
+  match element {
+    PathElement::MoveTo(point) => PathEl::MoveTo(kurbo_point(point)),
+    PathElement::LineTo(point) => PathEl::LineTo(kurbo_point(point)),
+    PathElement::QuadTo(control, end) => PathEl::QuadTo(kurbo_point(control), kurbo_point(end)),
+    PathElement::CubicTo(first, second, end) => PathEl::CurveTo(kurbo_point(first), kurbo_point(second), kurbo_point(end)),
+    PathElement::Close => PathEl::ClosePath,
+  }
+}
+
+fn radii(radius: CornerRadius) -> kurbo::RoundedRectRadii {
+  let CornerRadius {
+    top_left,
+    top_right,
+    bottom_right,
+    bottom_left,
+  } = radius;
+  kurbo::RoundedRectRadii::new(
+    f64::from(top_left),
+    f64::from(top_right),
+    f64::from(bottom_right),
+    f64::from(bottom_left),
   )
 }
 
@@ -154,7 +208,7 @@ fn kurbo_point(point: Point) -> kurbo::Point {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use artic_layout::geometry::{Point, RelativePoint, RelativeScalar};
+  use artic_layout::geometry::{CornerRadius, FillRule, Path, Point, RelativePoint, RelativeScalar, RoundedRect};
   use artic_render::{LinearGradientBrush, RadialGradientBrush, SolidColorBrush};
   use pretty_assertions::assert_eq;
 
@@ -362,6 +416,84 @@ mod tests {
         rect
       ),
       blue
+    );
+  }
+
+  fn encoded(draw: impl FnOnce(&mut Translation<'_>)) -> vello::Scene {
+    let mut out = vello::Scene::new();
+    draw(&mut Translation {
+      out: &mut out,
+      current: Affine::IDENTITY,
+      stack: Vec::new(),
+      surface: kurbo::Rect::ZERO,
+    });
+    out
+  }
+
+  // Each shape becomes the kurbo path vello would make of it: a rectangle, a rounded rectangle
+  // with its own radius on each corner, or the path's elements one for one. A path keeps its
+  // fill rule; rectangles fill by non-zero.
+  #[test]
+  fn shapes_convert_to_kurbo() {
+    let rect = Rect::new(10.0, 20.0, 100.0, 50.0);
+    let corners = kurbo::Rect::new(10.0, 20.0, 110.0, 70.0);
+    let rounded = RoundedRect::new(rect, CornerRadius::new(1.0, 2.0, 3.0, 4.0));
+    let path = Path::builder(Point::new(0.0, 0.0))
+      .line_to(Point::new(10.0, 0.0))
+      .quad_to(Point::new(10.0, 10.0), Point::new(0.0, 10.0))
+      .cubic_to(Point::new(0.0, 5.0), Point::new(5.0, 5.0), Point::new(5.0, 0.0))
+      .close()
+      .fill_rule(FillRule::NonZero)
+      .build();
+    let mut expected = BezPath::new();
+    expected.move_to((0.0, 0.0));
+    expected.line_to((10.0, 0.0));
+    expected.quad_to((10.0, 10.0), (0.0, 10.0));
+    expected.curve_to((0.0, 5.0), (5.0, 5.0), (5.0, 0.0));
+    expected.close_path();
+
+    assert_eq!(outline(&rect.into()), corners.to_path(TOLERANCE));
+    assert_eq!(
+      outline(&rounded.into()),
+      kurbo::RoundedRect::from_rect(corners, (1.0, 2.0, 3.0, 4.0)).to_path(TOLERANCE)
+    );
+    assert_eq!(outline(&path.clone().into()), expected);
+    assert_eq!(
+      [
+        fill_rule(&rect.into()),
+        fill_rule(&rounded.into()),
+        fill_rule(&path.into()),
+        fill_rule(&Path::builder(Point::ZERO).build().into()),
+      ],
+      [Fill::NonZero, Fill::NonZero, Fill::NonZero, Fill::EvenOdd]
+    );
+  }
+
+  // A shape that draws nothing by the rules of `Shape::drawable` reaches vello as no path at all,
+  // and so does a path that is only its start point.
+  #[test]
+  fn invalid_shapes_and_strokes_draw_nothing() {
+    let red = Brush::from(RED);
+    let invalid: [Shape; 5] = [
+      Rect::new(f32::NAN, 0.0, 1.0, 1.0).into(),
+      Rect::new(0.0, 0.0, f32::INFINITY, 1.0).into(),
+      RoundedRect::new(Rect::new(0.0, 0.0, -1.0, 1.0), CornerRadius::ZERO).into(),
+      Path::builder(Point::ZERO)
+        .line_to(Point::new(f32::NEG_INFINITY, 1.0))
+        .build()
+        .into(),
+      Path::builder(Point::ZERO).build().into(),
+    ];
+
+    for shape in &invalid {
+      assert_eq!(encoded(|t| t.fill(shape, &red)).encoding().n_paths, 0, "{shape:?}");
+    }
+    assert_eq!(
+      encoded(|t| t.fill(&Rect::new(0.0, 0.0, 1.0, 1.0).into(), &red))
+        .encoding()
+        .n_paths,
+      1,
+      "a valid fill draws"
     );
   }
 }

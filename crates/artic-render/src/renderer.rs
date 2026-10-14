@@ -182,7 +182,7 @@ mod tests {
       }
       let color = scene.items().iter().find_map(|item| match item {
         SceneItem::Fragment(fragment) => fragment.commands().iter().find_map(|command| match command {
-          Command::FillRect {
+          Command::Fill {
             brush: Brush::Solid(SolidColorBrush { color, .. }),
             ..
           } => Some(*color),
@@ -213,7 +213,7 @@ mod tests {
     }
 
     fn record(&mut self, _arena: &UiTree, _node: NodeId, builder: &mut SceneBuilder) {
-      builder.fill_rect(Rect::new(0.0, 0.0, 2.0, 1.0), Color::rgb(255, 0, 0));
+      builder.fill(Rect::new(0.0, 0.0, 2.0, 1.0), Color::rgb(255, 0, 0));
     }
   }
 

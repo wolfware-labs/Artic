@@ -10,7 +10,7 @@ use artic_core::property::AnyProperty;
 use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_layout::geometry::{Rect, Transform};
 use artic_render::Renderer as _;
-use artic_render::{Clip, Color, Compositor, Layers, Nodes, PhysicalSize, SceneBuilder, SurfaceId, SurfaceView, Target};
+use artic_render::{Color, Compositor, Layers, Nodes, PhysicalSize, SceneBuilder, SurfaceId, SurfaceView, Target};
 use artic_vello::Renderer;
 use std::sync::Arc;
 use std::time::Instant;
@@ -58,7 +58,7 @@ impl Nodes for Scene {
     if node == self.panel {
       Layers {
         transform: Some(Transform::translate(40.0, 40.0)),
-        clip: Some(Clip::Rect(Rect::new(0.0, 0.0, 320.0, 200.0))),
+        clip: Some(Rect::new(0.0, 0.0, 320.0, 200.0).into()),
         ..Layers::default()
       }
     } else if node == self.overlay {
@@ -80,16 +80,16 @@ impl Nodes for Scene {
 
   fn record(&mut self, _arena: &UiTree, node: NodeId, builder: &mut SceneBuilder) {
     if node == self.background {
-      builder.fill_rect(Rect::new(0.0, 0.0, self.width, self.height), Color::rgb(24, 26, 33));
+      builder.fill(Rect::new(0.0, 0.0, self.width, self.height), Color::rgb(24, 26, 33));
     } else if node == self.panel {
-      builder.fill_rect(Rect::new(0.0, 0.0, 320.0, 200.0), Color::rgb(236, 239, 244));
+      builder.fill(Rect::new(0.0, 0.0, 320.0, 200.0), Color::rgb(236, 239, 244));
     } else if node == self.header {
       // Wider than the panel on purpose: the panel's clip cuts it at the panel's edge.
-      builder.fill_rect(Rect::new(0.0, 0.0, 600.0, 40.0), Color::rgb(59, 130, 246));
+      builder.fill(Rect::new(0.0, 0.0, 600.0, 40.0), Color::rgb(59, 130, 246));
     } else if node == self.overlay {
-      builder.fill_rect(Rect::new(0.0, 0.0, 240.0, 160.0), Color::rgb(236, 72, 153));
+      builder.fill(Rect::new(0.0, 0.0, 240.0, 160.0), Color::rgb(236, 72, 153));
     } else if node == self.spinner {
-      builder.fill_rect(Rect::new(-50.0, -50.0, 100.0, 100.0), Color::rgb(250, 204, 21));
+      builder.fill(Rect::new(-50.0, -50.0, 100.0, 100.0), Color::rgb(250, 204, 21));
     }
   }
 }

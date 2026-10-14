@@ -12,7 +12,7 @@ use artic_layout::geometry::{Point, Rect, Size, Thickness, Transform};
 use artic_layout::{ArrangeCx, HorizontalAlignment, LayoutManager, LayoutNodes, Layoutable, MeasureCx, VerticalAlignment};
 use artic_macros::XamlType;
 use artic_registry::{PropertyGroup, Registry};
-use artic_render::{Clip, Layers};
+use artic_render::{Layers, Shape};
 use pretty_assertions::assert_eq;
 use std::cell::Cell;
 
@@ -317,9 +317,9 @@ fn accessibility_node_has_bounds() {
 // The layers carry the control's clip, and otherwise the defaults.
 #[test]
 fn layers_carry_the_clip() {
-  let clip = Some(Clip::Rect(Rect::new(0.0, 0.0, 5.0, 5.0)));
+  let clip = Some(Shape::Rect(Rect::new(0.0, 0.0, 5.0, 5.0)));
 
-  let layers = AppearanceProperties::default().layers(Size::new(10.0, 10.0), clip);
+  let layers = AppearanceProperties::default().layers(Size::new(10.0, 10.0), clip.clone());
 
   assert_eq!(
     layers,

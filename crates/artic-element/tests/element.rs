@@ -13,7 +13,7 @@ use artic_layout::geometry::{Point, Rect, Size, Thickness};
 use artic_layout::{ArrangeCx, LayoutManager, MeasureCx};
 use artic_macros::element;
 use artic_registry::XamlType;
-use artic_render::{Clip, SceneBuilder};
+use artic_render::{SceneBuilder, Shape};
 use pretty_assertions::assert_eq;
 use std::cell::Cell;
 
@@ -52,8 +52,8 @@ impl ElementImpl for Tile {
     node.set_label("tile");
   }
 
-  fn clip(&self, size: Size) -> Option<Clip> {
-    Some(Clip::Rect(Rect::new(0.0, 0.0, size.width, size.height)))
+  fn clip(&self, size: Size) -> Option<Shape> {
+    Some(Shape::Rect(Rect::new(0.0, 0.0, size.width, size.height)))
   }
 }
 
@@ -194,7 +194,7 @@ fn control_hooks_add_to_default_node_and_layers() {
     (built.role(), built.label()),
     (accesskit::Role::GenericContainer, Some("tile"))
   );
-  assert_eq!(layers.clip, Some(Clip::Rect(Rect::new(0.0, 0.0, 8.0, 4.0))));
+  assert_eq!(layers.clip, Some(Shape::Rect(Rect::new(0.0, 0.0, 8.0, 4.0))));
 }
 
 /// A test-only state: how often a control was pressed.
