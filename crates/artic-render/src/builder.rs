@@ -72,8 +72,9 @@ impl SceneBuilder {
     });
   }
 
-  /// Draws the shadow `rect` casts, CSS's outer `box-shadow`. Record it before what casts it, so
-  /// the shadow shows behind.
+  /// Draws the shadow `rect` casts, CSS's outer `box-shadow`: it shows only outside `rect`, so a
+  /// translucent `rect` keeps its own color. Record it before what casts it, so the shadow shows
+  /// behind.
   ///
   /// # Examples
   ///

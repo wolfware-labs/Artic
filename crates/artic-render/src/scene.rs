@@ -53,8 +53,8 @@ pub enum Command {
     /// The stroke's width, joins and caps.
     stroke: Stroke,
   },
-  /// Draws the shadow `rect` casts. It's drawn where it's recorded, so a shadow recorded before
-  /// what casts it shows behind it.
+  /// Draws the shadow `rect` casts, only outside `rect`. It's drawn where it's recorded, so a
+  /// shadow recorded before what casts it shows behind it.
   BoxShadow {
     /// The rounded rectangle that casts the shadow.
     rect: RoundedRect,

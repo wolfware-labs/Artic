@@ -1,7 +1,8 @@
 use crate::{Color, Shape};
 use artic_layout::geometry::{CornerRadius, Point, Rect, RoundedRect};
 
-/// A blurred copy of a rounded rectangle, drawn behind it: CSS's outer `box-shadow`.
+/// A blurred copy of a rounded rectangle, drawn behind it and only outside it: CSS's outer
+/// `box-shadow`.
 ///
 /// The rectangle is grown by `spread`, moved by `offset` and blurred by `blur`, in `color`. It's
 /// built with [`new`](BoxShadow::new) and the `with_*` methods, so fields added later break no

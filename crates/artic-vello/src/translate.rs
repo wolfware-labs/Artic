@@ -114,25 +114,32 @@ impl Translation<'_> {
   }
 
   fn box_shadow(&mut self, rect: &RoundedRect, shadow: &BoxShadow) {
-    let Some(shadow) = shadow.drawable() else {
+    let (Some(caster), Some(shadow)) = (Shape::from(*rect).drawable(), shadow.drawable()) else {
       return;
     };
     let Some(shape) = shadow.shape(*rect) else {
       return;
     };
-    let color = color(shadow.color, 1.0);
-    if shadow.blur == 0.0 {
+    let mut outside = self.surface.to_path(TOLERANCE);
+    outside.extend(self.current * outline(&caster));
+    self.out.push_clip_layer(Fill::EvenOdd, Affine::IDENTITY, &outside);
+    self.shadow(shape, shadow.blur, color(shadow.color, 1.0));
+    self.out.pop_layer();
+  }
+
+  fn shadow(&mut self, shape: RoundedRect, blur: f32, color: peniko::Color) {
+    if blur == 0.0 {
       let outline = outline(&shape.into());
       self.out.fill(Fill::NonZero, self.current, color, None, &outline);
       return;
     }
-    let back = half_pixel_back(self.current);
-    let blurs = blurs(shape, shadow.blur);
+    let blurs = blurs(shape, blur);
     let whole = blurs
       .iter()
       .map(|blur| blur.area)
       .reduce(|whole, area| whole.union(area))
       .unwrap_or_default();
+    let back = half_pixel_back(self.current);
     if let [blur] = blurs.as_slice() {
       self
         .out
@@ -733,8 +740,7 @@ mod tests {
     );
   }
 
-  // A shadow that draws nothing by the rules of `BoxShadow` reaches vello as no path at all. A
-  // drawn one with equal radii is one path.
+  // A shadow that draws nothing by the rules of `BoxShadow` reaches vello as no path at all.
   #[test]
   fn invalid_box_shadows_draw_nothing() {
     let card = RoundedRect::from(Rect::new(0.0, 0.0, 10.0, 10.0));
@@ -749,7 +755,7 @@ mod tests {
       0,
       "negative width"
     );
-    assert_eq!(paths(card, shadow(0.0)), 1, "a valid shadow draws");
+    assert!(paths(card, shadow(0.0)) > 0, "a valid shadow draws");
     assert!(
       paths(
         RoundedRect::new(card.rect, CornerRadius::new(1.0, 2.0, 3.0, 4.0)),
