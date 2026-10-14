@@ -250,7 +250,13 @@ impl RoundedRect {
   /// as in CSS.
   #[must_use]
   pub fn fitted(self) -> RoundedRect {
-    let drawable = |radius: f32| if radius > 0.0 && radius.is_finite() { radius } else { 0.0 };
+    let drawable = |radius: f32| {
+      if radius > 0.0 && radius.is_finite() {
+        f64::from(radius)
+      } else {
+        0.0
+      }
+    };
     let CornerRadius {
       top_left,
       top_right,
@@ -258,7 +264,7 @@ impl RoundedRect {
       bottom_left,
     } = self.radius;
     let [top_left, top_right, bottom_right, bottom_left] = [top_left, top_right, bottom_right, bottom_left].map(drawable);
-    let (width, height) = (self.rect.width.max(0.0), self.rect.height.max(0.0));
+    let (width, height) = (f64::from(self.rect.width.max(0.0)), f64::from(self.rect.height.max(0.0)));
     let scale = [
       (width, top_left + top_right),
       (width, bottom_left + bottom_right),
@@ -268,11 +274,10 @@ impl RoundedRect {
     .into_iter()
     .filter(|&(side, radii)| radii > side)
     .map(|(side, radii)| side / radii)
-    .fold(1.0, f32::min);
-    RoundedRect::new(
-      self.rect,
-      CornerRadius::new(top_left * scale, top_right * scale, bottom_right * scale, bottom_left * scale),
-    )
+    .fold(1.0, f64::min);
+    let [top_left, top_right, bottom_right, bottom_left] =
+      [top_left, top_right, bottom_right, bottom_left].map(|radius| (radius * scale) as f32);
+    RoundedRect::new(self.rect, CornerRadius::new(top_left, top_right, bottom_right, bottom_left))
   }
 }
 
@@ -389,7 +394,8 @@ mod tests {
   }
 
   // Radii that two corners of one side can't share shrink together, by the factor the tightest
-  // side needs, as in CSS; radii that fit are kept, and negative, NaN or infinite ones are 0.
+  // side needs, as in CSS, however large they are; radii that fit are kept, and negative, NaN or
+  // infinite ones are 0.
   #[test]
   fn rounded_rect_fitted_scales_overlapping_radii() {
     let rect = Rect::new(0.0, 0.0, 10.0, 40.0);
@@ -409,6 +415,10 @@ mod tests {
       CornerRadius::new(0.0, 0.0, 0.0, 3.0)
     );
     assert_eq!(RoundedRect::new(rect, CornerRadius::uniform(5.0)).fitted().rect, rect);
+    assert_eq!(
+      fitted(CornerRadius::new(f32::MAX, f32::MAX, 0.0, 0.0)),
+      CornerRadius::new(5.0, 5.0, 0.0, 0.0)
+    );
   }
 
   // A rectangle is a rounded rectangle with square corners.
