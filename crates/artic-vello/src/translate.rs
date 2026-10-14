@@ -1,6 +1,6 @@
-use artic_layout::geometry::{CornerRadius, FillRule, PathElement, Point, Rect, Transform};
+use artic_layout::geometry::{CornerRadius, FillRule, PathElement, Point, Rect, RoundedRect, Transform};
 use artic_render::{
-  Brush, Color, Command, GradientStop, Layer, LineCap, LineJoin, PhysicalSize, Scene, SceneItem, Shape, Stroke,
+  BoxShadow, Brush, Color, Command, GradientStop, Layer, LineCap, LineJoin, PhysicalSize, Scene, SceneItem, Shape, Stroke,
 };
 use vello::kurbo::{self, Affine, BezPath, Cap, Join, PathEl, Shape as _};
 use vello::peniko::{self, BlendMode, Fill, Gradient};
@@ -10,6 +10,9 @@ const TOLERANCE: f64 = 0.1;
 
 /// How far a quarter circle's cubic control points sit from its ends toward its corner.
 const KAPPA: f64 = 0.552_284_749_830_793_6;
+
+/// How many standard deviations past its rectangle vello draws a blur, where it's close to clear.
+const BLUR_EXTENT: f64 = 2.5;
 
 /// Writes `scene` into `out`, drawn at `scale` device pixels per logical unit on a surface of
 /// `size`.
@@ -32,6 +35,7 @@ pub(crate) fn translate(scene: &Scene, scale: f32, size: PhysicalSize, out: &mut
             Command::Pop => translation.pop(),
             Command::Fill { shape, brush } => translation.fill(shape, brush),
             Command::Stroke { shape, brush, stroke } => translation.stroke(shape, brush, stroke),
+            Command::BoxShadow { rect, shadow } => translation.box_shadow(rect, shadow),
           }
         }
       }
@@ -106,6 +110,22 @@ impl Translation<'_> {
       self
         .out
         .stroke(&kurbo_stroke(&stroke), self.current, &brush, transform, &outline(&shape));
+    }
+  }
+
+  fn box_shadow(&mut self, rect: &RoundedRect, shadow: &BoxShadow) {
+    let color = color(shadow.color, 1.0);
+    let to_centers = half_pixel_back(self.current);
+    for Blur {
+      area,
+      rect,
+      radius,
+      std_dev,
+    } in blurs(rect, shadow, self.current)
+    {
+      self
+        .out
+        .draw_blurred_rounded_rect_in(&area, self.current, rect + to_centers, color, radius, std_dev);
     }
   }
 }
@@ -195,6 +215,65 @@ fn corner(path: &mut BezPath, from: impl Into<kurbo::Point>, vertex: impl Into<k
   }
 }
 
+/// One of vello's blurred rounded rectangles: `rect` with corners of `radius`, blurred with
+/// `std_dev`, drawn only inside `area`.
+#[derive(Debug, PartialEq)]
+struct Blur {
+  area: kurbo::Rect,
+  rect: kurbo::Rect,
+  radius: f64,
+  std_dev: f64,
+}
+
+fn blurs(rect: &RoundedRect, shadow: &BoxShadow, current: Affine) -> Vec<Blur> {
+  let Some(shadow) = shadow.drawable() else {
+    return Vec::new();
+  };
+  let Some(RoundedRect { rect, radius }) = shadow.shape(*rect) else {
+    return Vec::new();
+  };
+  let rect = kurbo_rect(rect);
+  let std_dev = f64::from(shadow.blur) / 2.0;
+  let area = rect.inflate(BLUR_EXTENT * std_dev, BLUR_EXTENT * std_dev);
+  let blur = |area, radius: f32| Blur {
+    area,
+    rect,
+    radius: f64::from(radius),
+    std_dev,
+  };
+  let CornerRadius {
+    top_left,
+    top_right,
+    bottom_right,
+    bottom_left,
+  } = radius;
+  if [top_right, bottom_right, bottom_left]
+    .iter()
+    .all(|&corner| corner == top_left)
+  {
+    return vec![blur(area, top_left)];
+  }
+  let middle = snapped(rect.center(), current);
+  vec![
+    blur(kurbo::Rect::new(area.x0, area.y0, middle.x, middle.y), top_left),
+    blur(kurbo::Rect::new(middle.x, area.y0, area.x1, middle.y), top_right),
+    blur(kurbo::Rect::new(middle.x, middle.y, area.x1, area.y1), bottom_right),
+    blur(kurbo::Rect::new(area.x0, middle.y, middle.x, area.y1), bottom_left),
+  ]
+}
+
+fn snapped(point: kurbo::Point, current: Affine) -> kurbo::Point {
+  let device = current * point;
+  let snapped = current.inverse() * kurbo::Point::new(device.x.round(), device.y.round());
+  if snapped.is_finite() { snapped } else { point }
+}
+
+fn half_pixel_back(current: Affine) -> kurbo::Vec2 {
+  let inverse = current.inverse();
+  let back = inverse * kurbo::Point::new(-0.5, -0.5) - inverse * kurbo::Point::ORIGIN;
+  if back.is_finite() { back } else { kurbo::Vec2::ZERO }
+}
+
 fn paint(brush: &Brush, rect: Rect) -> Option<(peniko::Brush, Option<Affine>)> {
   let (stops, opacity, gradient) = match brush {
     Brush::Solid(solid) => return Some((peniko::Brush::Solid(color(solid.color, solid.opacity)), None)),
@@ -253,7 +332,7 @@ fn kurbo_point(point: Point) -> kurbo::Point {
 mod tests {
   use super::*;
   use artic_layout::geometry::{CornerRadius, FillRule, Path, Point, RelativePoint, RelativeScalar, RoundedRect};
-  use artic_render::{LinearGradientBrush, RadialGradientBrush, SolidColorBrush};
+  use artic_render::{BoxShadow, LinearGradientBrush, RadialGradientBrush, SolidColorBrush};
   use pretty_assertions::assert_eq;
 
   // artic's transform and kurbo's map points the same way.
@@ -602,6 +681,89 @@ mod tests {
     assert_eq!(
       kurbo_stroke(&ours(LineJoin::Miter, LineCap::Flat)),
       theirs(Join::Miter, Cap::Butt)
+    );
+  }
+
+  // A shadow is blurred with half its blur as the standard deviation, over the area vello's own
+  // blur covers, 2.5 standard deviations past the rectangle. Equal radii make one blur. Unequal
+  // radii make four, one per quarter of that area, each with its corner's radius.
+  #[test]
+  fn box_shadow_grows_moves_and_blurs() {
+    let card = RoundedRect::new(Rect::new(10.0, 20.0, 100.0, 50.0), CornerRadius::uniform(4.0));
+    let shadow = BoxShadow::new(Point::new(3.0, 5.0), 8.0, RED).with_spread(2.0);
+    let grown = kurbo::Rect::new(11.0, 23.0, 115.0, 77.0);
+    let tab = RoundedRect::new(Rect::new(0.0, 0.0, 20.0, 10.0), CornerRadius::new(1.0, 2.0, 3.0, 0.0));
+    let sharp = BoxShadow::new(Point::ZERO, 0.0, RED);
+    let quarter = |x0, y0, x1, y1, radius| Blur {
+      area: kurbo::Rect::new(x0, y0, x1, y1),
+      rect: kurbo::Rect::new(0.0, 0.0, 20.0, 10.0),
+      radius,
+      std_dev: 0.0,
+    };
+
+    assert_eq!(
+      blurs(&card, &shadow, Affine::IDENTITY),
+      [Blur {
+        area: grown.inflate(10.0, 10.0),
+        rect: grown,
+        radius: 6.0,
+        std_dev: 4.0
+      }]
+    );
+    assert_eq!(
+      blurs(&tab, &sharp, Affine::IDENTITY),
+      [
+        quarter(0.0, 0.0, 10.0, 5.0, 1.0),
+        quarter(10.0, 0.0, 20.0, 5.0, 2.0),
+        quarter(10.0, 5.0, 20.0, 10.0, 3.0),
+        quarter(0.0, 5.0, 10.0, 10.0, 0.0),
+      ]
+    );
+  }
+
+  // The quarters meet on a device pixel's corner, so their seam never splits a pixel between two
+  // blurs, under the transform the shadow is drawn in.
+  #[test]
+  fn shadow_quarters_meet_on_device_pixels() {
+    let odd = RoundedRect::new(Rect::new(0.0, 0.0, 11.0, 7.0), CornerRadius::new(1.0, 0.0, 0.0, 0.0));
+    let sharp = BoxShadow::new(Point::ZERO, 0.0, RED);
+    let meeting = |current| {
+      let area = blurs(&odd, &sharp, current)[0].area;
+      kurbo::Point::new(area.x1, area.y1)
+    };
+
+    assert_eq!(meeting(Affine::IDENTITY), kurbo::Point::new(6.0, 4.0));
+    assert_eq!(meeting(Affine::scale(2.0)), kurbo::Point::new(5.5, 3.5));
+    assert_eq!(
+      snapped(kurbo::Point::new(1.25, 1.0), Affine::scale(0.0)),
+      kurbo::Point::new(1.25, 1.0)
+    );
+  }
+
+  // A shadow that draws nothing by the rules of `BoxShadow` reaches vello as no path at all. A
+  // drawn one is one path, or four when its radii differ.
+  #[test]
+  fn invalid_box_shadows_draw_nothing() {
+    let card = RoundedRect::from(Rect::new(0.0, 0.0, 10.0, 10.0));
+    let shadow = |x| BoxShadow::new(Point::new(x, 0.0), 2.0, RED);
+    let paths = |rect: RoundedRect, shadow: BoxShadow| encoded(|t| t.box_shadow(&rect, &shadow)).encoding().n_paths;
+
+    assert_eq!(paths(card, shadow(f32::NAN)), 0, "NaN offset");
+    assert_eq!(paths(card, shadow(f32::INFINITY)), 0, "infinite offset");
+    assert_eq!(paths(card, shadow(0.0).with_spread(-5.0)), 0, "shrunk to nothing");
+    assert_eq!(
+      paths(Rect::new(0.0, 0.0, -1.0, 10.0).into(), shadow(0.0)),
+      0,
+      "negative width"
+    );
+    assert_eq!(paths(card, shadow(0.0)), 1, "a valid shadow draws");
+    assert_eq!(
+      paths(
+        RoundedRect::new(card.rect, CornerRadius::new(1.0, 2.0, 3.0, 4.0)),
+        shadow(0.0)
+      ),
+      4,
+      "one path per quarter"
     );
   }
 }

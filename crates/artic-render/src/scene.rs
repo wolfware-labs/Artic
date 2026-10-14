@@ -1,6 +1,6 @@
-use crate::{Brush, Shape, Stroke};
+use crate::{BoxShadow, Brush, Shape, Stroke};
 use artic_core::tree::NodeId;
-use artic_layout::geometry::Transform;
+use artic_layout::geometry::{RoundedRect, Transform};
 use std::sync::Arc;
 
 /// Something that changes how what's drawn inside it appears, until the matching pop.
@@ -52,6 +52,14 @@ pub enum Command {
     brush: Brush,
     /// The stroke's width, joins and caps.
     stroke: Stroke,
+  },
+  /// Draws the shadow `rect` casts. It's drawn where it's recorded, so a shadow recorded before
+  /// what casts it shows behind it.
+  BoxShadow {
+    /// The rounded rectangle that casts the shadow.
+    rect: RoundedRect,
+    /// How the shadow is grown, moved, blurred and colored.
+    shadow: BoxShadow,
   },
 }
 
