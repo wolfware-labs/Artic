@@ -12,6 +12,7 @@ mod color;
 mod compose;
 mod renderer;
 mod scene;
+mod shadow;
 mod shape;
 mod stroke;
 
@@ -23,5 +24,6 @@ pub use renderer::{
   PhysicalSize, PixelBuffer, PixelFormat, RawHandles, RenderError, Renderer, SurfaceId, SurfaceView, Target, TargetKind,
 };
 pub use scene::{Command, Layer, Scene, SceneFragment, SceneItem, drawable_opacity};
+pub use shadow::BoxShadow;
 pub use shape::Shape;
 pub use stroke::{LineCap, LineJoin, Stroke};
