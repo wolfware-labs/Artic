@@ -99,7 +99,7 @@ impl Element for Leaf {
     self.seen.set(Some(cx.size()));
     let color = self.color.get();
     let [_, r, g, b] = color.to_be_bytes();
-    scene.fill_rect(Rect::new(0.0, 0.0, cx.size().width, cx.size().height), Color::rgb(r, g, b));
+    scene.fill(Rect::new(0.0, 0.0, cx.size().width, cx.size().height), Color::rgb(r, g, b));
   }
 
   fn accessibility(&self, _cx: &AccessCx<'_>) -> accesskit::Node {

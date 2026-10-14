@@ -1,7 +1,15 @@
-use artic_layout::geometry::{Point, Rect, Transform};
-use artic_render::{Brush, Clip, Color, Command, GradientStop, Layer, PhysicalSize, Scene, SceneItem};
-use vello::kurbo::{self, Affine};
+use artic_layout::geometry::{CornerRadius, FillRule, PathElement, Point, Rect, Transform};
+use artic_render::{
+  Brush, Color, Command, GradientStop, Layer, LineCap, LineJoin, PhysicalSize, Scene, SceneItem, Shape, Stroke,
+};
+use vello::kurbo::{self, Affine, BezPath, Cap, Join, PathEl, Shape as _};
 use vello::peniko::{self, BlendMode, Fill, Gradient};
+
+/// The tolerance vello flattens a shape with, so converting one to a path first changes nothing.
+const TOLERANCE: f64 = 0.1;
+
+/// How far a quarter circle's cubic control points sit from its ends toward its corner.
+const KAPPA: f64 = 0.552_284_749_830_793_6;
 
 /// Writes `scene` into `out`, drawn at `scale` device pixels per logical unit on a surface of
 /// `size`.
@@ -15,14 +23,15 @@ pub(crate) fn translate(scene: &Scene, scale: f32, size: PhysicalSize, out: &mut
   };
   for item in scene.items() {
     match item {
-      SceneItem::Push(layer) => translation.push(*layer),
+      SceneItem::Push(layer) => translation.push(layer),
       SceneItem::Pop => translation.pop(),
       SceneItem::Fragment(fragment) => {
         for command in fragment.commands() {
           match command {
-            Command::Push(layer) => translation.push(*layer),
+            Command::Push(layer) => translation.push(layer),
             Command::Pop => translation.pop(),
-            Command::FillRect { rect, brush } => translation.fill_rect(*rect, brush),
+            Command::Fill { shape, brush } => translation.fill(shape, brush),
+            Command::Stroke { shape, brush, stroke } => translation.stroke(shape, brush, stroke),
           }
         }
       }
@@ -48,20 +57,23 @@ struct Translation<'a> {
 }
 
 impl Translation<'_> {
-  fn push(&mut self, layer: Layer) {
+  fn push(&mut self, layer: &Layer) {
     match layer {
       Layer::Transform(transform) => {
         self.stack.push(Pushed::Transform(self.current));
-        self.current *= affine(transform);
+        self.current *= affine(*transform);
       }
-      Layer::Clip(Clip::Rect(rect)) => {
-        self.out.push_clip_layer(Fill::NonZero, self.current, &kurbo_rect(rect));
+      Layer::Clip(shape) => {
+        let (style, clip) = shape
+          .drawable()
+          .map_or((Fill::NonZero, BezPath::new()), |shape| (fill_rule(&shape), outline(&shape)));
+        self.out.push_clip_layer(style, self.current, &clip);
         self.stack.push(Pushed::Layer);
       }
       Layer::Opacity(opacity) => {
         self
           .out
-          .push_layer(Fill::NonZero, BlendMode::default(), opacity, Affine::IDENTITY, &self.surface);
+          .push_layer(Fill::NonZero, BlendMode::default(), *opacity, Affine::IDENTITY, &self.surface);
         self.stack.push(Pushed::Layer);
       }
     }
@@ -75,11 +87,25 @@ impl Translation<'_> {
     }
   }
 
-  fn fill_rect(&mut self, rect: Rect, brush: &Brush) {
-    if let Some((brush, transform)) = paint(brush, rect) {
+  fn fill(&mut self, shape: &Shape, brush: &Brush) {
+    let Some(shape) = shape.drawable() else {
+      return;
+    };
+    if let Some((brush, transform)) = paint(brush, shape.bounds()) {
       self
         .out
-        .fill(Fill::NonZero, self.current, &brush, transform, &kurbo_rect(rect));
+        .fill(fill_rule(&shape), self.current, &brush, transform, &outline(&shape));
+    }
+  }
+
+  fn stroke(&mut self, shape: &Shape, brush: &Brush, stroke: &Stroke) {
+    let (Some(shape), Some(stroke)) = (shape.drawable(), stroke.drawable()) else {
+      return;
+    };
+    if let Some((brush, transform)) = paint(brush, shape.bounds()) {
+      self
+        .out
+        .stroke(&kurbo_stroke(&stroke), self.current, &brush, transform, &outline(&shape));
     }
   }
 }
@@ -95,6 +121,78 @@ fn kurbo_rect(rect: Rect) -> kurbo::Rect {
     (f64::from(rect.x), f64::from(rect.y)),
     (f64::from(rect.width), f64::from(rect.height)),
   )
+}
+
+fn outline(shape: &Shape) -> BezPath {
+  match shape {
+    Shape::Rect(rect) => kurbo_rect(*rect).to_path(TOLERANCE),
+    Shape::RoundedRect(rounded) => rounded_outline(kurbo_rect(rounded.rect), rounded.radius),
+    Shape::Path(path) => path.elements().iter().map(|element| path_el(*element)).collect(),
+  }
+}
+
+fn fill_rule(shape: &Shape) -> Fill {
+  match shape {
+    Shape::Path(path) => match path.fill_rule() {
+      FillRule::EvenOdd => Fill::EvenOdd,
+      FillRule::NonZero => Fill::NonZero,
+    },
+    Shape::Rect(_) | Shape::RoundedRect(_) => Fill::NonZero,
+  }
+}
+
+fn kurbo_stroke(stroke: &Stroke) -> kurbo::Stroke {
+  let join = match stroke.join {
+    LineJoin::Miter => Join::Miter,
+    LineJoin::Round => Join::Round,
+    LineJoin::Bevel => Join::Bevel,
+  };
+  let cap = match stroke.cap {
+    LineCap::Flat => Cap::Butt,
+    LineCap::Round => Cap::Round,
+    LineCap::Square => Cap::Square,
+  };
+  kurbo::Stroke::new(f64::from(stroke.width))
+    .with_join(join)
+    .with_caps(cap)
+    .with_miter_limit(f64::from(stroke.miter_limit))
+}
+
+fn path_el(element: PathElement) -> PathEl {
+  match element {
+    PathElement::MoveTo(point) => PathEl::MoveTo(kurbo_point(point)),
+    PathElement::LineTo(point) => PathEl::LineTo(kurbo_point(point)),
+    PathElement::QuadTo(control, end) => PathEl::QuadTo(kurbo_point(control), kurbo_point(end)),
+    PathElement::CubicTo(first, second, end) => PathEl::CurveTo(kurbo_point(first), kurbo_point(second), kurbo_point(end)),
+    PathElement::Close => PathEl::ClosePath,
+  }
+}
+
+fn rounded_outline(rect: kurbo::Rect, radius: CornerRadius) -> BezPath {
+  let CornerRadius {
+    top_left,
+    top_right,
+    bottom_right,
+    bottom_left,
+  } = radius;
+  let [top_left, top_right, bottom_right, bottom_left] = [top_left, top_right, bottom_right, bottom_left].map(f64::from);
+  let kurbo::Rect { x0, y0, x1, y1 } = rect;
+  let mut path = BezPath::new();
+  path.move_to((x0 + top_left, y0));
+  corner(&mut path, (x1 - top_right, y0), (x1, y0), (x1, y0 + top_right));
+  corner(&mut path, (x1, y1 - bottom_right), (x1, y1), (x1 - bottom_right, y1));
+  corner(&mut path, (x0 + bottom_left, y1), (x0, y1), (x0, y1 - bottom_left));
+  corner(&mut path, (x0, y0 + top_left), (x0, y0), (x0 + top_left, y0));
+  path.close_path();
+  path
+}
+
+fn corner(path: &mut BezPath, from: impl Into<kurbo::Point>, vertex: impl Into<kurbo::Point>, to: impl Into<kurbo::Point>) {
+  let (from, vertex, to) = (from.into(), vertex.into(), to.into());
+  path.line_to(from);
+  if from != to {
+    path.curve_to(from.lerp(vertex, KAPPA), to.lerp(vertex, KAPPA), to);
+  }
 }
 
 fn paint(brush: &Brush, rect: Rect) -> Option<(peniko::Brush, Option<Affine>)> {
@@ -154,7 +252,7 @@ fn kurbo_point(point: Point) -> kurbo::Point {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use artic_layout::geometry::{Point, RelativePoint, RelativeScalar};
+  use artic_layout::geometry::{CornerRadius, FillRule, Path, Point, RelativePoint, RelativeScalar, RoundedRect};
   use artic_render::{LinearGradientBrush, RadialGradientBrush, SolidColorBrush};
   use pretty_assertions::assert_eq;
 
@@ -362,6 +460,148 @@ mod tests {
         rect
       ),
       blue
+    );
+  }
+
+  fn encoded(draw: impl FnOnce(&mut Translation<'_>)) -> vello::Scene {
+    let mut out = vello::Scene::new();
+    draw(&mut Translation {
+      out: &mut out,
+      current: Affine::IDENTITY,
+      stack: Vec::new(),
+      surface: kurbo::Rect::ZERO,
+    });
+    out
+  }
+
+  // Each shape becomes a kurbo path: a rectangle as vello would make it, a rounded rectangle
+  // filling the same box, or the path's elements one for one. A path keeps its
+  // fill rule; rectangles fill by non-zero.
+  #[test]
+  fn shapes_convert_to_kurbo() {
+    let rect = Rect::new(10.0, 20.0, 100.0, 50.0);
+    let corners = kurbo::Rect::new(10.0, 20.0, 110.0, 70.0);
+    let rounded = RoundedRect::new(rect, CornerRadius::new(1.0, 2.0, 3.0, 4.0));
+    let path = Path::builder(Point::new(0.0, 0.0))
+      .line_to(Point::new(10.0, 0.0))
+      .quad_to(Point::new(10.0, 10.0), Point::new(0.0, 10.0))
+      .cubic_to(Point::new(0.0, 5.0), Point::new(5.0, 5.0), Point::new(5.0, 0.0))
+      .close()
+      .fill_rule(FillRule::NonZero)
+      .build();
+    let mut expected = BezPath::new();
+    expected.move_to((0.0, 0.0));
+    expected.line_to((10.0, 0.0));
+    expected.quad_to((10.0, 10.0), (0.0, 10.0));
+    expected.curve_to((0.0, 5.0), (5.0, 5.0), (5.0, 0.0));
+    expected.close_path();
+
+    assert_eq!(outline(&rect.into()), corners.to_path(TOLERANCE));
+    assert_eq!(outline(&rounded.into()).control_box(), corners);
+    assert_eq!(outline(&path.clone().into()), expected);
+    assert_eq!(
+      [
+        fill_rule(&rect.into()),
+        fill_rule(&rounded.into()),
+        fill_rule(&path.into()),
+        fill_rule(&Path::builder(Point::ZERO).build().into()),
+      ],
+      [Fill::NonZero, Fill::NonZero, Fill::NonZero, Fill::EvenOdd]
+    );
+  }
+
+  // A rounded rectangle keeps the radii `RoundedRect::fitted` gives it, corner by corner, even a
+  // radius over half the shortest side, which a side with a square corner leaves room for.
+  #[test]
+  fn rounded_rects_keep_their_fitted_radii() {
+    let tab = RoundedRect::new(Rect::new(0.0, 0.0, 10.0, 40.0), CornerRadius::new(4.0, 0.0, 20.0, 0.0));
+    let shape = Shape::from(tab).drawable().expect("drawable");
+
+    let outline = outline(&shape);
+
+    assert_eq!(outline.control_box(), kurbo::Rect::new(0.0, 0.0, 10.0, 40.0));
+    assert!(!outline.contains((0.2, 0.2).into()), "top-left, radius 2");
+    assert!(outline.contains((9.9, 0.1).into()), "top-right, square");
+    assert!(!outline.contains((8.5, 37.5).into()), "bottom-right, radius 10");
+    assert!(outline.contains((0.1, 39.9).into()), "bottom-left, square");
+    assert!(outline.contains((5.0, 20.0).into()), "middle");
+  }
+
+  // A shape that draws nothing by the rules of `Shape::drawable` reaches vello as no path at all,
+  // and so does a path that is only its start point.
+  #[test]
+  fn invalid_shapes_and_strokes_draw_nothing() {
+    let red = Brush::from(RED);
+    let invalid: [Shape; 5] = [
+      Rect::new(f32::NAN, 0.0, 1.0, 1.0).into(),
+      Rect::new(0.0, 0.0, f32::INFINITY, 1.0).into(),
+      RoundedRect::new(Rect::new(0.0, 0.0, -1.0, 1.0), CornerRadius::ZERO).into(),
+      Path::builder(Point::ZERO)
+        .line_to(Point::new(f32::NEG_INFINITY, 1.0))
+        .build()
+        .into(),
+      Path::builder(Point::ZERO).build().into(),
+    ];
+
+    for shape in &invalid {
+      assert_eq!(encoded(|t| t.fill(shape, &red)).encoding().n_paths, 0, "{shape:?}");
+    }
+    assert_eq!(
+      encoded(|t| t.fill(&Rect::new(0.0, 0.0, 1.0, 1.0).into(), &red))
+        .encoding()
+        .n_paths,
+      1,
+      "a valid fill draws"
+    );
+    let square: Shape = Rect::new(0.0, 0.0, 1.0, 1.0).into();
+    for shape in &invalid {
+      assert_eq!(
+        encoded(|t| t.stroke(shape, &red, &Stroke::default())).encoding().n_paths,
+        0,
+        "{shape:?}"
+      );
+    }
+    for width in [0.0, -1.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+      assert_eq!(
+        encoded(|t| t.stroke(&square, &red, &Stroke::new(width))).encoding().n_paths,
+        0,
+        "width {width}"
+      );
+    }
+    assert_eq!(
+      encoded(|t| t.stroke(&square, &red, &Stroke::new(1.0).with_miter_limit(f32::NAN)))
+        .encoding()
+        .n_paths,
+      1,
+      "a valid stroke draws, its miter limit made drawable"
+    );
+  }
+
+  // A stroke keeps its width and miter limit, its join maps by name, and its cap is both of
+  // kurbo's: Flat is Butt.
+  #[test]
+  fn stroke_converts_join_cap_and_miter() {
+    let ours = |join, cap| Stroke::new(2.0).with_join(join).with_cap(cap).with_miter_limit(4.0);
+    let theirs = |join, cap| kurbo::Stroke::new(2.0).with_join(join).with_caps(cap).with_miter_limit(4.0);
+
+    assert_eq!(
+      kurbo_stroke(&Stroke::default()),
+      kurbo::Stroke::new(1.0)
+        .with_join(Join::Miter)
+        .with_caps(Cap::Butt)
+        .with_miter_limit(10.0)
+    );
+    assert_eq!(
+      kurbo_stroke(&ours(LineJoin::Round, LineCap::Round)),
+      theirs(Join::Round, Cap::Round)
+    );
+    assert_eq!(
+      kurbo_stroke(&ours(LineJoin::Bevel, LineCap::Square)),
+      theirs(Join::Bevel, Cap::Square)
+    );
+    assert_eq!(
+      kurbo_stroke(&ours(LineJoin::Miter, LineCap::Flat)),
+      theirs(Join::Miter, Cap::Butt)
     );
   }
 }

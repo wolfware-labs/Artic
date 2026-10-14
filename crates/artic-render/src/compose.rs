@@ -1,4 +1,4 @@
-use crate::{Clip, Layer, Scene, SceneBuilder, SceneFragment, SceneItem};
+use crate::{Layer, Scene, SceneBuilder, SceneFragment, SceneItem, Shape};
 use artic_core::property::Affects;
 use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_layout::geometry::Transform;
@@ -7,13 +7,13 @@ use std::sync::Arc;
 
 /// How composition treats a node: its transform, clip and opacity, which wrap it and its visual
 /// descendants, whether they're drawn at all, and its drawing order among its siblings.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Layers {
   /// Maps the node's coordinates to its parent's, if they differ. An element's own layers hold
   /// only its render transform; the frame pipeline adds its layout offset.
   pub transform: Option<Transform>,
   /// Keeps the node and its descendants inside this shape, in the node's coordinates.
-  pub clip: Option<Clip>,
+  pub clip: Option<Shape>,
   /// Blends the node and its descendants as one group, from 0 to 1.
   pub opacity: f32,
   /// Whether the node and its descendants are drawn at all.
@@ -182,7 +182,7 @@ mod tests {
 
   impl Nodes for Table {
     fn layers(&self, _arena: &UiTree, node: NodeId) -> Layers {
-      self.layers.get(&node).copied().unwrap_or_default()
+      self.layers.get(&node).cloned().unwrap_or_default()
     }
 
     fn record(&mut self, _arena: &UiTree, node: NodeId, builder: &mut SceneBuilder) {
@@ -190,7 +190,7 @@ mod tests {
       if let Some(property) = self.writes.get(&node) {
         property.set(property.get() + 1);
       }
-      builder.fill_rect(Rect::new(0.0, 0.0, 1.0, 1.0), Color::rgb(0, 0, 0));
+      builder.fill(Rect::new(0.0, 0.0, 1.0, 1.0), Color::rgb(0, 0, 0));
     }
 
     fn stale(&self, node: NodeId) -> bool {
@@ -387,11 +387,11 @@ mod tests {
     let [root, a, b, c] = sample(&mut tree);
     let names = HashMap::from([(root, "root"), (a, "a"), (b, "b"), (c, "c")]);
     let transform = Transform::translate(5.0, 0.0);
-    let clip = Clip::Rect(Rect::new(0.0, 0.0, 4.0, 4.0));
+    let clip = Shape::Rect(Rect::new(0.0, 0.0, 4.0, 4.0));
     let mut nodes = Table::default();
     let layers = Layers {
       transform: Some(transform),
-      clip: Some(clip),
+      clip: Some(clip.clone()),
       opacity: 0.5,
       ..Layers::default()
     };
@@ -453,8 +453,8 @@ mod tests {
     };
     assert_eq!(
       fragment.commands(),
-      [Command::FillRect {
-        rect: Rect::new(0.0, 0.0, 1.0, 1.0),
+      [Command::Fill {
+        shape: Rect::new(0.0, 0.0, 1.0, 1.0).into(),
         brush: Color::rgb(0, 0, 0).into()
       }]
     );

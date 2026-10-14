@@ -1,10 +1,12 @@
 //! The value types layout measures and positions with, in logical pixels.
 
 mod parse;
+mod path;
 mod relative;
 mod transform;
 
 pub use parse::{GeometryProblem, ParseGeometryError};
+pub use path::{FillRule, Path, PathBuilder, PathElement};
 pub use relative::{RelativePoint, RelativeScalar, Scaling};
 use std::fmt::{Display, Formatter, Result};
 use std::ops::{Add, Sub};
@@ -227,6 +229,65 @@ impl CornerRadius {
   }
 }
 
+/// A rectangle with rounded corners.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct RoundedRect {
+  /// The rectangle the corners are cut from.
+  pub rect: Rect,
+  /// The radius of each corner.
+  pub radius: CornerRadius,
+}
+
+impl RoundedRect {
+  /// Creates `rect` with corners of `radius`.
+  #[must_use]
+  pub const fn new(rect: Rect, radius: CornerRadius) -> RoundedRect {
+    RoundedRect { rect, radius }
+  }
+
+  /// The same shape with radii that can be drawn: a negative, NaN or infinite radius is `0`, and
+  /// when two radii on one side add up to more than the side, all four shrink by the same factor,
+  /// as in CSS.
+  #[must_use]
+  pub fn fitted(self) -> RoundedRect {
+    let drawable = |radius: f32| {
+      if radius > 0.0 && radius.is_finite() {
+        f64::from(radius)
+      } else {
+        0.0
+      }
+    };
+    let CornerRadius {
+      top_left,
+      top_right,
+      bottom_right,
+      bottom_left,
+    } = self.radius;
+    let [top_left, top_right, bottom_right, bottom_left] = [top_left, top_right, bottom_right, bottom_left].map(drawable);
+    let (width, height) = (f64::from(self.rect.width.max(0.0)), f64::from(self.rect.height.max(0.0)));
+    let scale = [
+      (width, top_left + top_right),
+      (width, bottom_left + bottom_right),
+      (height, top_left + bottom_left),
+      (height, top_right + bottom_right),
+    ]
+    .into_iter()
+    .filter(|&(side, radii)| radii > side)
+    .map(|(side, radii)| side / radii)
+    .fold(1.0, f64::min);
+    let [top_left, top_right, bottom_right, bottom_left] =
+      [top_left, top_right, bottom_right, bottom_left].map(|radius| (radius * scale) as f32);
+    RoundedRect::new(self.rect, CornerRadius::new(top_left, top_right, bottom_right, bottom_left))
+  }
+}
+
+impl From<Rect> for RoundedRect {
+  /// The rectangle with square corners.
+  fn from(rect: Rect) -> RoundedRect {
+    RoundedRect::new(rect, CornerRadius::ZERO)
+  }
+}
+
 impl Display for Size {
   /// Writes `width,height`.
   fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
@@ -330,6 +391,42 @@ mod tests {
 
     assert_eq!(rect.origin(), Point::new(1.0, 2.0));
     assert_eq!(rect.size(), Size::new(30.0, 40.0));
+  }
+
+  // Radii that two corners of one side can't share shrink together, by the factor the tightest
+  // side needs, as in CSS, however large they are; radii that fit are kept, and negative, NaN or
+  // infinite ones are 0.
+  #[test]
+  fn rounded_rect_fitted_scales_overlapping_radii() {
+    let rect = Rect::new(0.0, 0.0, 10.0, 40.0);
+    let fitted = |radius| RoundedRect::new(rect, radius).fitted().radius;
+
+    assert_eq!(fitted(CornerRadius::uniform(5.0)), CornerRadius::uniform(5.0));
+    assert_eq!(
+      fitted(CornerRadius::new(10.0, 10.0, 0.0, 0.0)),
+      CornerRadius::new(5.0, 5.0, 0.0, 0.0)
+    );
+    assert_eq!(
+      fitted(CornerRadius::new(4.0, 0.0, 20.0, 0.0)),
+      CornerRadius::new(2.0, 0.0, 10.0, 0.0)
+    );
+    assert_eq!(
+      fitted(CornerRadius::new(-1.0, f32::NAN, f32::INFINITY, 3.0)),
+      CornerRadius::new(0.0, 0.0, 0.0, 3.0)
+    );
+    assert_eq!(RoundedRect::new(rect, CornerRadius::uniform(5.0)).fitted().rect, rect);
+    assert_eq!(
+      fitted(CornerRadius::new(f32::MAX, f32::MAX, 0.0, 0.0)),
+      CornerRadius::new(5.0, 5.0, 0.0, 0.0)
+    );
+  }
+
+  // A rectangle is a rounded rectangle with square corners.
+  #[test]
+  fn rect_converts_into_rounded_rect() {
+    let rect = Rect::new(1.0, 2.0, 3.0, 4.0);
+
+    assert_eq!(RoundedRect::from(rect), RoundedRect::new(rect, CornerRadius::ZERO));
   }
 
   // Adding a thickness grows a size by both sides; subtracting shrinks it and stops at zero.

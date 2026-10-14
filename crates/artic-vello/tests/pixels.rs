@@ -6,21 +6,23 @@
 use artic_core::Object;
 use artic_core::property::AnyProperty;
 use artic_core::tree::{NodeId, TreeKind, UiTree};
-use artic_layout::geometry::{Rect, RelativePoint, Transform};
+use artic_layout::geometry::{CornerRadius, FillRule, Path, Point, Rect, RelativePoint, RoundedRect, Transform};
 use artic_render::Renderer as _;
 use artic_render::{
-  Brush, Clip, Color, Compositor, GradientStop, Layers, LinearGradientBrush, Nodes, PhysicalSize, PixelBuffer, PixelFormat,
-  RadialGradientBrush, RenderError, SceneBuilder, SurfaceId, SurfaceView, Target, TargetKind,
+  Color, Compositor, GradientStop, Layers, LinearGradientBrush, Nodes, PhysicalSize, PixelBuffer, PixelFormat,
+  RadialGradientBrush, RenderError, SceneBuilder, Stroke, SurfaceId, SurfaceView, Target, TargetKind,
 };
 use artic_vello::Renderer;
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock, PoisonError};
 
-const SIZE: u32 = 8;
+const SIZE: u32 = 16;
 const RED: Color = Color::rgb(255, 0, 0);
 const GREEN: Color = Color::rgb(0, 255, 0);
 const BLUE: Color = Color::rgb(0, 0, 255);
+const CLEAR: [u8; 4] = [0, 0, 0, 0];
+const OPAQUE_RED: [u8; 4] = [255, 0, 0, 255];
 
 #[derive(Debug)]
 struct Node;
@@ -29,23 +31,29 @@ impl Object for Node {
   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
 }
 
-/// Each node fills a rectangle with a brush, inside optional layers.
+type Draw = Box<dyn Fn(&mut SceneBuilder)>;
+
+/// Each node draws with its own closure, inside optional layers.
 #[derive(Default)]
-struct Fills {
-  fills: HashMap<NodeId, (Rect, Brush)>,
+struct Drawings {
+  draws: HashMap<NodeId, Draw>,
   layers: HashMap<NodeId, Layers>,
 }
 
-impl Nodes for Fills {
+impl Nodes for Drawings {
   fn layers(&self, _arena: &UiTree, node: NodeId) -> Layers {
-    self.layers.get(&node).copied().unwrap_or_default()
+    self.layers.get(&node).cloned().unwrap_or_default()
   }
 
   fn record(&mut self, _arena: &UiTree, node: NodeId, builder: &mut SceneBuilder) {
-    if let Some((rect, brush)) = self.fills.get(&node) {
-      builder.fill_rect(*rect, brush.clone());
+    if let Some(draw) = self.draws.get(&node) {
+      draw(builder);
     }
   }
+}
+
+fn fill(rect: Rect, color: Color) -> Draw {
+  Box::new(move |builder| builder.fill(rect, color))
 }
 
 /// Runs `test` with the shared renderer, or prints why the machine can't run GPU tests.
@@ -78,7 +86,7 @@ fn is_warp(renderer: &Renderer) -> bool {
 }
 
 /// Renders `root`'s tree into an `SIZE`×`SIZE` buffer of `format`, and returns its pixels.
-fn render(renderer: &mut Renderer, tree: &mut UiTree, root: NodeId, nodes: &mut Fills, format: PixelFormat) -> Vec<[u8; 4]> {
+fn render(renderer: &mut Renderer, tree: &mut UiTree, root: NodeId, nodes: &mut Drawings, format: PixelFormat) -> Vec<[u8; 4]> {
   let scene = Compositor::default().compose(tree, root, nodes);
   let mut data = vec![0; (SIZE * SIZE * 4) as usize];
   let surface = SurfaceView {
@@ -103,11 +111,11 @@ fn full() -> Rect {
   Rect::new(0.0, 0.0, SIZE as f32, SIZE as f32)
 }
 
-fn render_brush(renderer: &mut Renderer, rect: Rect, brush: Brush) -> Vec<[u8; 4]> {
+fn render_one(renderer: &mut Renderer, draw: impl Fn(&mut SceneBuilder) + 'static) -> Vec<[u8; 4]> {
   let mut tree = UiTree::new();
   let root = tree.alloc(Box::new(Node));
-  let mut nodes = Fills::default();
-  nodes.fills.insert(root, (rect, brush));
+  let mut nodes = Drawings::default();
+  nodes.draws.insert(root, Box::new(draw));
   render(renderer, &mut tree, root, &mut nodes, PixelFormat::Rgba8)
 }
 
@@ -132,8 +140,8 @@ fn renders_scene_into_pixels() {
   with_renderer(|renderer| {
     let mut tree = UiTree::new();
     let root = tree.alloc(Box::new(Node));
-    let mut nodes = Fills::default();
-    nodes.fills.insert(root, (full(), RED.into()));
+    let mut nodes = Drawings::default();
+    nodes.draws.insert(root, fill(full(), RED));
 
     let rgba = render(renderer, &mut tree, root, &mut nodes, PixelFormat::Rgba8);
     tree.mark_dirty(root, artic_core::property::Affects::RENDER);
@@ -152,9 +160,9 @@ fn transform_and_clip_place_the_child() {
     let [root, panel, child] = [(); 3].map(|()| tree.alloc(Box::new(Node)));
     tree.add_child(TreeKind::Visual, root, panel);
     tree.add_child(TreeKind::Visual, panel, child);
-    let mut nodes = Fills::default();
-    nodes.fills.insert(root, (full(), BLUE.into()));
-    nodes.fills.insert(child, (Rect::new(0.0, 0.0, 4.0, 4.0), GREEN.into()));
+    let mut nodes = Drawings::default();
+    nodes.draws.insert(root, fill(full(), BLUE));
+    nodes.draws.insert(child, fill(Rect::new(0.0, 0.0, 4.0, 4.0), GREEN));
     nodes.layers.insert(
       panel,
       Layers {
@@ -165,7 +173,7 @@ fn transform_and_clip_place_the_child() {
     nodes.layers.insert(
       child,
       Layers {
-        clip: Some(Clip::Rect(Rect::new(0.0, 0.0, 2.0, 4.0))),
+        clip: Some(Rect::new(0.0, 0.0, 2.0, 4.0).into()),
         ..Layers::default()
       },
     );
@@ -185,9 +193,9 @@ fn opacity_blends_the_layer() {
     let mut tree = UiTree::new();
     let [root, overlay] = [(); 2].map(|()| tree.alloc(Box::new(Node)));
     tree.add_child(TreeKind::Visual, root, overlay);
-    let mut nodes = Fills::default();
-    nodes.fills.insert(root, (full(), Color::rgb(0, 0, 0).into()));
-    nodes.fills.insert(overlay, (full(), Color::rgb(255, 255, 255).into()));
+    let mut nodes = Drawings::default();
+    nodes.draws.insert(root, fill(full(), Color::rgb(0, 0, 0)));
+    nodes.draws.insert(overlay, fill(full(), Color::rgb(255, 255, 255)));
     nodes.layers.insert(
       overlay,
       Layers {
@@ -214,13 +222,13 @@ fn linear_gradient_fills_rect() {
       red_to_blue(),
     );
 
-    let pixels = render_brush(renderer, full(), brush.into());
+    let pixels = render_one(renderer, move |builder| builder.fill(full(), brush.clone()));
 
     for y in 0..SIZE {
       assert_near(pixel(&pixels, 0, y), [255, 0, 0, 255], "left edge");
       assert_near(pixel(&pixels, SIZE - 1, y), [0, 0, 255, 255], "right edge");
     }
-    let [r, _, b, _] = pixel(&pixels, 4, 0);
+    let [r, _, b, _] = pixel(&pixels, SIZE / 2, 0);
     assert!(r > 2 && b > 2, "the middle blends, got red {r} and blue {b}");
   });
 }
@@ -237,11 +245,170 @@ fn radial_gradient_fills_an_ellipse() {
       ..RadialGradientBrush::default()
     };
 
-    let pixels = render_brush(renderer, wide, brush.into());
+    let pixels = render_one(renderer, move |builder| builder.fill(wide, brush.clone()));
 
     assert_near(pixel(&pixels, 4, 2), [255, 0, 0, 255], "center");
     assert_near(pixel(&pixels, 7, 2), [0, 0, 255, 255], "end of the horizontal radius");
     assert_near(pixel(&pixels, 4, 0), [0, 0, 255, 255], "end of the vertical radius");
+  });
+}
+
+// Radii cut the corners they name, clockwise from the top-left; square corners and the middle
+// stay filled.
+#[test]
+fn rounded_rect_leaves_corners_clear() {
+  with_renderer(|renderer| {
+    let card = RoundedRect::new(full(), CornerRadius::new(8.0, 0.0, 8.0, 0.0));
+    let last = SIZE - 1;
+
+    let pixels = render_one(renderer, move |builder| builder.fill(card, RED));
+
+    assert_near(pixel(&pixels, 0, 0), CLEAR, "top-left, rounded");
+    assert_near(pixel(&pixels, last, last), CLEAR, "bottom-right, rounded");
+    assert_near(pixel(&pixels, last, 0), OPAQUE_RED, "top-right, square");
+    assert_near(pixel(&pixels, 0, last), OPAQUE_RED, "bottom-left, square");
+    assert_near(pixel(&pixels, 8, 8), OPAQUE_RED, "middle");
+  });
+}
+
+// A triangle clip keeps what's inside it and hides the rest.
+#[test]
+fn path_clip_masks_drawing() {
+  with_renderer(|renderer| {
+    let triangle = Path::builder(Point::new(0.0, 0.0))
+      .line_to(Point::new(16.0, 0.0))
+      .line_to(Point::new(0.0, 16.0))
+      .close()
+      .build();
+
+    let pixels = render_one(renderer, move |builder| {
+      builder.with_clip(triangle.clone(), |builder| builder.fill(full(), RED));
+    });
+
+    assert_near(pixel(&pixels, 2, 2), OPAQUE_RED, "inside the triangle");
+    assert_near(pixel(&pixels, 13, 13), CLEAR, "outside it");
+  });
+}
+
+fn star(fill_rule: FillRule) -> Path {
+  let corner = |index: u16| {
+    let angle = (f32::from(index) * 144.0 - 90.0).to_radians();
+    Point::new(8.0 + 8.0 * angle.cos(), 8.0 + 8.0 * angle.sin())
+  };
+  (1..5)
+    .fold(Path::builder(corner(0)), |builder, index| builder.line_to(corner(index)))
+    .close()
+    .fill_rule(fill_rule)
+    .build()
+}
+
+// The outline of a star winds twice around its center: the even-odd rule leaves the center
+// empty, the non-zero rule fills it. Both fill the points.
+#[test]
+fn fill_rule_decides_a_star_center() {
+  with_renderer(|renderer| {
+    let even_odd = render_one(renderer, |builder| builder.fill(star(FillRule::EvenOdd), RED));
+    let non_zero = render_one(renderer, |builder| builder.fill(star(FillRule::NonZero), RED));
+
+    assert_near(pixel(&even_odd, 7, 7), CLEAR, "even-odd center");
+    assert_near(pixel(&non_zero, 7, 7), OPAQUE_RED, "non-zero center");
+    assert_near(pixel(&even_odd, 7, 4), OPAQUE_RED, "even-odd top point");
+    assert_near(pixel(&non_zero, 7, 4), OPAQUE_RED, "non-zero top point");
+  });
+}
+
+// A gradient on a path spans the path's own box: red at its left edge, blue at its right, though
+// the box starts halfway across the surface.
+#[test]
+fn gradient_on_path_uses_its_bounds() {
+  with_renderer(|renderer| {
+    let square = Path::builder(Point::new(8.0, 0.0))
+      .line_to(Point::new(16.0, 0.0))
+      .line_to(Point::new(16.0, 8.0))
+      .line_to(Point::new(8.0, 8.0))
+      .close()
+      .build();
+    let brush = LinearGradientBrush::new(
+      RelativePoint::relative(0.0, 0.0),
+      RelativePoint::relative(1.0, 0.0),
+      red_to_blue(),
+    );
+
+    let pixels = render_one(renderer, move |builder| builder.fill(square.clone(), brush.clone()));
+
+    assert_near(pixel(&pixels, 8, 4), [255, 0, 0, 255], "the path's left edge");
+    assert_near(pixel(&pixels, 15, 4), [0, 0, 255, 255], "the path's right edge");
+    assert_near(pixel(&pixels, 4, 4), CLEAR, "outside the path");
+  });
+}
+
+// A clip whose shape draws nothing hides what it wraps, and what's drawn after it is unaffected.
+#[test]
+fn undrawable_clip_hides_its_content() {
+  with_renderer(|renderer| {
+    let pixels = render_one(renderer, |builder| {
+      builder.with_clip(Rect::new(0.0, 0.0, f32::NAN, 16.0), |builder| builder.fill(full(), RED));
+      builder.fill(Rect::new(0.0, 0.0, 4.0, 4.0), BLUE);
+    });
+
+    assert_near(pixel(&pixels, 8, 8), CLEAR, "inside the broken clip");
+    assert_near(pixel(&pixels, 1, 1), [0, 0, 255, 255], "drawn after it");
+  });
+}
+
+// A fill closes an open figure with a straight line back to its start.
+#[test]
+fn open_figure_fills_closed() {
+  with_renderer(|renderer| {
+    let open = Path::builder(Point::new(0.0, 0.0))
+      .line_to(Point::new(16.0, 0.0))
+      .line_to(Point::new(0.0, 16.0))
+      .build();
+
+    let pixels = render_one(renderer, move |builder| builder.fill(open.clone(), RED));
+
+    assert_near(pixel(&pixels, 2, 2), OPAQUE_RED, "inside the closed triangle");
+    assert_near(pixel(&pixels, 13, 13), CLEAR, "outside it");
+  });
+}
+
+// A stroke 2 wide on a rectangle's edges paints a band on each side of every edge, with a full
+// miter at the corners, and leaves the inside empty.
+#[test]
+fn stroke_paints_only_the_outline() {
+  with_renderer(|renderer| {
+    let pixels = render_one(renderer, |builder| {
+      builder.stroke(Rect::new(1.0, 1.0, 14.0, 14.0), RED, Stroke::new(2.0));
+    });
+
+    for (x, what) in [
+      (0, "outside the left edge"),
+      (1, "inside the left edge"),
+      (14, "inside the right edge"),
+      (15, "outside the right edge"),
+    ] {
+      assert_near(pixel(&pixels, x, 8), OPAQUE_RED, what);
+    }
+    assert_near(pixel(&pixels, 0, 0), OPAQUE_RED, "the mitered corner");
+    assert_near(pixel(&pixels, 2, 8), CLEAR, "just inside the band");
+    assert_near(pixel(&pixels, 8, 8), CLEAR, "the middle");
+  });
+}
+
+// A stroke leaves an open figure open: no line runs back from its end to its start.
+#[test]
+fn stroke_leaves_open_figures_open() {
+  with_renderer(|renderer| {
+    let corner = Path::builder(Point::new(2.0, 2.0))
+      .line_to(Point::new(14.0, 2.0))
+      .line_to(Point::new(14.0, 14.0))
+      .build();
+
+    let pixels = render_one(renderer, move |builder| builder.stroke(corner.clone(), RED, Stroke::new(2.0)));
+
+    assert_near(pixel(&pixels, 8, 1), OPAQUE_RED, "on the first segment");
+    assert_near(pixel(&pixels, 14, 8), OPAQUE_RED, "on the second segment");
+    assert_near(pixel(&pixels, 8, 8), CLEAR, "where a closing line would run");
   });
 }
 

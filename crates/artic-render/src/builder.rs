@@ -1,5 +1,5 @@
-use crate::{Brush, Clip, Command, Layer};
-use artic_layout::geometry::{Rect, Transform};
+use crate::{Brush, Command, Layer, Shape, Stroke, drawable_opacity};
+use artic_layout::geometry::Transform;
 
 /// Records one node's drawing, in the node's own coordinates.
 ///
@@ -8,10 +8,15 @@ use artic_layout::geometry::{Rect, Transform};
 ///
 /// # Examples
 ///
-/// ```ignore
-/// builder.fill_rect(bounds, Color::WHITE);
-/// builder.with_clip(Clip::Rect(bounds), |builder| {
-///   builder.with_opacity(0.5, |builder| builder.fill_rect(inner, Color::BLACK));
+/// ```
+/// use artic_layout::geometry::{CornerRadius, Rect, RoundedRect};
+/// use artic_render::{Color, SceneBuilder};
+///
+/// let mut builder = SceneBuilder::default();
+/// let card = RoundedRect::new(Rect::new(0.0, 0.0, 200.0, 100.0), CornerRadius::uniform(8.0));
+/// builder.fill(card, Color::rgb(255, 255, 255));
+/// builder.with_clip(card, |builder| {
+///   builder.with_opacity(0.5, |builder| builder.fill(Rect::new(0.0, 0.0, 200.0, 20.0), Color::rgb(0, 0, 0)));
 /// });
 /// ```
 #[derive(Debug, Default)]
@@ -20,28 +25,104 @@ pub struct SceneBuilder {
 }
 
 impl SceneBuilder {
-  /// Fills `rect` with `brush`, or with anything that converts into one, such as a
-  /// [`Color`](crate::Color).
-  pub fn fill_rect(&mut self, rect: Rect, brush: impl Into<Brush>) {
-    self.commands.push(Command::FillRect {
-      rect,
+  /// Fills `shape` with `brush`, or with anything that converts into one, such as a
+  /// [`Color`](crate::Color). The brush's relative points resolve against the shape's
+  /// [bounds](Shape::bounds).
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use artic_layout::geometry::{Path, Point, Rect};
+  /// use artic_render::{Color, SceneBuilder};
+  ///
+  /// let mut builder = SceneBuilder::default();
+  /// builder.fill(Rect::new(0.0, 0.0, 100.0, 40.0), Color::rgb(59, 130, 246));
+  /// let triangle = Path::builder(Point::new(50.0, 0.0))
+  ///   .line_to(Point::new(100.0, 100.0))
+  ///   .line_to(Point::new(0.0, 100.0))
+  ///   .close()
+  ///   .build();
+  /// builder.fill(triangle, Color::rgb(236, 72, 153));
+  /// ```
+  pub fn fill(&mut self, shape: impl Into<Shape>, brush: impl Into<Brush>) {
+    self.commands.push(Command::Fill {
+      shape: shape.into(),
       brush: brush.into(),
     });
   }
 
+  /// Strokes the outline of `shape` with `brush`, centered on it. The brush's relative points
+  /// resolve against the shape's [bounds](Shape::bounds), without the stroke's width.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use artic_layout::geometry::{CornerRadius, Rect, RoundedRect};
+  /// use artic_render::{Color, LineJoin, SceneBuilder, Stroke};
+  ///
+  /// let mut builder = SceneBuilder::default();
+  /// let card = RoundedRect::new(Rect::new(0.5, 0.5, 199.0, 99.0), CornerRadius::uniform(8.0));
+  /// builder.stroke(card, Color::rgb(203, 213, 225), Stroke::new(1.0).with_join(LineJoin::Round));
+  /// ```
+  pub fn stroke(&mut self, shape: impl Into<Shape>, brush: impl Into<Brush>, stroke: Stroke) {
+    self.commands.push(Command::Stroke {
+      shape: shape.into(),
+      brush: brush.into(),
+      stroke,
+    });
+  }
+
   /// Records `draw` inside `transform`.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use artic_layout::geometry::{Rect, Transform};
+  /// use artic_render::{Color, SceneBuilder};
+  ///
+  /// let mut builder = SceneBuilder::default();
+  /// builder.with_transform(Transform::rotate(0.5), |builder| {
+  ///   builder.fill(Rect::new(0.0, 0.0, 10.0, 10.0), Color::rgb(0, 0, 0));
+  /// });
+  /// ```
   pub fn with_transform(&mut self, transform: Transform, draw: impl FnOnce(&mut SceneBuilder)) {
     self.with_layer(Layer::Transform(transform), draw);
   }
 
-  /// Records `draw` inside `clip`.
-  pub fn with_clip(&mut self, clip: Clip, draw: impl FnOnce(&mut SceneBuilder)) {
-    self.with_layer(Layer::Clip(clip), draw);
+  /// Records `draw` clipped to `shape`: only what falls inside it shows.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use artic_layout::geometry::{CornerRadius, Rect, RoundedRect};
+  /// use artic_render::{Color, SceneBuilder};
+  ///
+  /// let mut builder = SceneBuilder::default();
+  /// let card = RoundedRect::new(Rect::new(0.0, 0.0, 200.0, 100.0), CornerRadius::uniform(8.0));
+  /// builder.with_clip(card, |builder| {
+  ///   builder.fill(Rect::new(0.0, 0.0, 200.0, 20.0), Color::rgb(59, 130, 246));
+  /// });
+  /// ```
+  pub fn with_clip(&mut self, shape: impl Into<Shape>, draw: impl FnOnce(&mut SceneBuilder)) {
+    self.with_layer(Layer::Clip(shape.into()), draw);
   }
 
-  /// Records `draw` as one group drawn at `opacity`, from 0 to 1.
+  /// Records `draw` as one group blended at `opacity`, made [drawable](crate::drawable_opacity):
+  /// clamped to `0..=1`, NaN counting as `1`.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use artic_layout::geometry::Rect;
+  /// use artic_render::{Color, SceneBuilder};
+  ///
+  /// let mut builder = SceneBuilder::default();
+  /// builder.with_opacity(0.5, |builder| {
+  ///   builder.fill(Rect::new(0.0, 0.0, 10.0, 10.0), Color::rgb(0, 0, 0));
+  /// });
+  /// ```
   pub fn with_opacity(&mut self, opacity: f32, draw: impl FnOnce(&mut SceneBuilder)) {
-    self.with_layer(Layer::Opacity(opacity), draw);
+    self.with_layer(Layer::Opacity(drawable_opacity(opacity)), draw);
   }
 
   /// Takes the recorded commands, leaving the builder empty.
@@ -59,38 +140,114 @@ impl SceneBuilder {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::Color;
+  use crate::{Color, Stroke, drawable_opacity};
+  use artic_layout::geometry::{CornerRadius, Path, Point, Rect, RoundedRect};
   use pretty_assertions::assert_eq;
 
-  // Fills record in order, and each layer wraps exactly what its closure draws.
+  // Fills and strokes record their shape, brush and stroke, in order, whatever the shape.
   #[test]
-  fn layers_wrap_what_their_closure_draws() {
-    let bounds = Rect::new(0.0, 0.0, 10.0, 10.0);
+  fn fill_and_stroke_record_shapes() {
+    let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
+    let rounded = RoundedRect::new(rect, CornerRadius::uniform(2.0));
+    let path = Path::builder(Point::ZERO).line_to(Point::new(5.0, 5.0)).build();
     let black = Color::rgb(0, 0, 0);
     let mut builder = SceneBuilder::default();
 
-    builder.fill_rect(bounds, black);
-    builder.with_clip(Clip::Rect(bounds), |builder| {
-      builder.with_opacity(0.5, |builder| builder.fill_rect(bounds, black));
+    builder.fill(rect, black);
+    builder.fill(rounded, black);
+    builder.fill(path.clone(), black);
+    builder.stroke(path.clone(), black, Stroke::new(2.0));
+
+    assert_eq!(
+      builder.take(),
+      [
+        Command::Fill {
+          shape: rect.into(),
+          brush: black.into()
+        },
+        Command::Fill {
+          shape: rounded.into(),
+          brush: black.into()
+        },
+        Command::Fill {
+          shape: path.clone().into(),
+          brush: black.into()
+        },
+        Command::Stroke {
+          shape: path.into(),
+          brush: black.into(),
+          stroke: Stroke::new(2.0)
+        },
+      ]
+    );
+    assert!(builder.take().is_empty(), "take leaves the builder empty");
+  }
+
+  // Each layer is pushed before its closure draws and popped when it returns, so the pushes and
+  // pops of a recording always pair up.
+  #[test]
+  fn layers_balance_by_construction() {
+    let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
+    let black = Color::rgb(0, 0, 0);
+    let mut builder = SceneBuilder::default();
+
+    builder.with_transform(Transform::translate(1.0, 0.0), |builder| {
+      builder.with_clip(rect, |builder| builder.fill(rect, black));
     });
 
     assert_eq!(
       builder.take(),
       [
-        Command::FillRect {
-          rect: bounds,
-          brush: black.into()
-        },
-        Command::Push(Layer::Clip(Clip::Rect(bounds))),
-        Command::Push(Layer::Opacity(0.5)),
-        Command::FillRect {
-          rect: bounds,
+        Command::Push(Layer::Transform(Transform::translate(1.0, 0.0))),
+        Command::Push(Layer::Clip(rect.into())),
+        Command::Fill {
+          shape: rect.into(),
           brush: black.into()
         },
         Command::Pop,
         Command::Pop,
       ]
     );
-    assert!(builder.take().is_empty(), "take leaves the builder empty");
+  }
+
+  // Opacity layers nest, each recorded around what its closure draws.
+  #[test]
+  fn opacity_layer_nests() {
+    let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
+    let black = Color::rgb(0, 0, 0);
+    let mut builder = SceneBuilder::default();
+
+    builder.with_opacity(0.5, |builder| {
+      builder.with_opacity(0.25, |builder| builder.fill(rect, black));
+    });
+
+    assert_eq!(
+      builder.take(),
+      [
+        Command::Push(Layer::Opacity(0.5)),
+        Command::Push(Layer::Opacity(0.25)),
+        Command::Fill {
+          shape: rect.into(),
+          brush: black.into()
+        },
+        Command::Pop,
+        Command::Pop,
+      ]
+    );
+  }
+
+  // A layer's opacity is clamped to 0–1, and NaN counts as 1, so a broken value doesn't hide what
+  // it wraps.
+  #[test]
+  fn opacity_is_clamped() {
+    let mut builder = SceneBuilder::default();
+
+    builder.with_opacity(f32::NAN, |_| {});
+
+    assert_eq!(
+      [0.25, -1.0, 2.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY].map(drawable_opacity),
+      [0.25, 0.0, 1.0, 1.0, 1.0, 0.0]
+    );
+    assert_eq!(builder.take()[0], Command::Push(Layer::Opacity(1.0)));
   }
 }

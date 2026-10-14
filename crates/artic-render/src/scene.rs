@@ -1,27 +1,31 @@
-use crate::Brush;
+use crate::{Brush, Shape, Stroke};
 use artic_core::tree::NodeId;
-use artic_layout::geometry::{Rect, Transform};
+use artic_layout::geometry::Transform;
 use std::sync::Arc;
 
 /// Something that changes how what's drawn inside it appears, until the matching pop.
 ///
 /// Every renderer must support every variant, so new variants are breaking changes on purpose: a
 /// renderer stops compiling instead of silently skipping what it doesn't draw.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Layer {
   /// Maps what's drawn inside, in its own coordinates, to the coordinates outside.
   Transform(Transform),
-  /// Only draws inside the clip, in the coordinates the clip is pushed in.
-  Clip(Clip),
+  /// Only draws inside the shape, in the coordinates the clip is pushed in. A shape that
+  /// [draws nothing](Shape::drawable) hides everything inside.
+  Clip(Shape),
   /// Draws everything inside as one group, then blends it at this opacity, from 0 to 1.
   Opacity(f32),
 }
 
-/// The shape a [`Layer::Clip`] keeps.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Clip {
-  /// A rectangle.
-  Rect(Rect),
+/// A layer's opacity as it's drawn: clamped to `0..=1`, NaN counting as `1`.
+///
+/// A broken opacity shouldn't hide a whole subtree, so NaN is opaque here, unlike a brush's
+/// opacity, where NaN paints nothing. [`SceneBuilder::with_opacity`](crate::SceneBuilder::with_opacity)
+/// and an element's [`Layers`](crate::Layers) both use it, so the two can't differ.
+#[must_use]
+pub fn drawable_opacity(opacity: f32) -> f32 {
+  if opacity.is_nan() { 1.0 } else { opacity.clamp(0.0, 1.0) }
 }
 
 /// One recorded drawing command of a [`SceneFragment`].
@@ -31,12 +35,23 @@ pub enum Command {
   Push(Layer),
   /// Ends the innermost layer.
   Pop,
-  /// Fills `rect` with `brush`.
-  FillRect {
-    /// The area to fill, which the brush's relative points and radii are resolved against.
-    rect: Rect,
+  /// Fills `shape` with `brush`.
+  Fill {
+    /// The area to fill. The brush's relative points and radii resolve against its
+    /// [bounds](Shape::bounds).
+    shape: Shape,
     /// The paint to fill it with.
     brush: Brush,
+  },
+  /// Strokes the outline of `shape` with `brush`.
+  Stroke {
+    /// The outline to stroke. An open figure stays open. The brush's relative points and radii
+    /// resolve against its [bounds](Shape::bounds), without the stroke's width.
+    shape: Shape,
+    /// The paint to stroke it with.
+    brush: Brush,
+    /// The stroke's width, joins and caps.
+    stroke: Stroke,
   },
 }
 

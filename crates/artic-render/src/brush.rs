@@ -6,8 +6,8 @@ use std::sync::Arc;
 /// The paint a shape is filled with: one color or a gradient.
 ///
 /// Anything that converts into a brush fills where one is expected, so a [`Color`] fills solid:
-/// `builder.fill_rect(bounds, Color::STEEL_BLUE)`. Gradient points and radii are resolved against
-/// the box being filled. Values out of range, such as an offset past 1 or a negative radius, are
+/// `builder.fill(bounds, Color::STEEL_BLUE)`. Gradient points and radii are resolved against
+/// the bounds of the shape being filled. Values out of range, such as an offset past 1 or a negative radius, are
 /// clamped when the brush is drawn, never rejected.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Brush {
