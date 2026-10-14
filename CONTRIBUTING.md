@@ -93,6 +93,12 @@ proportion to their weights, after Auto and fixed sizes are measured.
 
 Commits inside a pull request can be less formal, since only the title reaches `main`, but the same format keeps the history easy to read.
 
+## Contributor License Agreement
+
+Every contributor signs the [Contributor License Agreement](CLA.md) once. You keep the copyright to your contribution.
+
+When you open your first pull request, a bot comments with a link to the agreement. Reply with the sentence it asks for, and the check passes. Pull requests cannot be merged until every author has signed.
+
 ## License
 
 By contributing, you agree that your contributions are dual licensed under the MIT and Apache 2.0 licenses, as described in the [README](README.md#license).
