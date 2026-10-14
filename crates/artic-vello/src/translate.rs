@@ -1,6 +1,8 @@
 use artic_layout::geometry::{CornerRadius, FillRule, PathElement, Point, Rect, Transform};
-use artic_render::{Brush, Color, Command, GradientStop, Layer, PhysicalSize, Scene, SceneItem, Shape};
-use vello::kurbo::{self, Affine, BezPath, PathEl, Shape as _};
+use artic_render::{
+  Brush, Color, Command, GradientStop, Layer, LineCap, LineJoin, PhysicalSize, Scene, SceneItem, Shape, Stroke,
+};
+use vello::kurbo::{self, Affine, BezPath, Cap, Join, PathEl, Shape as _};
 use vello::peniko::{self, BlendMode, Fill, Gradient};
 
 /// The tolerance vello flattens a shape with, so converting one to a path first changes nothing.
@@ -26,6 +28,7 @@ pub(crate) fn translate(scene: &Scene, scale: f32, size: PhysicalSize, out: &mut
             Command::Push(layer) => translation.push(layer),
             Command::Pop => translation.pop(),
             Command::Fill { shape, brush } => translation.fill(shape, brush),
+            Command::Stroke { shape, brush, stroke } => translation.stroke(shape, brush, stroke),
           }
         }
       }
@@ -91,6 +94,17 @@ impl Translation<'_> {
         .fill(fill_rule(&shape), self.current, &brush, transform, &outline(&shape));
     }
   }
+
+  fn stroke(&mut self, shape: &Shape, brush: &Brush, stroke: &Stroke) {
+    let (Some(shape), Some(stroke)) = (shape.drawable(), stroke.drawable()) else {
+      return;
+    };
+    if let Some((brush, transform)) = paint(brush, shape.bounds()) {
+      self
+        .out
+        .stroke(&kurbo_stroke(&stroke), self.current, &brush, transform, &outline(&shape));
+    }
+  }
 }
 
 /// The same transform in kurbo's coefficient order, which is also CSS's.
@@ -124,6 +138,23 @@ fn fill_rule(shape: &Shape) -> Fill {
     },
     Shape::Rect(_) | Shape::RoundedRect(_) => Fill::NonZero,
   }
+}
+
+fn kurbo_stroke(stroke: &Stroke) -> kurbo::Stroke {
+  let join = match stroke.join {
+    LineJoin::Miter => Join::Miter,
+    LineJoin::Round => Join::Round,
+    LineJoin::Bevel => Join::Bevel,
+  };
+  let cap = match stroke.cap {
+    LineCap::Flat => Cap::Butt,
+    LineCap::Round => Cap::Round,
+    LineCap::Square => Cap::Square,
+  };
+  kurbo::Stroke::new(f64::from(stroke.width))
+    .with_join(join)
+    .with_caps(cap)
+    .with_miter_limit(f64::from(stroke.miter_limit))
 }
 
 fn path_el(element: PathElement) -> PathEl {
@@ -494,6 +525,56 @@ mod tests {
         .n_paths,
       1,
       "a valid fill draws"
+    );
+    let square: Shape = Rect::new(0.0, 0.0, 1.0, 1.0).into();
+    for shape in &invalid {
+      assert_eq!(
+        encoded(|t| t.stroke(shape, &red, &Stroke::default())).encoding().n_paths,
+        0,
+        "{shape:?}"
+      );
+    }
+    for width in [0.0, -1.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+      assert_eq!(
+        encoded(|t| t.stroke(&square, &red, &Stroke::new(width))).encoding().n_paths,
+        0,
+        "width {width}"
+      );
+    }
+    assert_eq!(
+      encoded(|t| t.stroke(&square, &red, &Stroke::new(1.0).with_miter_limit(f32::NAN)))
+        .encoding()
+        .n_paths,
+      1,
+      "a valid stroke draws, its miter limit made drawable"
+    );
+  }
+
+  // A stroke keeps its width and miter limit, its join maps by name, and its cap is both of
+  // kurbo's: Flat is Butt.
+  #[test]
+  fn stroke_converts_join_cap_and_miter() {
+    let ours = |join, cap| Stroke::new(2.0).with_join(join).with_cap(cap).with_miter_limit(4.0);
+    let theirs = |join, cap| kurbo::Stroke::new(2.0).with_join(join).with_caps(cap).with_miter_limit(4.0);
+
+    assert_eq!(
+      kurbo_stroke(&Stroke::default()),
+      kurbo::Stroke::new(1.0)
+        .with_join(Join::Miter)
+        .with_caps(Cap::Butt)
+        .with_miter_limit(10.0)
+    );
+    assert_eq!(
+      kurbo_stroke(&ours(LineJoin::Round, LineCap::Round)),
+      theirs(Join::Round, Cap::Round)
+    );
+    assert_eq!(
+      kurbo_stroke(&ours(LineJoin::Bevel, LineCap::Square)),
+      theirs(Join::Bevel, Cap::Square)
+    );
+    assert_eq!(
+      kurbo_stroke(&ours(LineJoin::Miter, LineCap::Flat)),
+      theirs(Join::Miter, Cap::Butt)
     );
   }
 }

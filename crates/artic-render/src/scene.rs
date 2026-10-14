@@ -1,4 +1,4 @@
-use crate::{Brush, Shape};
+use crate::{Brush, Shape, Stroke};
 use artic_core::tree::NodeId;
 use artic_layout::geometry::Transform;
 use std::sync::Arc;
@@ -42,6 +42,16 @@ pub enum Command {
     shape: Shape,
     /// The paint to fill it with.
     brush: Brush,
+  },
+  /// Strokes the outline of `shape` with `brush`.
+  Stroke {
+    /// The outline to stroke. An open figure stays open. The brush's relative points and radii
+    /// resolve against its [bounds](Shape::bounds), without the stroke's width.
+    shape: Shape,
+    /// The paint to stroke it with.
+    brush: Brush,
+    /// The stroke's width, joins and caps.
+    stroke: Stroke,
   },
 }
 

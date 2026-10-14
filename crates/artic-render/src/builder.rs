@@ -1,4 +1,4 @@
-use crate::{Brush, Command, Layer, Shape, drawable_opacity};
+use crate::{Brush, Command, Layer, Shape, Stroke, drawable_opacity};
 use artic_layout::geometry::Transform;
 
 /// Records one node's drawing, in the node's own coordinates.
@@ -48,6 +48,27 @@ impl SceneBuilder {
     self.commands.push(Command::Fill {
       shape: shape.into(),
       brush: brush.into(),
+    });
+  }
+
+  /// Strokes the outline of `shape` with `brush`, centered on it. The brush's relative points
+  /// resolve against the shape's [bounds](Shape::bounds), without the stroke's width.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use artic_layout::geometry::{CornerRadius, Rect, RoundedRect};
+  /// use artic_render::{Color, LineJoin, SceneBuilder, Stroke};
+  ///
+  /// let mut builder = SceneBuilder::default();
+  /// let card = RoundedRect::new(Rect::new(0.5, 0.5, 199.0, 99.0), CornerRadius::uniform(8.0));
+  /// builder.stroke(card, Color::rgb(203, 213, 225), Stroke::new(1.0).with_join(LineJoin::Round));
+  /// ```
+  pub fn stroke(&mut self, shape: impl Into<Shape>, brush: impl Into<Brush>, stroke: Stroke) {
+    self.commands.push(Command::Stroke {
+      shape: shape.into(),
+      brush: brush.into(),
+      stroke,
     });
   }
 
@@ -119,11 +140,11 @@ impl SceneBuilder {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::{Color, drawable_opacity};
+  use crate::{Color, Stroke, drawable_opacity};
   use artic_layout::geometry::{CornerRadius, Path, Point, Rect, RoundedRect};
   use pretty_assertions::assert_eq;
 
-  // Fills record their shape and brush, in order, whatever the shape.
+  // Fills and strokes record their shape, brush and stroke, in order, whatever the shape.
   #[test]
   fn fill_and_stroke_record_shapes() {
     let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
@@ -135,6 +156,7 @@ mod tests {
     builder.fill(rect, black);
     builder.fill(rounded, black);
     builder.fill(path.clone(), black);
+    builder.stroke(path.clone(), black, Stroke::new(2.0));
 
     assert_eq!(
       builder.take(),
@@ -148,8 +170,13 @@ mod tests {
           brush: black.into()
         },
         Command::Fill {
-          shape: path.into(),
+          shape: path.clone().into(),
           brush: black.into()
+        },
+        Command::Stroke {
+          shape: path.into(),
+          brush: black.into(),
+          stroke: Stroke::new(2.0)
         },
       ]
     );

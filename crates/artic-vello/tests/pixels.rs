@@ -10,7 +10,7 @@ use artic_layout::geometry::{CornerRadius, FillRule, Path, Point, Rect, Relative
 use artic_render::Renderer as _;
 use artic_render::{
   Color, Compositor, GradientStop, Layers, LinearGradientBrush, Nodes, PhysicalSize, PixelBuffer, PixelFormat,
-  RadialGradientBrush, RenderError, SceneBuilder, SurfaceId, SurfaceView, Target, TargetKind,
+  RadialGradientBrush, RenderError, SceneBuilder, Stroke, SurfaceId, SurfaceView, Target, TargetKind,
 };
 use artic_vello::Renderer;
 use pretty_assertions::assert_eq;
@@ -369,6 +369,46 @@ fn open_figure_fills_closed() {
 
     assert_eq!(pixel(&pixels, 2, 2), OPAQUE_RED, "inside the closed triangle");
     assert_eq!(pixel(&pixels, 13, 13), CLEAR, "outside it");
+  });
+}
+
+// A stroke 2 wide on a rectangle's edges paints a band on each side of every edge, with a full
+// miter at the corners, and leaves the inside empty.
+#[test]
+fn stroke_paints_only_the_outline() {
+  with_renderer(|renderer| {
+    let pixels = render_one(renderer, |builder| {
+      builder.stroke(Rect::new(1.0, 1.0, 14.0, 14.0), RED, Stroke::new(2.0));
+    });
+
+    for (x, what) in [
+      (0, "outside the left edge"),
+      (1, "inside the left edge"),
+      (14, "inside the right edge"),
+      (15, "outside the right edge"),
+    ] {
+      assert_eq!(pixel(&pixels, x, 8), OPAQUE_RED, "{what}");
+    }
+    assert_eq!(pixel(&pixels, 0, 0), OPAQUE_RED, "the mitered corner");
+    assert_eq!(pixel(&pixels, 2, 8), CLEAR, "just inside the band");
+    assert_eq!(pixel(&pixels, 8, 8), CLEAR, "the middle");
+  });
+}
+
+// A stroke leaves an open figure open: no line runs back from its end to its start.
+#[test]
+fn stroke_leaves_open_figures_open() {
+  with_renderer(|renderer| {
+    let corner = Path::builder(Point::new(2.0, 2.0))
+      .line_to(Point::new(14.0, 2.0))
+      .line_to(Point::new(14.0, 14.0))
+      .build();
+
+    let pixels = render_one(renderer, move |builder| builder.stroke(corner.clone(), RED, Stroke::new(2.0)));
+
+    assert_eq!(pixel(&pixels, 8, 1), OPAQUE_RED, "on the first segment");
+    assert_eq!(pixel(&pixels, 14, 8), OPAQUE_RED, "on the second segment");
+    assert_eq!(pixel(&pixels, 8, 8), CLEAR, "where a closing line would run");
   });
 }
 
