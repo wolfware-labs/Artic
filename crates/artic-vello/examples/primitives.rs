@@ -212,6 +212,7 @@ impl ApplicationHandler for Demo {
       .with_title("artic · primitives")
       .with_inner_size(winit::dpi::LogicalSize::new(side, side));
     let window = event_loop.create_window(attributes).expect("a window");
+    window.request_redraw();
     self.window = Some(Arc::new(window));
   }
 
