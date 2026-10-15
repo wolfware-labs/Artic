@@ -1,5 +1,5 @@
-use crate::{Brush, Command, Layer, Shape, Stroke, drawable_opacity};
-use artic_layout::geometry::Transform;
+use crate::{BoxShadow, Brush, Command, Layer, Shape, Stroke, drawable_opacity};
+use artic_layout::geometry::{RoundedRect, Transform};
 
 /// Records one node's drawing, in the node's own coordinates.
 ///
@@ -72,6 +72,28 @@ impl SceneBuilder {
     });
   }
 
+  /// Draws the shadow `rect` casts, CSS's outer `box-shadow`: it shows only outside `rect`, so a
+  /// translucent `rect` keeps its own color. Record it before what casts it, so the shadow shows
+  /// behind.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use artic_layout::geometry::{CornerRadius, Point, Rect, RoundedRect};
+  /// use artic_render::{BoxShadow, Color, SceneBuilder};
+  ///
+  /// let mut builder = SceneBuilder::default();
+  /// let card = RoundedRect::new(Rect::new(0.0, 0.0, 200.0, 100.0), CornerRadius::uniform(8.0));
+  /// builder.box_shadow(card, BoxShadow::new(Point::new(0.0, 2.0), 8.0, Color::rgba(0, 0, 0, 64)));
+  /// builder.fill(card, Color::rgb(255, 255, 255));
+  /// ```
+  pub fn box_shadow(&mut self, rect: impl Into<RoundedRect>, shadow: BoxShadow) {
+    self.commands.push(Command::BoxShadow {
+      rect: rect.into(),
+      shadow,
+    });
+  }
+
   /// Records `draw` inside `transform`.
   ///
   /// # Examples
@@ -140,7 +162,7 @@ impl SceneBuilder {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::{Color, Stroke, drawable_opacity};
+  use crate::{BoxShadow, Color, Stroke, drawable_opacity};
   use artic_layout::geometry::{CornerRadius, Path, Point, Rect, RoundedRect};
   use pretty_assertions::assert_eq;
 
@@ -181,6 +203,24 @@ mod tests {
       ]
     );
     assert!(builder.take().is_empty(), "take leaves the builder empty");
+  }
+
+  // A box shadow records the rectangle that casts it and the shadow, as given.
+  #[test]
+  fn box_shadow_records_rect_and_shadow() {
+    let rect = Rect::new(0.0, 0.0, 10.0, 10.0);
+    let shadow = BoxShadow::new(Point::new(0.0, 2.0), 8.0, Color::rgba(0, 0, 0, 64)).with_spread(-1.0);
+    let mut builder = SceneBuilder::default();
+
+    builder.box_shadow(rect, shadow.clone());
+
+    assert_eq!(
+      builder.take(),
+      [Command::BoxShadow {
+        rect: rect.into(),
+        shadow
+      }]
+    );
   }
 
   // Each layer is pushed before its closure draws and popped when it returns, so the pushes and

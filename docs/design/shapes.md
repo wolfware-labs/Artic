@@ -91,7 +91,7 @@ pub struct BoxShadow { pub offset: Point, pub blur: f32, pub spread: f32, pub co
 BoxShadow::new(Point::new(0.0, 2.0), 8.0, Color::rgba(0, 0, 0, 64)).with_spread(2.0)
 ```
 
-`new` takes the offset, blur and color, with no spread; like `Stroke`, it is `#[non_exhaustive]` and grows with `with_*` methods. A box shadow is CSS's outer `box-shadow`: the rounded rectangle, grown by `spread`, moved by `offset`, blurred by `blur`, in `color`. It is drawn behind what casts it, so `Border` records it before its background. This is the render-side value; the XAML value that parses from text belongs to #45, which converts into it. The name leaves room for a `DropShadow` effect on whole elements later (section 5).
+`new` takes the offset, blur and color, with no spread; like `Stroke`, it is `#[non_exhaustive]` and grows with `with_*` methods. A box shadow is CSS's outer `box-shadow`: the rounded rectangle, grown by `spread`, moved by `offset`, blurred by `blur`, in `color`. As in CSS, it shows only outside the rounded rectangle that casts it, so a translucent background doesn't darken. It is drawn behind what casts it, so `Border` records it before its background. This is the render-side value; the XAML value that parses from text belongs to #45, which converts into it. The name leaves room for a `DropShadow` effect on whole elements later (section 5).
 
 ## 3. The builder
 
@@ -136,7 +136,7 @@ Values out of range are made drawable when drawn, never rejected, as for brushes
 - A `Shape` becomes a kurbo `Rect`, `RoundedRect` (with per-corner radii) or `BezPath`.
 - `Fill` and `Stroke` use the brush conversion from #35, resolved against `shape.bounds()`. A `Stroke` becomes a kurbo `Stroke` with the same width, join and miter limit. Its cap is both kurbo's start and end cap, so every open figure gets the same cap at both ends (WPF's separate start and end caps aren't needed yet); `LineCap::Flat` is kurbo's `Cap::Butt`, `Round` is `Cap::Round` and `Square` is `Cap::Square`. Closed figures have no ends, so they take no cap.
 - `Layer::Clip` becomes `push_clip_layer` with the shape, and a path's `FillRule` becomes vello's `Fill::EvenOdd` or `Fill::NonZero` for fills and clips.
-- A `BoxShadow` becomes `draw_blurred_rounded_rect`, with the standard deviation CSS defines, `blur / 2`. Vello's fast blur takes one radius, so a shadow with unequal radii is drawn in four quadrants, each clipped to its quarter of the shadow and blurred with its corner's radius. Near a corner, a blurred rounded rectangle depends almost only on that corner's radius, so the seams don't show.
+- A `BoxShadow` becomes `draw_blurred_rounded_rect`, with the standard deviation CSS defines, `blur / 2`. Vello's fast blur takes one radius, so a shadow with unequal radii is drawn in four quadrants, each clipped to its quarter of the shadow and blurred with its corner's radius. Near a corner, a blurred rounded rectangle depends almost only on that corner's radius, so the seams don't show. The shadow is drawn inside an even-odd clip of the surface and the caster's outline, which leaves out the caster.
 
 ## 5. What waits
 
@@ -156,7 +156,7 @@ Glyph runs (#37), images (#71), golden images (#38) and blend modes other than `
 | `artic-layout` | `path_builder_records_figures`, `path_bounds_include_curve_extrema`, `path_fill_rule_defaults_to_even_odd`, `rounded_rect_fitted_scales_overlapping_radii` (and negative and NaN radii) |
 | `artic-render` | `opacity_is_clamped`, `layers_balance_by_construction`, `opacity_layer_nests` (two nested opacity layers record in order), `fill_and_stroke_record_shapes`, `shape_bounds_cover_each_variant`, `stroke_defaults_match_xaml` |
 | `artic-vello` | `shapes_convert_to_kurbo` (per-corner radii, curves), `stroke_converts_join_cap_and_miter`, `invalid_shapes_and_strokes_draw_nothing` (each row of section 4's table, infinities included), `box_shadow_values_are_made_drawable`, `box_shadow_grows_moves_and_blurs` (spread, offset, standard deviation) |
-| `artic-vello` pixels | `rounded_rect_leaves_corners_clear`, `stroke_paints_only_the_outline`, `path_clip_masks_drawing`, `fill_rule_decides_a_star_center`, `box_shadow_fades_outside_the_rect`, `unequal_radii_shadow_matches_each_corner` (each corner matches a shadow with that corner's radius everywhere), `gradient_on_path_uses_its_bounds` |
+| `artic-vello` pixels | `rounded_rect_leaves_corners_clear`, `stroke_paints_only_the_outline`, `path_clip_masks_drawing`, `fill_rule_decides_a_star_center`, `box_shadow_fades_outside_the_rect`, `unequal_radii_shadow_matches_each_corner` (each corner matches a shadow with that corner's radius everywhere), `box_shadow_stays_outside_its_caster`, `gradient_on_path_uses_its_bounds` |
 
 The example `artic-vello/examples/primitives.rs` draws every primitive in one window: a rounded rectangle, a stroked star, linear and radial swatches, clips by rectangle, rounded rectangle and path, nested opacity, and a card with a shadow. It replaces `window.rs`, whose rectangles, clip and opacity it covers. Its PR records a manual check on each desktop available.
 

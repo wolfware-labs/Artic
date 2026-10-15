@@ -9,7 +9,7 @@ use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_layout::geometry::{CornerRadius, FillRule, Path, Point, Rect, RelativePoint, RoundedRect, Transform};
 use artic_render::Renderer as _;
 use artic_render::{
-  Color, Compositor, GradientStop, Layers, LinearGradientBrush, Nodes, PhysicalSize, PixelBuffer, PixelFormat,
+  BoxShadow, Color, Compositor, GradientStop, Layers, LinearGradientBrush, Nodes, PhysicalSize, PixelBuffer, PixelFormat,
   RadialGradientBrush, RenderError, SceneBuilder, Stroke, SurfaceId, SurfaceView, Target, TargetKind,
 };
 use artic_vello::Renderer;
@@ -23,6 +23,9 @@ const GREEN: Color = Color::rgb(0, 255, 0);
 const BLUE: Color = Color::rgb(0, 0, 255);
 const CLEAR: [u8; 4] = [0, 0, 0, 0];
 const OPAQUE_RED: [u8; 4] = [255, 0, 0, 255];
+const BLACK: Color = Color::rgb(0, 0, 0);
+const OPAQUE_BLACK: [u8; 4] = [0, 0, 0, 255];
+const AWAY: f32 = 64.0;
 
 #[derive(Debug)]
 struct Node;
@@ -122,6 +125,13 @@ fn render_one(renderer: &mut Renderer, draw: impl Fn(&mut SceneBuilder) + 'stati
 fn assert_near(actual: [u8; 4], expected: [u8; 4], what: &str) {
   let near = actual.iter().zip(expected).all(|(a, e)| a.abs_diff(e) <= 2);
   assert!(near, "{what}: got {actual:?}, expected {expected:?}");
+}
+
+// A black shadow that lands on `rect`, cast from `AWAY` to its left so the caster is out of sight.
+fn shadow_on(builder: &mut SceneBuilder, rect: impl Into<RoundedRect>, blur: f32) {
+  let RoundedRect { rect, radius } = rect.into();
+  let caster = RoundedRect::new(Rect::new(rect.x - AWAY, rect.y, rect.width, rect.height), radius);
+  builder.box_shadow(caster, BoxShadow::new(Point::new(AWAY, 0.0), blur, BLACK));
 }
 
 // Red up to 40%, blue from 60%: pixels near either end are exactly one color.
@@ -409,6 +419,145 @@ fn stroke_leaves_open_figures_open() {
     assert_near(pixel(&pixels, 8, 1), OPAQUE_RED, "on the first segment");
     assert_near(pixel(&pixels, 14, 8), OPAQUE_RED, "on the second segment");
     assert_near(pixel(&pixels, 8, 8), CLEAR, "where a closing line would run");
+  });
+}
+
+// A blurred shadow is darkest in its middle and fades past its edges. A shadow without blur ends
+// at its rectangle, so its edges fall where a fill's would: vello's blur reads each pixel at its
+// corner, and the translation moves the rectangle back half a pixel to read at the centers.
+#[test]
+fn box_shadow_fades_outside_the_rect() {
+  with_renderer(|renderer| {
+    let card = Rect::new(4.0, 4.0, 8.0, 8.0);
+
+    let blurred = render_one(renderer, move |builder| {
+      shadow_on(builder, card, 4.0);
+    });
+    let sharp = render_one(renderer, move |builder| {
+      shadow_on(builder, card, 0.0);
+    });
+
+    let fade = [8, 4, 3, 2, 0].map(|x| pixel(&blurred, x, 8)[3]);
+    assert!(
+      fade.windows(2).all(|pair| pair[0] > pair[1]),
+      "fades from the middle out: {fade:?}"
+    );
+    assert!(fade[4] > 0, "the blur reaches past the edge: {fade:?}");
+    assert_near(pixel(&sharp, 4, 8), OPAQUE_BLACK, "sharp, inside");
+    assert_near(pixel(&sharp, 11, 11), OPAQUE_BLACK, "sharp, last corner pixel");
+    assert_near(pixel(&sharp, 3, 8), CLEAR, "sharp, outside");
+    assert_near(pixel(&sharp, 12, 12), CLEAR, "sharp, past the corner");
+  });
+}
+
+// A shadow with unequal radii draws each quarter as a shadow with that quarter's radius on every
+// corner would. The rectangle's middle falls mid-pixel, and no seam shows where the quarters meet.
+#[test]
+fn unequal_radii_shadow_matches_each_corner() {
+  with_renderer(|renderer| {
+    let rect = Rect::new(2.0, 2.0, 11.0, 12.0);
+    let radii = CornerRadius::new(0.0, 2.0, 4.0, 5.0);
+    let shadow_of = move |radius| {
+      move |builder: &mut SceneBuilder| {
+        shadow_on(builder, RoundedRect::new(rect, radius), 2.0);
+      }
+    };
+
+    let mixed = render_one(renderer, shadow_of(radii));
+
+    let quarters = [
+      (0..8, 0..8, radii.top_left),
+      (8..SIZE, 0..8, radii.top_right),
+      (8..SIZE, 8..SIZE, radii.bottom_right),
+      (0..8, 8..SIZE, radii.bottom_left),
+    ];
+    for (xs, ys, radius) in quarters {
+      let uniform = render_one(renderer, shadow_of(CornerRadius::uniform(radius)));
+      for y in ys {
+        for x in xs.clone() {
+          assert_near(
+            pixel(&mixed, x, y),
+            pixel(&uniform, x, y),
+            &format!("radius {radius} at {x},{y}"),
+          );
+        }
+      }
+    }
+  });
+}
+
+// A shadow without blur is the rounded rectangle filled: its curves and its edges between pixels
+// are anti-aliased as a fill's are.
+#[test]
+fn sharp_shadow_draws_like_a_fill() {
+  with_renderer(|renderer| {
+    let card = RoundedRect::new(Rect::new(2.3, 2.7, 10.0, 10.0), CornerRadius::new(4.0, 0.0, 2.0, 5.0));
+
+    let shadow = render_one(renderer, move |builder| {
+      shadow_on(builder, card, 0.0);
+    });
+    let fill = render_one(renderer, move |builder| builder.fill(card, BLACK));
+
+    for y in 0..SIZE {
+      for x in 0..SIZE {
+        assert_near(pixel(&shadow, x, y), pixel(&fill, x, y), &format!("{x},{y}"));
+      }
+    }
+  });
+}
+
+// The quarters of a shadow with unequal radii add up where they meet, so no seam shows inside it
+// even when a rotation cuts the pixels along the seam.
+#[test]
+fn rotated_unequal_radii_shadow_has_no_seam() {
+  with_renderer(|renderer| {
+    let card = RoundedRect::new(Rect::new(-6.0, -6.0, 12.0, 12.0), CornerRadius::new(0.0, 2.0, 4.0, 6.0));
+    let turned = Transform::rotate(0.5).then(Transform::translate(8.0, 8.0));
+
+    let pixels = render_one(renderer, move |builder| {
+      builder.with_transform(turned, |builder| {
+        shadow_on(builder, card, 1.0);
+      });
+    });
+
+    for y in 5..11 {
+      for x in 5..11 {
+        assert_near(pixel(&pixels, x, y), OPAQUE_BLACK, &format!("{x},{y}"));
+      }
+    }
+  });
+}
+
+// A shadow shows only outside the rectangle that casts it, so a translucent caster above it keeps
+// its own color.
+#[test]
+fn box_shadow_stays_outside_its_caster() {
+  with_renderer(|renderer| {
+    let card = Rect::new(4.0, 4.0, 6.0, 6.0);
+
+    for blur in [0.0, 1.0] {
+      let pixels = render_one(renderer, move |builder| {
+        builder.box_shadow(card, BoxShadow::new(Point::new(3.0, 3.0), blur, BLACK));
+      });
+
+      assert_near(pixel(&pixels, 8, 8), CLEAR, &format!("blur {blur}, under the caster"));
+      assert_near(pixel(&pixels, 11, 11), OPAQUE_BLACK, &format!("blur {blur}, past the caster"));
+    }
+  });
+}
+
+// A shadow is drawn in the coordinates of the transform around it.
+#[test]
+fn box_shadow_follows_the_transform() {
+  with_renderer(|renderer| {
+    let pixels = render_one(renderer, |builder| {
+      builder.with_transform(Transform::translate(8.0, 0.0), |builder| {
+        shadow_on(builder, Rect::new(0.0, 4.0, 4.0, 4.0), 0.0);
+      });
+    });
+
+    assert_near(pixel(&pixels, 9, 5), OPAQUE_BLACK, "moved");
+    assert_near(pixel(&pixels, 1, 5), CLEAR, "not where it was");
   });
 }
 
