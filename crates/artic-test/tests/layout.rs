@@ -4,8 +4,11 @@
 use artic_core::tree::{NodeId, TreeKind};
 use artic_layout::LayoutManager;
 use artic_layout::geometry::{Rect, Size};
+use artic_test::layout::strategy;
 use artic_test::layout::{Boxes, Fixed, Headless, Stack};
 use pretty_assertions::assert_eq;
+use proptest::strategy::{Strategy, ValueTree};
+use proptest::test_runner::TestRunner;
 
 const WINDOW: Size = Size::new(400.0, 300.0);
 
@@ -182,4 +185,38 @@ fn infinite_expectation_fails() {
   let (layout, [_, first, _]) = two_in_a_stack();
 
   layout.assert_desired_within(first, Size::new(f32::INFINITY, 20.0), f32::MAX);
+}
+
+fn sample<T: std::fmt::Debug>(strategy: impl Strategy<Value = T>, count: usize) -> Vec<T> {
+  let mut runner = TestRunner::deterministic();
+  (0..count)
+    .map(|_| strategy.new_tree(&mut runner).expect("a value").current())
+    .collect()
+}
+
+// Each axis of an available size comes out zero, finite from 1 to 1000, or infinite, and all
+// three show up on both axes.
+#[test]
+fn available_sizes_cover_zero_finite_and_infinite() {
+  let sizes = sample(strategy::available(), 500);
+  let axes: [fn(&Size) -> f32; 2] = [|size| size.width, |size| size.height];
+
+  for axis in axes {
+    let values: Vec<f32> = sizes.iter().map(axis).collect();
+    assert!(values.iter().all(|value| *value == 0.0 || (1.0..1000.0).contains(value) || *value == f32::INFINITY));
+    assert!(values.contains(&0.0));
+    assert!(values.contains(&f32::INFINITY));
+    assert!(values.iter().any(|value| value.is_finite() && *value >= 1.0));
+  }
+}
+
+// Scales are the ones displays use, and every one comes up.
+#[test]
+fn scales_are_display_scales() {
+  let scales = sample(strategy::scale(), 200);
+
+  for scale in [1.0, 1.25, 1.5, 2.0, 3.0] {
+    assert!(scales.contains(&scale), "{scale} never came up");
+  }
+  assert!(scales.iter().all(|scale| [1.0, 1.25, 1.5, 2.0, 3.0].contains(scale)));
 }

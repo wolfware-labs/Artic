@@ -3,6 +3,7 @@
 mod compare;
 mod elements;
 mod headless;
+pub mod strategy;
 
 pub use elements::{Boxes, Fixed, Stack};
 pub use headless::Headless;
