@@ -1,6 +1,6 @@
 # Design: golden images
 
-Issue: #38. Builds on: the `Renderer` trait and pixel targets (#34, [backend design](backends.md)), the frame pipeline (#42), [shapes, strokes, clips and shadows](shapes.md) (#36). Unblocks: #53 (golden jobs in CI), #45 and #46 (control goldens), #121 (theme goldens), #171 (a second renderer).
+Issue: #38. Builds on: the `Renderer` trait and pixel targets (#34, [backend design](backends.md)), the [frame pipeline](frame.md) (#40), [elements](element.md) (#42), [shapes, strokes, clips and shadows](shapes.md) (#36). Unblocks: #53 (golden jobs in CI), #45 and #46 (control goldens), #121 (theme goldens), #171 (a second renderer).
 
 A golden test draws a scene into memory and compares the pixels with a PNG checked into the repository. After this, a drawing change is checked by a machine, and an intended change shows up in the pull request as a changed picture.
 
@@ -16,7 +16,7 @@ fn box_shadow() {
 
 ## 1. Rendering into an image
 
-The harness lives in `artic_test::golden` and draws through the `Renderer` trait into `Target::Pixels`, in `PixelFormat::Rgba8`. The renderer copies the pixels back and strips the row padding itself, so the harness never touches wgpu, and the same calls work for any renderer that accepts pixel targets. The trait lets a renderer draw only on window handles; such a renderer can't have goldens, and `render` returns its `RenderError`.
+The harness lives in `artic_test::golden` and draws through the `Renderer` trait into `Target::Pixels`, in `PixelFormat::Rgba8`. The renderer copies the pixels back and strips the row padding itself, so the harness never touches wgpu, and the same calls work for any renderer that accepts pixel targets in `Rgba8`. The trait lets a renderer draw only on window handles, or take pixel targets in only some formats; such a renderer can't have goldens, and `render` returns its `RenderError`, `Unsupported` or `UnsupportedFormat`.
 
 ```rust
 pub struct Image { /* width: u32, height: u32, pixels: Vec<[u8; 4]> */ }
@@ -153,4 +153,4 @@ The file tests write into a temporary directory through `Golden::at`, and take t
 | PR | Contents | Done when |
 | --- | --- | --- |
 | A | this document | approved |
-| B | `artic_test::golden`, the `golden!` macro and `artic_test::scenes`, with rustdoc and an example; the vello goldens and their PNGs; the `.gitignore` entries | the tests in section 6 pass, and updating then rerunning leaves `git status` clean |
+| B | `artic_test::golden`, the `golden!` macro and `artic_test::scenes`, with rustdoc and an example; the vello goldens and their PNGs; the WARP check in the vello tests moved to the DX12 backend; the `.gitignore` entries | the tests in section 6 pass, and updating then rerunning leaves `git status` clean |
