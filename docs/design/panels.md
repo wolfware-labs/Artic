@@ -56,18 +56,18 @@ Elements use the same flag and trait as any other type, so `ElementImpl::default
 
 The field that receives a type's XAML child elements is marked where it's declared, with `#[xaml(content)]`, and the struct-level `#[xaml(content = name)]` is removed. Renaming the field then can't leave a stale name behind, and a property group can mark its own content field, which a struct-level name couldn't reach: a derive sees only its own struct, not the groups' fields.
 
-The loader needs no field path to add content, only a function: `XamlCollection::push_child(tree, owner, child)` (section 4) takes the tree and the owner's id, not the field. So content is described by the function of the content field's type:
+The loader needs no field path to add content, only a function: `XamlCollection::push_child(tree, owner, child)` (section 4) takes the tree and the owner's id, not the field. So content is described by the function of the content field's type, with the `Result` the [loader design](loader-values.md) gives its `add_child` thunk:
 
 ```rust
 pub struct ContentInfo {
   /// The content field, for diagnostics.
   pub field: &'static str,
   /// Adds a child element as content: the content field's `XamlCollection::push_child`.
-  pub push_child: fn(&mut UiTree, NodeId, NodeId),
+  pub push_child: fn(&mut UiTree, NodeId, NodeId) -> Result<(), ValueError>,
 }
 ```
 
-`TypeInfo.content` becomes `Option<ContentInfo>`, and a group exposes the same as `PropertyGroup::CONTENT`. The outer derive can't look inside a group, so it hands the choice to the compiler: `TypeInfo.content` is a `const` expression that takes the struct's own content field if it has one, otherwise the first flattened group's `CONTENT` that is `Some`, and a `const` assertion fails the build, with a message naming the rule, when more than one is `Some`. A type therefore has at most one content field, counting its groups, and content declared in a group reaches the loader as if the type had declared it. A group may hold a collection only as its content field; its other fields are still properties.
+`TypeInfo.content` becomes `Option<ContentInfo>`, which takes the place of the loader design's separate `TypeInfo.add_child`, and a group exposes the same as `PropertyGroup::CONTENT`. The outer derive can't look inside a group, so it hands the choice to the compiler: `TypeInfo.content` is a `const` expression that takes the struct's own content field if it has one, otherwise the first flattened group's `CONTENT` that is `Some`, and a `const` assertion fails the build, with a message naming the rule, when more than one is `Some`. A type therefore has at most one content field, counting its groups, and content declared in a group reaches the loader as if the type had declared it. A group may hold a collection only as its content field; its other fields are still properties.
 
 ### Group names
 
@@ -112,6 +112,8 @@ Collapsing a child used to reach its parent as a desired size that changed to ze
 
 The walks that follow layout skip a node it didn't lay out, with its subtree. Composition asks through its `Nodes` trait, which `ElementNodes` answers from `layout.rect(node).is_some()` instead of drawing at `Rect::ZERO`; hit testing follows the same rule, and #54's accesskit walk will too. `element.md`'s `Collapsed` row becomes: not laid out, no rectangle, skipped by drawing, hit testing and accessibility.
 
+`Rect::snap` changes too, for every panel: it multiplies edges by the scale, so an edge near `f32::MAX` overflows to infinity at scale 2 or 3 after the manager has checked the rectangle. A snapped edge whose scaled value isn't finite saturates at `f32::MAX` instead, so a finite rectangle stays finite.
+
 ## 4. Children
 
 The tree owns a panel's children; a panel keeps no list of its own. Two copies of "who are my children" would drift, and a method on the panel couldn't update both, since the panel lives inside the tree it would have to borrow. `Children` is an empty type that marks the content field, in `artic-element`:
@@ -131,7 +133,29 @@ impl Children {
 
 Linking both trees is a rule of panels, not of the tree: with templates (#84), a control's content is a logical child of the control and a visual child of a template part. So the rule lives with `Children`, not in `UiTree`.
 
-`XamlCollection` changes so the loader adds content through the tree: `fn push_child(tree: &mut UiTree, owner: NodeId, child: NodeId)`, an associated function with no `self`, which a collection that holds values can still reach through `tree.get_as_mut(owner)`. `Children` implements it with `Children::add`. The `Vec<NodeId>` implementation is removed; nothing calls `push_child` yet.
+`XamlCollection` changes so the loader adds content through the tree: `fn push_child(tree: &mut UiTree, owner: NodeId, child: NodeId) -> Result<(), ValueError>`, an associated function with no `self`, which a collection that holds values can still reach through `tree.get_as_mut(owner)`. `Children` implements it with `Children::add`, refusing an owner or child that isn't in the tree instead of panicking. The `Vec<NodeId>` implementation is removed; nothing calls `push_child` yet.
+
+The builder ([builder API](builder-api.md), #43) takes children in the same expression as the properties, before `build` has the tree. The ids wait in a wrapper, not in the node, since a relationship is tree data:
+
+```rust
+let ok = Button::new().content("Hi").build(tree);
+let panel = StackPanel::new()
+  .spacing(8.0)
+  .children([ok])   // WithChildren<StackPanel, [NodeId; 1]>
+  .build(tree);     // builds the node, then links each child
+
+/// A node waiting to be built, with the children to link once it is.
+pub struct WithChildren<T, I> {
+  node: T,
+  children: I,
+}
+
+impl<T: XamlType, I: IntoIterator<Item = NodeId>> WithChildren<T, I> {
+  pub fn build(self, tree: &mut UiTree) -> Handle<T>;
+}
+```
+
+The derive generates `.children(items)` only on a type with a content field, so a leaf can't take children. `WithChildren` has no property methods, so `.children` comes last before `.build`, as children come after attributes in markup. It is one generic type, unlike the per-type builder types `builder-api.md` rejects, and that document's "`build` links its children" becomes "`WithChildren::build` links them". The builder methods don't exist yet, so `WithChildren` and the generated `.children` come with #43; this design fixes their shape.
 
 ## 5. `Panel` and `StackPanel`
 
@@ -160,7 +184,7 @@ Every panel's `Background` is the same property with one key, so a style that se
 | Measure | each child is offered the panel's available cross size and infinity on the stacking axis. The desired stacking size is the children's sum plus `Spacing` between each pair; the desired cross size is the largest child's. No children gives 0×0 |
 | Arrange | children are placed from the start of the stacking axis with `Spacing` between them. Each slot is as long as the child asked for on the stacking axis and as wide as the panel on the cross axis; the child's own margin and alignment place it inside. Space left over stays empty, and children past the end are still arranged |
 | `Spacing` | a value that isn't a finite number of 0 or more counts as 0, so children don't overlap by accident |
-| Overflow | sums and positions along the stacking axis saturate at `f32::MAX`, so a huge `Spacing` or huge children can't add up to infinity, which the manager rejects as a desired size or rectangle |
+| Overflow | sums and positions along the stacking axis saturate at `f32::MAX`, and a slot's length is cut so its far edge stays at or below `f32::MAX`, so a huge `Spacing` or huge children can't add up to infinity, which the manager rejects as a desired size or rectangle |
 | Render | `self.panel.render(cx, scene)` |
 | Accessibility | nothing added: the default role is `GenericContainer` |
 
@@ -175,6 +199,8 @@ Elements return their own node; the tree of nodes is built by #54's walk, which 
 | Document | Change |
 | --- | --- |
 | `docs/architecture.md` | `artic-layout` depends on `artic-core` and `artic-macros`; `artic-macros`' generated code may also name `artic_core::__private`; the rule about `artic-macros`' own tests covers dev-dependencies on any crate that uses the macros, `artic-element` included |
+| `docs/design/builder-api.md` | children wait in `WithChildren`, and `WithChildren::build` links them in both trees |
+| `docs/design/loader-values.md` | `TypeInfo.add_child` becomes `TypeInfo.content: Option<ContentInfo>` |
 | `docs/design/element.md` | the group names; `ElementImpl::defaults` replaced by `override_defaults`; the `Collapsed` row and the paragraph on forgetting skipped children |
 | Spec crate table | panels live in `artic-controls`, not `artic-layout` |
 | Spec §3 | the `Button` example and the content rule use `#[xaml(content)]` on the field; `#[xaml(override_defaults)]` and `OverrideDefaults` join the attribute list; `XamlEnum` is usable from any crate that depends on `artic-core` |
@@ -187,6 +213,7 @@ Elements return their own node; the tree of nodes is built by #54's walk, which 
 | --- | --- | --- |
 | `Grid`, `DockPanel`, `WrapPanel`, `UniformGrid`, `Canvas` | each flattens `Panel`, declares `Children` and writes measure and arrange | #67 to #70 |
 | Child order in the accesskit tree | the walk in section 6 | #54 |
+| `.children(…)` on the builder, through `WithChildren` | generated with the other builder methods | #43 |
 | Filling `Children` from markup | the loader calls `XamlCollection::push_child` | the XAML runtime and compiler |
 | Virtualization | a different panel over the same `Children` | #131 |
 
@@ -195,10 +222,10 @@ Elements return their own node; the tree of nodes is built by #54's walk, which 
 | Crate | Tests |
 | --- | --- |
 | `artic-macros` | `content_on_a_field`, `two_content_fields_across_groups_fail`, `struct_level_content_is_rejected`, `override_defaults_runs_after_field_defaults`, `override_defaults_without_an_impl_fails`, `element_adds_derive_xaml_type` |
-| `artic-layout` | `collapsed_children_are_left_out`, `collapsing_a_child_remeasures_the_parent`, `showing_a_child_again_measures_it`, `collapsed_root_lays_out_nothing`, `alignments_parse_with_the_derive`, `orientation_parses_ignoring_case` |
+| `artic-layout` | `collapsed_children_are_left_out`, `collapsing_a_child_remeasures_the_parent`, `showing_a_child_again_measures_it`, `collapsed_root_lays_out_nothing`, `snap_keeps_huge_rects_finite`, `alignments_parse_with_the_derive`, `orientation_parses_ignoring_case` |
 | `artic-render` | `nodes_not_laid_out_are_not_drawn` |
 | `artic-element` | `panel_children_update_tree_links` (add, insert and remove, in both trees), `knob_overrides_group_defaults` |
-| `artic-controls` | `stack_vertical_measure`, `stack_horizontal_measure`, `stack_spacing_skips_collapsed`, `stack_arrange_positions_children` (both orientations), `stack_spacing_ignores_invalid_values`, `empty_stack_is_zero`, `stack_children_are_xaml_content`, `stack_panel_accesskit_node`, and the property test `stack_invariants_hold` over random children in both orientations |
+| `artic-controls` | `stack_vertical_measure`, `stack_horizontal_measure`, `stack_spacing_skips_collapsed`, `stack_arrange_positions_children` (both orientations), `stack_spacing_ignores_invalid_values`, `empty_stack_is_zero`, `stack_children_are_xaml_content`, `stack_panel_accesskit_node` (the role; child order is #54's, so the issue's child-order criterion moves there), and the property test `stack_invariants_hold` over random children in both orientations |
 | `artic-vello` | the golden `stack_panel_background`: a panel with a background and three fixed-size children |
 
 The `artic-controls` tests use `artic_test::layout::Headless` with a `LayoutNodes` that asks `ElementTypes` first and falls back to `Boxes`, so the panel is a real element and its children are `Fixed` leaves; `artic-controls` takes `artic-test` as a dev-dependency. The golden follows #38's rule that goldens belong to each renderer: it lives in `artic-vello/tests/goldens.rs` and builds its tree there, and `artic-vello` takes `artic-controls` as a dev-dependency.
@@ -209,7 +236,7 @@ The `artic-controls` tests use `artic_test::layout::Headless` with a `LayoutNode
 | --- | --- | --- |
 | A | this document | approved |
 | B | section 1: `#[element]` adding `derive(XamlType)`, `override_defaults`, `#[xaml(content)]` on fields, the group renames, with no change in behavior | the macro tests pass and every existing test passes after the renames |
-| C | sections 2 and 3: `XamlEnum` from `artic-core`, `Orientation`, the derived alignment parsers, `collapsed()`, the manager's filter, composition and hit testing skipping nodes not laid out, and the `architecture.md` and `element.md` changes | the layout and render tests pass |
+| C | sections 2 and 3: `XamlEnum` from `artic-core`, `Orientation`, the derived alignment parsers, `collapsed()`, the manager's filter, composition and hit testing skipping nodes not laid out, `Rect::snap` saturating, and the `architecture.md` and `element.md` changes | the layout and render tests pass |
 | D | sections 4 and 5: `Children`, `XamlCollection` on the tree, `Panel`, `StackPanel`, the controls tests and the golden; closes #44 | the tests in section 9 pass |
 
 B and C are independent; D needs both.
