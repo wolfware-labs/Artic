@@ -193,11 +193,14 @@ impl Golden {
     }
     let expected = match Image::load(&golden) {
       Ok(expected) => expected,
-      Err(error) if error.kind() == io::ErrorKind::NotFound => {
+      Err(error) => {
         remove(&[written.as_path(), diff.as_path()])?;
-        return Err(GoldenError::Missing { golden });
+        return Err(if error.kind() == io::ErrorKind::NotFound {
+          GoldenError::Missing { golden }
+        } else {
+          GoldenError::Io { path: golden, error }
+        });
       }
-      Err(error) => return Err(GoldenError::Io { path: golden, error }),
     };
     let (expected_size, found) = ((expected.width(), expected.height()), (actual.width(), actual.height()));
     if expected_size != found {
@@ -438,6 +441,19 @@ mod tests {
       panic!("{error:?}")
     };
     assert_eq!((path, error.kind()), (golden.path(), io::ErrorKind::InvalidData));
+  }
+
+  // A golden that can't be read removes what an earlier failure left beside it.
+  #[test]
+  fn unreadable_golden_removes_old_outputs() {
+    let golden = golden_in("unreadable_golden_removes_old_outputs");
+    let _ = golden.check_in(&with_changed(10), Mode::Compare);
+    fs::write(golden.path(), b"not a png").expect("writes");
+
+    let _ = golden.check_in(&with_changed(10), Mode::Compare);
+
+    assert!(!golden.path().with_file_name("golden.actual.png").exists());
+    assert!(!golden.path().with_file_name("golden.diff.png").exists());
   }
 
   // Updating creates the folder, writes the golden and clears old failures; updating again writes
