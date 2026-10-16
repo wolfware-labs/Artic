@@ -1,0 +1,201 @@
+# Design: panels
+
+Issue: #44. Builds on: layout (#41), [elements](element.md) (#42), [layout tests](layout-tests.md) (#56), `XamlEnum` (#19), [golden images](golden-images.md) (#38). Unblocks: `Grid` (#67), `DockPanel` (#68), `WrapPanel` and `UniformGrid` (#69), `Canvas` (#70), the accesskit adapter (#54), #49.
+
+`StackPanel` is the first layout container: it holds children and lines them up in a row or a column, with a background drawn under them. Building it the way the rest of the panels will be built needs a few changes underneath first: how `#[element]` and `#[derive(XamlType)]` share work, where a type's XAML content is declared, what the property groups are called, how layout treats `Collapsed`, and where children live.
+
+```rust
+#[element]
+#[xaml(namespace = "https://artic.rs/ui")]
+pub struct StackPanel {
+  #[xaml(flatten)] pub panel: Panel,
+  #[xaml(content)] pub children: Children,
+  #[xaml(affects = layout)] pub orientation: Property<Orientation>,
+  #[xaml(affects = layout)] pub spacing: Property<f32>,
+}
+
+impl ElementImpl for StackPanel {
+  fn measure_override(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size { /* section 5 */ }
+  fn arrange_override(&self, cx: &mut ArrangeCx<'_>, size: Size) { /* section 5 */ }
+  fn render(&self, cx: &mut RenderCx<'_>, scene: &mut SceneBuilder) {
+    self.panel.render(cx, scene);
+  }
+}
+```
+
+Shared behavior is composed explicitly. A property group holds data and methods, and a control calls the methods it uses from its `ElementImpl` hooks. Nothing runs because a field's type says so, so a control's hooks show everything it does. Groups that hook into the element by themselves were considered and rejected: they behave like base classes, their hooks need an order, and the four built-in groups depend on each other's fields (`hit_test` reads `visibility`), which would turn into coupling between hooks.
+
+## 1. Building controls
+
+### `#[element]` and `#[derive(XamlType)]`
+
+`#[element]` adds `#[derive(XamlType)]` to the struct it rewrites, instead of calling the derive's functions itself. It keeps the work that makes a struct an element: it rejects generic and tuple structs, a written `derive(XamlType)` or `derive(Default)` and the reserved field names; adds the four group fields; implements `HasState` for `#[element(state)]` fields; and writes `Layoutable`, `Element` and `element_type!`. It strips only its own `#[element(...)]` attributes and leaves `#[xaml(...)]` to the derive.
+
+### Overriding defaults
+
+A property's default is set where it's declared, with `#[xaml(default = value)]`. A type that changes the default of a property it doesn't declare, one from a flattened group, says so with a flag on the struct and implements `OverrideDefaults`, a trait in `artic-registry`:
+
+```rust
+#[element]
+#[xaml(namespace = "https://artic.rs/ui", override_defaults)]
+pub struct Button { /* … */ }
+
+impl OverrideDefaults for Button {
+  fn override_defaults(&self) {
+    self.interaction.focusable.set_default(true);
+    self.interaction.cursor.set_default(Cursor::Hand);
+  }
+}
+```
+
+With the flag, the derive's `Default` builds every field and then calls `<Self as OverrideDefaults>::override_defaults(&value)`; without it, `Default` builds the fields and stops. The flag is needed because a derive sees only its struct, never an `impl` block, so the struct has to say that the impl exists. The flag is named after its trait so the one leads to the other, and isn't called `defaults`, which would sit one letter from the field-level `default = …` and read like serde's `#[serde(default)]`.
+
+Elements use the same flag and trait as any other type, so `ElementImpl::defaults` is removed and `#[element]` has nothing to do with defaults. A struct-level list, `#[xaml(default(interaction.focusable = true, …))]`, was considered and rejected: a control that changes several defaults would carry a long attribute.
+
+### Content on the field
+
+The field that receives a type's XAML child elements is marked where it's declared, with `#[xaml(content)]`, and the struct-level `#[xaml(content = name)]` is removed. Renaming the field then can't leave a stale name behind, and a property group can mark its own content field, which a struct-level name couldn't reach: a derive sees only its own struct, not the groups' fields.
+
+A type has at most one content field, counting its flattened groups. The outer derive can't look inside a group, so the check is done by the compiler: each type and group exposes `const CONTENT: Option<&'static str>`, and the derive adds a `const` assertion that at most one of them is `Some`, with a message naming the rule. A group may hold a collection only as its content field; its other fields are still properties.
+
+### Group names
+
+The property groups are renamed after their fields: `LayoutProperties` becomes `Layout`, `AppearanceProperties` `Appearance`, `InteractionProperties` `Interaction` and `IdentityProperties` `Identity`. Each group holds methods as well as properties (`Layout::measure`, `Interaction::hit_test`), so the suffix described only half of them, and `field: Type` now reads the same everywhere: `layout: Layout`, `panel: Panel`. The derive keeps its name, `XamlProperties`, since properties are what it generates. The test-local `Panel` structs in `artic-platform/tests/common/mod.rs` and the `artic-core` tree docs are renamed so that `Panel` names one thing.
+
+## 2. Enums in `artic-layout`
+
+`#[derive(XamlEnum)]` generates a `FromStr` whose error is `ParseEnumError`, which lives in `artic-core`. The generated code reaches it through `artic::__private` or `artic_registry::__private`, so `artic-layout`, which depends only on `artic-core`, writes `FromStr` for `HorizontalAlignment` and `VerticalAlignment` by hand. `artic-core` gets a `__private` module re-exporting `ParseEnumError`, and the derive's candidate crates gain `artic-core`.
+
+`artic-layout` then depends on `artic-macros`, and uses the derive for the two alignments, whose hand-written parsers are deleted, and for `Orientation`:
+
+```rust
+/// The axis a panel stacks or wraps its children along.
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, XamlEnum)]
+pub enum Orientation {
+  Horizontal,
+  #[default]
+  Vertical,
+}
+```
+
+`Orientation` sits in `sizing.rs` beside the alignments, where a contributor looks for layout vocabulary. The new edge makes no cycle: `artic-macros` depends on no artic crate, and its output names crates the caller already depends on. A proc macro runs on the build machine, so the web target gains nothing.
+
+## 3. Collapsed children
+
+A `Collapsed` element takes no part in layout. Today it measures to zero, so a panel can't tell it from a visible element that is empty, and `StackPanel` would put spacing around it. `artic-layout` learns the idea without naming `Visibility`:
+
+```rust
+pub trait Layoutable {
+  fn measure(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size;
+  fn arrange(&self, cx: &mut ArrangeCx<'_>, rect: Rect);
+  /// Whether the node takes no part in layout. By default, false.
+  fn collapsed(&self) -> bool {
+    false
+  }
+}
+```
+
+`#[element]` implements it from `appearance.visibility`. The manager leaves collapsed children out of `MeasureCx::children()` and `ArrangeCx::children()`, and so out of `measure_children` and `arrange_children`, so no panel writes code for them. A collapsed node keeps no results: `desired` and `rect` return `None`, as for a child a measure skipped. A collapsed root lays out nothing.
+
+Collapsing a child used to reach its parent as a desired size that changed to zero. Now the child isn't measured, so the manager watches membership instead: when a dirty node's `collapsed()` answer differs from the last pass, its parent's measure is marked dirty, the same path a removed child takes. `Layout::measure` and `Layout::arrange` lose their `Collapsed` branch, since the manager no longer calls them for a collapsed node; `Hidden` is measured and arranged as before.
+
+The walks that follow layout skip a node it didn't lay out, with its subtree. Composition asks through its `Nodes` trait, which `ElementNodes` answers from `layout.rect(node).is_some()` instead of drawing at `Rect::ZERO`; hit testing follows the same rule, and #54's accesskit walk will too. `element.md`'s `Collapsed` row becomes: not laid out, no rectangle, skipped by drawing, hit testing and accessibility.
+
+## 4. Children
+
+The tree owns a panel's children; a panel keeps no list of its own. Two copies of "who are my children" would drift, and a method on the panel couldn't update both, since the panel lives inside the tree it would have to borrow. `Children` is an empty type that marks the content field, in `artic-element`:
+
+```rust
+/// Marks an element's XAML children: they become its logical and visual children.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Children;
+
+impl Children {
+  pub fn add(tree: &mut UiTree, parent: NodeId, child: NodeId);
+  pub fn insert(tree: &mut UiTree, parent: NodeId, index: usize, child: NodeId);
+  /// Detaches `child` from both trees; the node stays allocated.
+  pub fn remove(tree: &mut UiTree, child: NodeId);
+}
+```
+
+Linking both trees is a rule of panels, not of the tree: with templates (#84), a control's content is a logical child of the control and a visual child of a template part. So the rule lives with `Children`, not in `UiTree`.
+
+`XamlCollection` changes so the loader adds content through the tree: `fn push_child(tree: &mut UiTree, owner: NodeId, child: NodeId)`, an associated function with no `self`, which a collection that holds values can still reach through `tree.get_as_mut(owner)`. `Children` implements it with `Children::add`. The `Vec<NodeId>` implementation is removed; nothing calls `push_child` yet.
+
+## 5. `Panel` and `StackPanel`
+
+`Panel` is the property group every panel flattens, in `artic-controls`:
+
+```rust
+/// What every panel has: a background drawn under its children.
+#[derive(Debug, XamlProperties)]
+pub struct Panel {
+  #[xaml(affects = render)]
+  pub background: Property<Option<Brush>>,
+}
+
+impl Panel {
+  /// Fills the element's bounds with `Background`, if it's set.
+  pub fn render(&self, cx: &RenderCx<'_>, scene: &mut SceneBuilder);
+}
+```
+
+Every panel's `Background` is the same property with one key, so a style that sets `Background` works on any panel. Each panel declares its own `#[xaml(content)] children: Children`, so a type's XAML content is visible where the type is. There is no `<Panel>` element.
+
+`StackPanel` has `Orientation`, `Vertical` by default, and `Spacing`, 0 by default. Below, the stacking axis is height when `Vertical` and width when `Horizontal`, and the cross axis is the other.
+
+| Step | Rule |
+| --- | --- |
+| Measure | each child is offered the panel's available cross size and infinity on the stacking axis. The desired stacking size is the children's sum plus `Spacing` between each pair; the desired cross size is the largest child's. No children gives 0×0 |
+| Arrange | children are placed from the start of the stacking axis with `Spacing` between them. Each slot is as long as the child asked for on the stacking axis and as wide as the panel on the cross axis; the child's own margin and alignment place it inside. Space left over stays empty, and children past the end are still arranged |
+| `Spacing` | a value that isn't a finite number of 0 or more counts as 0, so the desired size stays finite and children don't overlap by accident |
+| Render | `self.panel.render(cx, scene)` |
+| Accessibility | nothing added: the default role is `GenericContainer` |
+
+Measure and arrange are each written once, over a private `Axis` helper that splits a size into its stacking and cross parts and joins them back.
+
+## 6. Accessibility
+
+Elements return their own node; the tree of nodes is built by #54's walk, which takes children from the visual tree in order and skips nodes layout didn't place. Child order is that walk's job for every element, so `StackPanel` only checks its role here.
+
+## 7. Documents that change
+
+| Document | Change |
+| --- | --- |
+| `docs/architecture.md` | `artic-layout` depends on `artic-core` and `artic-macros`; `artic-macros`' generated code may also name `artic_core::__private`; the rule about `artic-macros`' own tests covers dev-dependencies on any crate that uses the macros, `artic-element` included |
+| `docs/design/element.md` | the group names; `ElementImpl::defaults` replaced by `override_defaults`; the `Collapsed` row and the paragraph on forgetting skipped children |
+| Spec crate table | panels live in `artic-controls`, not `artic-layout` |
+| Spec §7 Panels | `Panel` is a property group with `Background`; each panel has its own `Children` |
+
+## 8. What waits
+
+| Feature | How it fits | Tracked in |
+| --- | --- | --- |
+| `Grid`, `DockPanel`, `WrapPanel`, `UniformGrid`, `Canvas` | each flattens `Panel`, declares `Children` and writes measure and arrange | #67 to #70 |
+| Child order in the accesskit tree | the walk in section 6 | #54 |
+| Filling `Children` from markup | the loader calls `XamlCollection::push_child` | the XAML runtime and compiler |
+| Virtualization | a different panel over the same `Children` | #131 |
+
+## 9. Testing
+
+| Crate | Tests |
+| --- | --- |
+| `artic-macros` | `content_on_a_field`, `two_content_fields_across_groups_fail`, `struct_level_content_is_rejected`, `override_defaults_runs_after_field_defaults`, `override_defaults_without_an_impl_fails`, `element_adds_derive_xaml_type` |
+| `artic-layout` | `collapsed_children_are_left_out`, `collapsing_a_child_remeasures_the_parent`, `showing_a_child_again_measures_it`, `collapsed_root_lays_out_nothing`, `alignments_parse_with_the_derive`, `orientation_parses_ignoring_case` |
+| `artic-render` | `nodes_not_laid_out_are_not_drawn` |
+| `artic-element` | `panel_children_update_tree_links` (add, insert and remove, in both trees), `knob_overrides_group_defaults` |
+| `artic-controls` | `stack_vertical_measure`, `stack_horizontal_measure`, `stack_spacing_skips_collapsed`, `stack_arrange_positions_children` (both orientations), `stack_spacing_ignores_invalid_values`, `empty_stack_is_zero`, `stack_children_are_xaml_content`, `stack_panel_accesskit_node`, and the property test `stack_invariants_hold` over random children in both orientations |
+| `artic-vello` | the golden `stack_panel_background`: a panel with a background and three fixed-size children |
+
+The `artic-controls` tests use `artic_test::layout::Headless` with a `LayoutNodes` that asks `ElementTypes` first and falls back to `Boxes`, so the panel is a real element and its children are `Fixed` leaves; `artic-controls` takes `artic-test` as a dev-dependency. The golden follows #38's rule that goldens belong to each renderer: it lives in `artic-vello/tests/goldens.rs` and builds its tree there, and `artic-vello` takes `artic-controls` as a dev-dependency.
+
+## 10. Pull requests
+
+| PR | Contents | Done when |
+| --- | --- | --- |
+| A | this document | approved |
+| B | section 1: `#[element]` adding `derive(XamlType)`, `override_defaults`, `#[xaml(content)]` on fields, the group renames, with no change in behavior | the macro tests pass and every existing test passes after the renames |
+| C | sections 2 and 3: `XamlEnum` from `artic-core`, `Orientation`, the derived alignment parsers, `collapsed()`, the manager's filter, composition and hit testing skipping nodes not laid out, and the `architecture.md` and `element.md` changes | the layout and render tests pass |
+| D | sections 4 and 5: `Children`, `XamlCollection` on the tree, `Panel`, `StackPanel`, the controls tests and the golden; closes #44 | the tests in section 9 pass |
+
+B and C are independent; D needs both.
