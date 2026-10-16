@@ -115,7 +115,7 @@ pub trait Layoutable {
 
 Collapsing a child used to reach its parent as a desired size that changed to zero. Now the child isn't measured, so the manager watches membership instead: when a dirty node's `collapsed()` answer differs from the last pass, its parent's measure is marked dirty, the same path a removed child takes. `Layout::measure` and `Layout::arrange` lose their `Collapsed` branch, since the manager no longer calls them for a collapsed node; `Hidden` is measured and arranged as before.
 
-The walks that follow layout skip a node it didn't lay out, with its subtree. Composition asks through its `Nodes` trait, which `ElementNodes` answers from `layout.rect(node).is_some()` instead of drawing at `Rect::ZERO`; hit testing follows the same rule, and #54's accesskit walk will too. `element.md`'s `Collapsed` row becomes: not laid out, no rectangle, skipped by drawing, hit testing and accessibility.
+The walks that follow layout skip a node it didn't lay out, with its subtree. Composition already skips a node and its subtree when `Nodes::layers` returns `visible: false` (`Compositor::visit`), so `ElementNodes::layers` returns that for a node with no layout rectangle, instead of drawing it at `Rect::ZERO`; hit testing follows the same rule, and #54's accesskit walk will too. `element.md`'s `Collapsed` row becomes: not laid out, no rectangle, skipped by drawing, hit testing and accessibility.
 
 Layout arithmetic gets one rule for overflow, in place of fixes at each place a sum can grow: the geometry operations layout uses saturate at the finite range. `Rect::snap`, which scales edges and subtracts them, `Rect::deflate` and `inflate`, which add margins, and `Size` sums return `f32::MAX` or `f32::MIN` (that is, `-f32::MAX`) by sign instead of an infinity, so finite inputs always give finite rectangles. That keeps the manager's rule, a finite desired size and rectangle, true however large the values a panel adds up, without each panel guarding every addition.
 
@@ -192,7 +192,7 @@ pub struct WithChildren<T, I> {
   children: I,
 }
 
-impl<T: XamlType, I: IntoIterator<Item: Into<NodeId>>> WithChildren<T, I> {
+impl<T: XamlType + Object, I: IntoIterator<Item: Into<NodeId>>> WithChildren<T, I> {
   pub fn build(self, tree: &mut UiTree) -> Handle<T>;
 }
 ```
@@ -265,7 +265,7 @@ Elements return their own node; the tree of nodes is built by #54's walk, which 
 | --- | --- |
 | `artic-macros` | `content_child_on_a_field`, `content_children_on_a_field`, `content_property_in_a_group`, `two_content_fields_fail`, `struct_level_content_is_rejected`, `override_defaults_runs_after_field_defaults`, `override_defaults_without_an_impl_fails`, `element_adds_derive_xaml_type` |
 | `artic-layout` | `collapsed_children_are_left_out`, `collapsing_a_child_remeasures_the_parent`, `showing_a_child_again_measures_it`, `collapsed_root_lays_out_nothing`, `measuring_a_collapsed_child_directly_does_nothing`, the property test `geometry_stays_finite` (snap, deflate and inflate over huge finite rectangles, margins and scales), `alignments_parse_with_the_derive`, `orientation_parses_ignoring_case` |
-| `artic-render` | `nodes_not_laid_out_are_not_drawn` |
+| `artic-render` | `nodes_not_laid_out_are_not_drawn` (with a child under the node, which isn't drawn either) |
 | `artic-element` | `panel_children_update_tree_links` (add, insert and remove, in both trees), `push_child_refuses_nodes_not_in_the_tree`, `add_checks_both_trees_before_linking`, `child_set_replaces_in_both_trees`, `second_child_is_refused`, `remove_leaves_another_parents_child_alone`, `knob_overrides_group_defaults` |
 | `artic-controls` | `stack_vertical_measure`, `stack_horizontal_measure`, `stack_spacing_skips_collapsed`, `stack_arrange_positions_children` (both orientations), `stack_spacing_ignores_invalid_values`, `empty_stack_is_zero`, `stack_children_are_xaml_content`, `stack_panel_accesskit_node` (the role; child order is #54's, so the issue's child-order criterion moves there), and the property test `stack_invariants_hold` over random children in both orientations |
 | `artic-vello` | the golden `stack_panel_background`: a panel with a background and three fixed-size children |
