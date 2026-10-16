@@ -60,6 +60,7 @@ artic-xaml-runtime = { path = "crates/artic-xaml-runtime", version = "0.1.0" }
 accesskit = "0.25.1"
 insta = "1.49.0"
 linkme = "0.3.37"
+png = "0.18.1"
 pollster = "1.0.1"
 pretty_assertions = "1.4.1"
 proc-macro-crate = "3.5.0"
