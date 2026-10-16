@@ -149,7 +149,7 @@ The exact pixel tests in `artic-vello/tests/pixels.rs` stay. They check rules a 
 
 | Feature | How it fits | Tracked in |
 | --- | --- | --- |
-| A CI job that runs the goldens on lavapipe, and uploads `.actual.png` and `.diff.png` | it sets `ARTIC_REQUIRE_GPU=1` and collects `tests/goldens/*.{actual,diff}.png`. Wayland is covered by #53's separate smoke job, since goldens draw into memory, not on a window | #53 |
+| A CI job that runs the goldens on lavapipe, and uploads `.actual.png` and `.diff.png` | it sets `ARTIC_REQUIRE_GPU=1` and, from the workspace root, uploads `crates/*/tests/goldens/*.actual.png` and `crates/*/tests/goldens/*.diff.png`, since each crate keeps its own goldens. Wayland is covered by #53's separate smoke job, since goldens draw into memory, not on a window | #53 |
 | Control goldens | `render_tree` with the control's tree | #45, #46, #47 |
 | Theme state goldens | the same, once per state | #121 |
 | Text goldens | `per_os`, with the bundled test font | #37, #46 |
