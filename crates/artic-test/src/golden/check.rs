@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
 pub struct Tolerance {
-  /// The most any channel of a pixel may differ before the pixel counts as differing.
+  /// The most any channel of a pixel may differ before the pixel counts as differing. Colors are
+  /// compared premultiplied by their alpha, so a clear pixel's color doesn't count.
   pub channel: u8,
   /// The fraction of the image's pixels that may differ, from `0` to `1`, rounded down to whole
   /// pixels. Below `0` or NaN counts as `0`, above `1` as `1`.
@@ -226,7 +227,8 @@ fn compare(expected: &Image, actual: &Image, channel: u8) -> (usize, Image) {
     .iter()
     .zip(actual.pixels())
     .map(|(expected, actual)| {
-      if expected.iter().zip(actual).any(|(e, a)| e.abs_diff(*a) > channel) {
+      let (expected_color, actual_color) = (premultiplied(*expected), premultiplied(*actual));
+      if expected_color.iter().zip(actual_color).any(|(e, a)| e.abs_diff(a) > channel) {
         differing += 1;
         RED
       } else {
@@ -235,6 +237,11 @@ fn compare(expected: &Image, actual: &Image, channel: u8) -> (usize, Image) {
     })
     .collect();
   (differing, Image::new(expected.width(), expected.height(), pixels))
+}
+
+fn premultiplied([r, g, b, a]: [u8; 4]) -> [u8; 4] {
+  let scale = |channel: u8| ((u16::from(channel) * u16::from(a) + 127) / 255) as u8;
+  [scale(r), scale(g), scale(b), a]
 }
 
 fn faded([r, g, b, a]: [u8; 4]) -> [u8; 4] {
@@ -304,6 +311,16 @@ mod tests {
 
     assert_eq!(within, 0);
     assert_eq!(beyond, 64 * 64);
+  }
+
+  // Colors are compared premultiplied by their alpha: a clear pixel matches whatever color a GPU
+  // leaves in it, and a nearly clear one barely counts.
+  #[test]
+  fn transparent_pixels_match_whatever_their_color() {
+    let (clear, _) = compare(&plain([0, 0, 0, 0]), &plain([113, 34, 73, 0]), 8);
+    let (faint, _) = compare(&plain([0, 0, 0, 2]), &plain([255, 0, 0, 2]), 8);
+
+    assert_eq!((clear, faint), (0, 0));
   }
 
   // 0.1% of a 64×64 image is 4 pixels: 4 differing pixels pass and 5 fail.
