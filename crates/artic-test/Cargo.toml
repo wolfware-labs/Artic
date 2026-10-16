@@ -15,6 +15,7 @@ artic-layout.workspace = true
 artic-render.workspace = true
 artic-platform.workspace = true
 png.workspace = true
+proptest.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

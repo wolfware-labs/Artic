@@ -101,10 +101,10 @@ impl Invariants {
 
 The manager already enforces the first of the three rules in #56, finite results: a desired size or rectangle that isn't finite fails a `debug_assert!` naming the node by `NodeId`, and release builds replace it with 0. Tests run in debug builds, so a property test meets that panic before `assert` could see the value. `assert` runs layout from `root` and checks the other two rules on every node under it:
 
-1. **Deterministic.** A fresh `LayoutManager` on the same tree gives the same desired sizes and rectangles, within the tolerance. This catches an element whose answer depends on state from an earlier run.
+1. **Deterministic.** A fresh `LayoutManager` on the same tree gives the same desired sizes and rectangles, within the tolerance. This catches results cached from an earlier run that should have been recomputed, such as a missed invalidation, and an element whose answer changes from one call to the next. Both managers measure the same element objects, so state an element keeps in itself goes unseen.
 2. **Contained**, only after `.contained()`. When `available` is finite on both axes, each child's rectangle lies inside `(0, 0, parent width, parent height)`, within the tolerance.
 
-Containment is opt-in because some layouts break it on purpose: a negative margin, a canvas, a scrolled child, or a stack taller than its parent, since `Stack` gives each child the height it asked for. Snapping can't break it. Rectangles are in their parent's coordinates and all edges snap to the same device grid, and rounding never reorders two values, so a child edge inside its parent before snapping is still inside after.
+Containment is opt-in because some layouts break it on purpose: a negative margin, a canvas, a scrolled child, or a stack taller than its parent, since `Stack` gives each child the height it asked for. With snapping on, the check allows one device pixel. The manager snaps a child's edges in its parent's coordinates, so they can round past the parent's own snapped size: a parent at y 0.6 with height 0.8 snaps to height 0, and its child to 0..1.
 
 `layout_invariants_hold` leaves containment off, since its children can add up to more than the available height. A broken invariant panics with the node's label and the input. The manager's panic carries no label, but either one fails the `proptest!` case, and proptest shrinks it to the smallest failing input.
 
