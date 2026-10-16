@@ -6,6 +6,7 @@ Issue: #44. Builds on: layout (#41), [elements](element.md) (#42), [layout tests
 
 ```rust
 #[element]
+#[derive(Debug)]
 #[xaml(namespace = "https://artic.rs/ui")]
 pub struct StackPanel {
   #[xaml(flatten)] pub panel: Panel,
@@ -37,6 +38,7 @@ A property's default is set where it's declared, with `#[xaml(default = value)]`
 
 ```rust
 #[element]
+#[derive(Debug)]
 #[xaml(namespace = "https://artic.rs/ui", override_defaults)]
 pub struct Button { /* … */ }
 
@@ -178,7 +180,7 @@ pub trait XamlCollection: Sized {
 //     |tree, owner| tree.get_as_mut::<StackPanel>(owner).map(|panel| &mut panel.children))
 ```
 
-Every implementation calls `field` first, and refuses with `ValueError::WrongType` an owner it doesn't reach, a node of another type, before changing anything. `Children` then links `child` into both trees, returning `ValueError::InvalidChild` (new), with the `LinkError`, when a check fails. `Child` does the same, and also refuses a child when the owner has one already, since markup gives a single-child element one child. A value collection such as `LinearGradientBrush`'s `Vec<GradientStop>` ([value objects](value-objects.md)) is served by one implementation in `artic-registry`, `impl<T: FromXamlObject> XamlCollection for Vec<T>`, which takes the staged value out of the tree with `T::from_object` and pushes it through `field`; no crate that defines a value type needs its own. The `Vec<NodeId>` implementation is removed; nothing calls `push_child` yet.
+Every implementation calls `field` first, and refuses with `ValueError::WrongType` an owner it doesn't reach, a node of another type, before changing anything. `Children` then links `child` into both trees, returning `ValueError::InvalidChild` (new), with the `LinkError`, when a check fails. `Child` does the same, and also refuses a child when the owner has one already, since markup gives a single-child element one child. A value collection such as `LinearGradientBrush`'s `Vec<GradientStop>` ([value objects](value-objects.md)) is served by one implementation in `artic-registry`, `impl<T: FromXamlObject> XamlCollection for Vec<T>`, which works in three steps so no two borrows of the tree overlap: it calls `field` to check the owner and lets that borrow end, takes the staged value out of the tree with `T::from_object`, then calls `field` again to push it, which can't fail once the first call succeeded; no crate that defines a value type needs its own. The `Vec<NodeId>` implementation is removed; nothing calls `push_child` yet.
 
 The builder ([builder API](builder-api.md), #43) takes children in the same expression as the properties, before `build` has the tree. The ids wait in a wrapper, not in the node, since a relationship is tree data:
 
