@@ -234,7 +234,7 @@ Measure and arrange are each written once, over a private `Axis` helper that spl
 
 ## 6. Accessibility
 
-Elements return their own node; the tree of nodes is built by #54's walk, which takes children from the visual tree in order and skips nodes layout didn't place. Child order is that walk's job for every element, so `StackPanel` only checks its role here.
+Elements return their own node; the tree of nodes is built by #54's walk, which takes children from the visual tree in order and skips nodes layout didn't place. Child order is that walk's job for every element, so `StackPanel` only checks its role here, and #54's `stack_panel_children_in_visual_order` checks its children's order, with collapsed children left out.
 
 ## 7. Documents that change
 
@@ -267,7 +267,7 @@ Elements return their own node; the tree of nodes is built by #54's walk, which 
 | `artic-layout` | `collapsed_children_are_left_out`, `collapsing_a_child_remeasures_the_parent`, `showing_a_child_again_measures_it`, `collapsed_root_lays_out_nothing`, `measuring_a_collapsed_child_directly_does_nothing`, the property test `geometry_stays_finite` (snap, deflate and inflate over huge finite rectangles, margins and scales), `alignments_parse_with_the_derive`, `orientation_parses_ignoring_case` |
 | `artic-render` | `nodes_not_laid_out_are_not_drawn` (with a child under the node, which isn't drawn either) |
 | `artic-element` | `panel_children_update_tree_links` (add, insert and remove, in both trees), `push_child_refuses_nodes_not_in_the_tree`, `add_checks_both_trees_before_linking`, `child_set_replaces_in_both_trees`, `second_child_is_refused`, `remove_leaves_another_parents_child_alone`, `knob_overrides_group_defaults` |
-| `artic-controls` | `stack_vertical_measure`, `stack_horizontal_measure`, `stack_spacing_skips_collapsed`, `stack_arrange_positions_children` (both orientations), `stack_spacing_ignores_invalid_values`, `empty_stack_is_zero`, `stack_children_are_xaml_content`, `stack_panel_accesskit_node` (the role; child order is #54's, so the issue's child-order criterion moves there), and the property test `stack_invariants_hold` over random children in both orientations |
+| `artic-controls` | `stack_vertical_measure`, `stack_horizontal_measure`, `stack_spacing_skips_collapsed`, `stack_arrange_positions_children` (both orientations), `stack_spacing_ignores_invalid_values`, `empty_stack_is_zero`, `stack_children_are_xaml_content`, `stack_panel_accesskit_node` (the role; child order is checked by #54's `stack_panel_children_in_visual_order`), and the property test `stack_invariants_hold` over random children in both orientations |
 | `artic-vello` | the golden `stack_panel_background`: a panel with a background and three fixed-size children |
 
 The `artic-controls` tests use `artic_test::layout::Headless` with a `LayoutNodes` that asks `ElementTypes` first and falls back to `Boxes`, so the panel is a real element and its children are `Fixed` leaves; `artic-controls` takes `artic-test` as a dev-dependency. The golden follows #38's rule that goldens belong to each renderer: it lives in `artic-vello/tests/goldens.rs` and builds its tree there, and `artic-vello` takes `artic-controls` as a dev-dependency.
