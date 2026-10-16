@@ -1,7 +1,7 @@
-// Draws composed scenes into pixel buffers through the `Renderer` trait and checks the pixels. Each
-// test prints why and returns early when the machine has no GPU adapter, or only WARP, Windows'
-// software DX12 adapter, on which vello's compute shaders crash (GitHub's Windows runners have
-// nothing else). The tests share one renderer, so one device draws at a time.
+// Draws composed scenes into pixel buffers through the `Renderer` trait and checks the pixels.
+// Tests skip when the machine has no GPU adapter, or only WARP; see `common::with_renderer`.
+
+mod common;
 
 use artic_core::Object;
 use artic_core::property::AnyProperty;
@@ -13,9 +13,9 @@ use artic_render::{
   RadialGradientBrush, RenderError, SceneBuilder, Stroke, SurfaceId, SurfaceView, Target, TargetKind,
 };
 use artic_vello::Renderer;
+use common::with_renderer;
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock, PoisonError};
 
 const SIZE: u32 = 16;
 const RED: Color = Color::rgb(255, 0, 0);
@@ -57,35 +57,6 @@ impl Nodes for Drawings {
 
 fn fill(rect: Rect, color: Color) -> Draw {
   Box::new(move |builder| builder.fill(rect, color))
-}
-
-/// Runs `test` with the shared renderer, or prints why the machine can't run GPU tests.
-fn with_renderer(test: impl FnOnce(&mut Renderer)) {
-  static RENDERER: OnceLock<Mutex<Option<Renderer>>> = OnceLock::new();
-  let shared = RENDERER.get_or_init(|| match Renderer::new() {
-    Ok(renderer) if is_warp(&renderer) => {
-      eprintln!("skipped: vello crashes on WARP, the only adapter here ({renderer:?})");
-      Mutex::new(None)
-    }
-    Ok(renderer) => {
-      eprintln!("using {renderer:?}");
-      Mutex::new(Some(renderer))
-    }
-    Err(error) => {
-      eprintln!("skipped: {error}");
-      Mutex::new(None)
-    }
-  });
-  let mut renderer = shared.lock().unwrap_or_else(PoisonError::into_inner);
-  match renderer.as_mut() {
-    Some(renderer) => test(renderer),
-    None => eprintln!("skipped: no GPU adapter"),
-  }
-}
-
-/// Whether the renderer runs on WARP: a software adapter on Windows.
-fn is_warp(renderer: &Renderer) -> bool {
-  cfg!(windows) && renderer.adapter_info().device_type == vello::wgpu::DeviceType::Cpu
 }
 
 /// Renders `root`'s tree into an `SIZE`×`SIZE` buffer of `format`, and returns its pixels.

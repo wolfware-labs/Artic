@@ -297,6 +297,7 @@ dependencies = [
  "artic-core",
  "artic-layout",
  "artic-render",
+ "artic-test",
  "pollster",
  "pretty_assertions",
  "thiserror 2.0.21",
