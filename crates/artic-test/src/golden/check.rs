@@ -160,7 +160,8 @@ impl Golden {
   /// is `1`.
   ///
   /// On a mismatch it writes `<name>.actual.png`, and `<name>.diff.png` when the sizes agree,
-  /// beside the golden, and removes the ones it doesn't write, so no output outlives its run.
+  /// beside the golden. Every check removes whichever of the two it doesn't write, so a pass
+  /// removes both and no output outlives its run.
   ///
   /// # Errors
   ///
