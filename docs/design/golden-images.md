@@ -84,7 +84,7 @@ pub enum GoldenError {
 
 - A pixel differs when any channel of its color premultiplied by its alpha differs by more than `channel`. GPUs leave an arbitrary color in a fully clear pixel, so only what shows is compared.
 - The check fails when more than `pixels`, a fraction of the image, differ, rounded down: 4 pixels of a 64×64 image by default. A `pixels` below 0 or NaN counts as 0, and one above 1 as 1. It also fails when the sizes differ, or when the golden is missing, with a message naming `ARTIC_UPDATE_GOLDENS`.
-- When pixels differ it writes `<name>.actual.png` and `<name>.diff.png` beside the golden and returns them in `GoldenError::Pixels`, whose message prints both paths. When the sizes differ there's no pixel to pair, so it writes only `<name>.actual.png`, returned in `GoldenError::Size`. The diff shows matching pixels faded to gray and differing pixels in red. A passing check removes both files if an earlier run left them.
+- When pixels differ it writes `<name>.actual.png` and `<name>.diff.png` beside the golden and returns them in `GoldenError::Pixels`, whose message prints both paths. When the sizes differ there's no pixel to pair, so it writes only `<name>.actual.png`, returned in `GoldenError::Size`. The diff shows matching pixels faded to gray and differing pixels in red. Every check removes the files it doesn't write, so neither outlives the run it belongs to.
 
 A golden that can't be read or decoded, or an output that can't be written, is `GoldenError::Io` with the path; a PNG that isn't valid reads as an `io::Error` of kind `InvalidData`. `assert` panics with the error's message. `.gitignore` ignores `*.actual.png` and `*.diff.png`.
 

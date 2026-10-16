@@ -4,7 +4,7 @@
 use artic_core::Object;
 use artic_core::property::AnyProperty;
 use artic_core::tree::{NodeId, UiTree};
-use artic_layout::geometry::{CornerRadius, Path, Point, Rect, RelativePoint, RelativeScalar, RoundedRect};
+use artic_layout::geometry::{CornerRadius, FillRule, Path, Point, Rect, RelativePoint, RelativeScalar, RoundedRect};
 use artic_render::{
   BoxShadow, Color, Compositor, GradientStop, Layers, LineJoin, LinearGradientBrush, Nodes, PhysicalSize, RadialGradientBrush,
   Scene, SceneBuilder, Stroke,
@@ -133,6 +133,7 @@ fn star() -> Path {
   (1..5)
     .fold(Path::builder(point(0)), |path, index| path.line_to(point(index)))
     .close()
+    .fill_rule(FillRule::EvenOdd)
     .build()
 }
 

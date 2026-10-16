@@ -160,7 +160,7 @@ impl Golden {
   /// is `1`.
   ///
   /// On a mismatch it writes `<name>.actual.png`, and `<name>.diff.png` when the sizes agree,
-  /// beside the golden. A passing check removes both.
+  /// beside the golden, and removes the ones it doesn't write, so no output outlives its run.
   ///
   /// # Errors
   ///
@@ -192,11 +192,15 @@ impl Golden {
     }
     let expected = match Image::load(&golden) {
       Ok(expected) => expected,
-      Err(error) if error.kind() == io::ErrorKind::NotFound => return Err(GoldenError::Missing { golden }),
+      Err(error) if error.kind() == io::ErrorKind::NotFound => {
+        remove(&[written.as_path(), diff.as_path()])?;
+        return Err(GoldenError::Missing { golden });
+      }
       Err(error) => return Err(GoldenError::Io { path: golden, error }),
     };
     let (expected_size, found) = ((expected.width(), expected.height()), (actual.width(), actual.height()));
     if expected_size != found {
+      remove(&[diff.as_path()])?;
       actual.save(&written).map_err(at(&written))?;
       return Err(GoldenError::Size {
         expected: expected_size,
@@ -358,6 +362,24 @@ mod tests {
     };
     assert_eq!((expected, found), ((64, 64), (2, 1)));
     assert_eq!(Image::load(&actual).expect("written").width(), 2);
+  }
+
+  // A failure that writes no diff removes the one an earlier failure left, so no diff outlives
+  // the run it belongs to.
+  #[test]
+  fn failures_without_a_diff_remove_the_old_one() {
+    let golden = golden_in("failures_without_a_diff_remove_the_old_one");
+    let diff = golden.path().with_file_name("golden.diff.png");
+    let _ = golden.check_in(&with_changed(10), Mode::Compare);
+
+    let _ = golden.check_in(&Image::new(2, 1, vec![[0; 4]; 2]), Mode::Compare);
+    let size_left_it = diff.exists();
+    let _ = golden.check_in(&with_changed(10), Mode::Compare);
+    fs::remove_file(golden.path()).expect("removes");
+    let _ = golden.check_in(&with_changed(10), Mode::Compare);
+
+    assert_eq!((size_left_it, diff.exists()), (false, false));
+    assert!(!golden.path().with_file_name("golden.actual.png").exists());
   }
 
   // A mismatch writes the image and a diff beside the golden: changed pixels red, the rest
