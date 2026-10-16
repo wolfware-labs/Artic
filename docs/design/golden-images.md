@@ -42,7 +42,7 @@ pub fn render_tree(
 
 An `Image` holds straight RGBA, as `Rgba8` returns it and as PNG stores it. It reads and writes PNG with the `png` crate, which `artic-test` adds as a direct dependency in the workspace table at the version already in the lockfile, 0.18; no type of that crate appears in the API.
 
-`render` takes a `Scene`, which is how the primitive goldens are written. `render_tree` takes a root element, lays it out and composes it with a fresh `Pipeline` from `artic-platform`, then renders the frame: the entry point for control goldens (#45, #46, #121).
+`render` takes a `Scene`, which is how the primitive goldens are written. `render_tree` takes a root element, lays it out and composes it with a fresh `Pipeline` from `artic-platform`, then renders the frame: the entry point for control goldens (#45, #46, #121). For it, `artic-test` adds `artic-element` as a direct dependency, for `ElementTypes`, beside the `artic-platform` it already has.
 
 ## 2. Goldens
 
@@ -160,4 +160,4 @@ The file tests write into a temporary directory through `Golden::at`, and take t
 | PR | Contents | Done when |
 | --- | --- | --- |
 | A | this document | approved |
-| B | `artic_test::golden`, the `golden!` macro and `artic_test::scenes`, with rustdoc and an example; the vello goldens and their PNGs; the WARP check in the vello tests moved to the DX12 backend; the `.gitignore` entries | the tests in section 6 pass, and updating then rerunning leaves `git status` clean |
+| B | `artic_test::golden`, the `golden!` macro and `artic_test::scenes`, with rustdoc and an example; the vello goldens and their PNGs; the WARP check in the vello tests moved to the DX12 backend; `png` and `artic-element` as dependencies of `artic-test`; the `.gitignore` entries | the tests in section 6 pass, and updating then rerunning leaves `git status` clean |
