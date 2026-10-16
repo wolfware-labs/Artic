@@ -139,7 +139,8 @@ pub struct Child;
 
 impl Child {
   pub fn get(tree: &UiTree, parent: NodeId) -> Option<NodeId>;
-  /// Replaces the child: detaches the old one from both trees, then links `child`.
+  /// Replaces the child: checks `child`'s links in both trees, then detaches the old child and
+  /// links `child`. When a check fails, nothing changes and the old child stays.
   pub fn set(tree: &mut UiTree, parent: NodeId, child: Option<NodeId>);
 }
 ```
