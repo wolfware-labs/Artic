@@ -1,6 +1,6 @@
 [package]
 name = "artic-test"
-description = "Test utilities for artic: headless host, arena helpers and tree serialization."
+description = "Test utilities for artic: golden images, headless host, arena helpers and tree serialization."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,9 +10,16 @@ repository.workspace = true
 
 [dependencies]
 artic-core = { workspace = true, features = ["testing"] }
+artic-element.workspace = true
 artic-layout.workspace = true
 artic-render.workspace = true
 artic-platform.workspace = true
+png.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+accesskit.workspace = true
+pretty_assertions.workspace = true
 
 [lints]
 workspace = true

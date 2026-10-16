@@ -271,10 +271,15 @@ dependencies = [
 name = "artic-test"
 version = "0.1.0"
 dependencies = [
+ "accesskit",
  "artic-core",
+ "artic-element",
  "artic-layout",
  "artic-platform",
  "artic-render",
+ "png",
+ "pretty_assertions",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -292,6 +297,7 @@ dependencies = [
  "artic-core",
  "artic-layout",
  "artic-render",
+ "artic-test",
  "pollster",
  "pretty_assertions",
  "thiserror 2.0.21",
