@@ -56,7 +56,18 @@ Elements use the same flag and trait as any other type, so `ElementImpl::default
 
 The field that receives a type's XAML child elements is marked where it's declared, with `#[xaml(content)]`, and the struct-level `#[xaml(content = name)]` is removed. Renaming the field then can't leave a stale name behind, and a property group can mark its own content field, which a struct-level name couldn't reach: a derive sees only its own struct, not the groups' fields.
 
-A type has at most one content field, counting its flattened groups. The outer derive can't look inside a group, so the check is done by the compiler: each type and group exposes `const CONTENT: Option<&'static str>`, and the derive adds a `const` assertion that at most one of them is `Some`, with a message naming the rule. A group may hold a collection only as its content field; its other fields are still properties.
+The loader needs no field path to add content, only a function: `XamlCollection::push_child(tree, owner, child)` (section 4) takes the tree and the owner's id, not the field. So content is described by the function of the content field's type:
+
+```rust
+pub struct ContentInfo {
+  /// The content field, for diagnostics.
+  pub field: &'static str,
+  /// Adds a child element as content: the content field's `XamlCollection::push_child`.
+  pub push_child: fn(&mut UiTree, NodeId, NodeId),
+}
+```
+
+`TypeInfo.content` becomes `Option<ContentInfo>`, and a group exposes the same as `PropertyGroup::CONTENT`. The outer derive can't look inside a group, so it hands the choice to the compiler: `TypeInfo.content` is a `const` expression that takes the struct's own content field if it has one, otherwise the first flattened group's `CONTENT` that is `Some`, and a `const` assertion fails the build, with a message naming the rule, when more than one is `Some`. A type therefore has at most one content field, counting its groups, and content declared in a group reaches the loader as if the type had declared it. A group may hold a collection only as its content field; its other fields are still properties.
 
 ### Group names
 
@@ -64,9 +75,9 @@ The property groups are renamed after their fields: `LayoutProperties` becomes `
 
 ## 2. Enums in `artic-layout`
 
-`#[derive(XamlEnum)]` generates a `FromStr` whose error is `ParseEnumError`, which lives in `artic-core`. The generated code reaches it through `artic::__private` or `artic_registry::__private`, so `artic-layout`, which depends only on `artic-core`, writes `FromStr` for `HorizontalAlignment` and `VerticalAlignment` by hand. `artic-core` gets a `__private` module re-exporting `ParseEnumError`, and the derive's candidate crates gain `artic-core`.
+`#[derive(XamlEnum)]` generates a `FromStr` whose error is `ParseEnumError`, which lives in `artic-core`. The derive names it through the first of its candidate crates the calling crate depends on: `artic::__private`, `artic_registry::__private`, or, new here, `artic_core::__private`, a module `artic-core` adds to re-export `ParseEnumError`. Until now the candidates stopped at `artic-registry`, which is why `artic-layout`, depending only on `artic-core`, parsed its two alignments by hand.
 
-`artic-layout` then depends on `artic-macros`, and uses the derive for the two alignments, whose hand-written parsers are deleted, and for `Orientation`:
+`artic-layout` depends on `artic-macros` and derives the parser for `HorizontalAlignment`, `VerticalAlignment` and `Orientation`; the hand-written parsers are deleted:
 
 ```rust
 /// The axis a panel stacks or wraps its children along.
@@ -148,7 +159,8 @@ Every panel's `Background` is the same property with one key, so a style that se
 | --- | --- |
 | Measure | each child is offered the panel's available cross size and infinity on the stacking axis. The desired stacking size is the children's sum plus `Spacing` between each pair; the desired cross size is the largest child's. No children gives 0×0 |
 | Arrange | children are placed from the start of the stacking axis with `Spacing` between them. Each slot is as long as the child asked for on the stacking axis and as wide as the panel on the cross axis; the child's own margin and alignment place it inside. Space left over stays empty, and children past the end are still arranged |
-| `Spacing` | a value that isn't a finite number of 0 or more counts as 0, so the desired size stays finite and children don't overlap by accident |
+| `Spacing` | a value that isn't a finite number of 0 or more counts as 0, so children don't overlap by accident |
+| Overflow | sums and positions along the stacking axis saturate at `f32::MAX`, so a huge `Spacing` or huge children can't add up to infinity, which the manager rejects as a desired size or rectangle |
 | Render | `self.panel.render(cx, scene)` |
 | Accessibility | nothing added: the default role is `GenericContainer` |
 
@@ -165,6 +177,8 @@ Elements return their own node; the tree of nodes is built by #54's walk, which 
 | `docs/architecture.md` | `artic-layout` depends on `artic-core` and `artic-macros`; `artic-macros`' generated code may also name `artic_core::__private`; the rule about `artic-macros`' own tests covers dev-dependencies on any crate that uses the macros, `artic-element` included |
 | `docs/design/element.md` | the group names; `ElementImpl::defaults` replaced by `override_defaults`; the `Collapsed` row and the paragraph on forgetting skipped children |
 | Spec crate table | panels live in `artic-controls`, not `artic-layout` |
+| Spec §3 | the `Button` example and the content rule use `#[xaml(content)]` on the field; `#[xaml(override_defaults)]` and `OverrideDefaults` join the attribute list; `XamlEnum` is usable from any crate that depends on `artic-core` |
+| Spec §7 element composition | the group types are `Layout`, `Appearance`, `Interaction` and `Identity`; a control changes a group's default through `override_defaults`, not `ElementImpl::defaults`; `Collapsed` takes no part in layout and has no rectangle |
 | Spec §7 Panels | `Panel` is a property group with `Background`; each panel has its own `Children` |
 
 ## 8. What waits
