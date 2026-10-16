@@ -50,6 +50,13 @@ An `Image` holds straight RGBA, as `Rgba8` returns it and as PNG stores it. It r
 #[non_exhaustive]
 pub struct Tolerance { pub channel: u8, pub pixels: f32 }
 
+impl Default for Tolerance { /* channel 8, pixels 0.001 */ }
+
+impl Tolerance {
+  pub fn with_channel(self, channel: u8) -> Tolerance;
+  pub fn with_pixels(self, pixels: f32) -> Tolerance;
+}
+
 pub struct Golden { /* path, tolerance, per_os */ }
 
 macro_rules! golden { ($name:expr) => { /* Golden::at(<calling crate>/tests/goldens/<name>.png) */ } }
@@ -65,7 +72,7 @@ impl Golden {
 #[non_exhaustive]
 pub enum GoldenError {
   Missing { golden: PathBuf },
-  Size { expected: (u32, u32), actual: (u32, u32) },
+  Size { expected: (u32, u32), found: (u32, u32), actual: PathBuf },
   Pixels { differing: usize, allowed: usize, actual: PathBuf, diff: PathBuf },
   Io { path: PathBuf, error: io::Error },
 }
@@ -77,11 +84,11 @@ pub enum GoldenError {
 
 - A pixel differs when any of its channels differs by more than `channel`.
 - The check fails when more than `pixels` of the image differ, rounded down: 4 pixels of a 64×64 image by default. It also fails when the sizes differ, or when the golden is missing, with a message naming `ARTIC_UPDATE_GOLDENS`.
-- On failure it writes `<name>.actual.png` and `<name>.diff.png` beside the golden and returns them in `GoldenError::Pixels`, whose message prints both paths. The diff shows matching pixels faded to gray and differing pixels in red. A passing check removes both files if an earlier run left them.
+- When pixels differ it writes `<name>.actual.png` and `<name>.diff.png` beside the golden and returns them in `GoldenError::Pixels`, whose message prints both paths. When the sizes differ there's no pixel to pair, so it writes only `<name>.actual.png`, returned in `GoldenError::Size`. The diff shows matching pixels faded to gray and differing pixels in red. A passing check removes both files if an earlier run left them.
 
 A golden that can't be read or decoded, or an output that can't be written, is `GoldenError::Io` with the path; a PNG that isn't valid reads as an `io::Error` of kind `InvalidData`. `assert` panics with the error's message. `.gitignore` ignores `*.actual.png` and `*.diff.png`.
 
-The default tolerance is a channel difference of 8 and 0.1% of the pixels. GPUs round anti-aliased edges and blurs differently by a few levels, which the channel limit absorbs. A wrong color changes a channel by far more than 8, and an edge one pixel off changes a whole row of pixels: 64, which is 1.6% of a 64×64 image. A test that needs another tolerance passes its own.
+The default tolerance is a channel difference of 8 and 0.1% of the pixels. GPUs round anti-aliased edges and blurs differently by a few levels, which the channel limit absorbs. A wrong color changes a channel by far more than 8, and an edge one pixel off changes a whole row of pixels: 64, which is 1.6% of a 64×64 image. A test that needs another tolerance passes its own, built from the default: `Tolerance::default().with_channel(16)`.
 
 ## 3. Updating and skipping
 
@@ -109,7 +116,7 @@ fn with_renderer(test: impl FnOnce(&mut Renderer)) {
 
 `no_gpu` prints `skipped: <reason>` and returns, or panics when `ARTIC_REQUIRE_GPU=1` is set. A test can't mark itself skipped at run time, so a skipped golden test passes with that line in its output.
 
-The variable is ours rather than the `CI` most CI services set, because a CI machine without a GPU is normal today: GitHub's Windows runners have only WARP, and its Ubuntu runners no adapter. #53 sets `ARTIC_REQUIRE_GPU=1` in the Ubuntu job that installs lavapipe, where a missing GPU is a broken job. GitHub's Windows runners have only WARP, so #53's Windows job installs Mesa's lavapipe for Windows (mesa-dist-win), runs vello on Vulkan, and sets the variable too. If vello can't run there, #53 drops Windows from its golden jobs and says so in its acceptance, rather than keeping a job that skips every golden and passes.
+The variable is ours rather than the `CI` most CI services set, because a CI machine without a GPU is normal today: GitHub's Windows runners have only WARP, and its Ubuntu runners no adapter. #53 sets `ARTIC_REQUIRE_GPU=1` in the Ubuntu job that installs lavapipe, where a missing GPU is a broken job. GitHub's Windows runners have only WARP, so this design changes #53's plan, which named WARP: its Windows job installs Mesa's lavapipe for Windows (mesa-dist-win), sets `WGPU_BACKEND=vulkan`, which `artic-vello` already reads through `Backends::from_env` in place of its DX12 default, and sets `ARTIC_REQUIRE_GPU=1` too. If vello can't run there, #53 drops Windows from its golden jobs and says so in its acceptance, rather than keeping a job that skips every golden and passes.
 
 ## 4. The primitive goldens
 
