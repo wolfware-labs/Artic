@@ -1,9 +1,15 @@
 //! Golden-image tests: draw a scene into an [`Image`] and check it against a PNG checked into the
 //! repository.
 
+mod check;
 mod image;
 
+pub use check::{Golden, GoldenError, Tolerance};
 pub use image::Image;
+
+fn flag(name: &str) -> bool {
+  std::env::var_os(name).is_some_and(|value| value == "1")
+}
 
 #[cfg(test)]
 pub(crate) fn scratch(name: &str) -> std::path::PathBuf {
