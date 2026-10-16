@@ -29,7 +29,7 @@ Shared behavior is composed explicitly. A property group holds data and methods,
 
 ### `#[element]` and `#[derive(XamlType)]`
 
-`#[element]` adds `#[derive(XamlType)]` to the struct it rewrites, instead of calling the derive's functions itself. It keeps the work that makes a struct an element: it rejects generic and tuple structs, a written `derive(XamlType)` or `derive(Default)` and the reserved field names; adds the four group fields; implements `HasState` for `#[element(state)]` fields; and writes `Layoutable`, `Element` and `element_type!`. It strips only its own `#[element(...)]` attributes and leaves `#[xaml(...)]` to the derive.
+`#[element]` adds `#[derive(XamlType)]` to the struct it rewrites, instead of calling the derive's functions itself. It keeps the work that makes a struct an element: it rejects generic and tuple structs, a written `derive(XamlType)` or `derive(Default)` and the reserved field names; adds the four group fields; implements `HasState` for `#[element(state)]` fields; and writes `Layoutable`, `Element` and `element_type!`. It strips only its own `#[element(...)]` attributes and leaves `#[xaml(...)]` to the derive. A control crate may depend on `artic-element` alone, which isn't one of `XamlType`'s candidate crates, so `#[element]` passes on the crate it resolved, as it does today: it adds `#[xaml(crate = …)]` naming that crate, unless the struct already sets `crate`, and the derive reaches the registry through that crate's `__private`.
 
 ### Overriding defaults
 
@@ -245,7 +245,7 @@ Elements return their own node; the tree of nodes is built by #54's walk, which 
 
 | Document | Change |
 | --- | --- |
-| `docs/architecture.md` | `artic-layout` depends on `artic-core` and `artic-macros`; `artic-macros`' generated code may also name `artic_core::__private`; the rule about `artic-macros`' own tests covers dev-dependencies on any crate that uses the macros, `artic-element` included |
+| `docs/architecture.md` | the group types renamed in the `artic-element` rule (`Layout`, `Appearance`, `Interaction`, `Identity`); `artic-layout` depends on `artic-core` and `artic-macros`; `artic-macros`' generated code may also name `artic_core::__private`; the rule about `artic-macros`' own tests covers dev-dependencies on any crate that uses the macros, `artic-element` included |
 | `docs/design/builder-api.md` | children wait in `WithChildren`, and `WithChildren::build` links them in both trees; a single-child slot is a `Child` field, not `Property<Option<NodeId>>`, with `.child(item)` |
 | `docs/design/loader-values.md` | `TypeInfo.add_child` becomes `TypeInfo.content: Option<ContentInfo>`; `ValueError` gains `InvalidChild(LinkError)` |
 | `docs/design/element.md` | the group names; `ElementImpl::defaults` replaced by `override_defaults`; the `Collapsed` row and the paragraph on forgetting skipped children |
@@ -268,7 +268,7 @@ Elements return their own node; the tree of nodes is built by #54's walk, which 
 
 | Crate | Tests |
 | --- | --- |
-| `artic-macros` | `content_child_on_a_field`, `content_children_on_a_field`, `content_property_in_a_group`, `two_content_fields_fail`, `struct_level_content_is_rejected`, `override_defaults_runs_after_field_defaults`, `override_defaults_without_an_impl_fails`, `element_adds_derive_xaml_type` |
+| `artic-macros` | `content_child_on_a_field`, `content_children_on_a_field`, `content_property_in_a_group`, `two_content_fields_fail`, `struct_level_content_is_rejected`, `override_defaults_runs_after_field_defaults`, `override_defaults_without_an_impl_fails`, `element_adds_derive_xaml_type`, `element_compiles_with_only_artic_element` |
 | `artic-layout` | `collapsed_children_are_left_out`, `collapsing_a_child_remeasures_the_parent`, `showing_a_child_again_measures_it`, `collapsed_root_lays_out_nothing`, `measuring_a_collapsed_child_directly_does_nothing`, `measure_of_a_collapsed_root_is_none`, `infinite_available_stays_infinite`, `dirty_descendant_of_a_collapsed_child_isnt_measured`, the property test `geometry_stays_finite` (snap, deflate, inflate and `arrange_with` with every alignment, over huge finite rectangles, margins and scales), `alignments_parse_with_the_derive`, `orientation_parses_ignoring_case`; in `artic-macros`, `xaml_type_needs_the_registry` (trybuild: `derive(XamlType)` in a crate with only `artic-core` names `artic` or `artic-registry` in its error) |
 | `artic-render` | `nodes_not_laid_out_are_not_drawn` (with a child under the node, which isn't drawn either) |
 | `artic-element` | `panel_children_update_tree_links` (add, insert and remove, in both trees), `push_child_refuses_nodes_not_in_the_tree`, `add_checks_both_trees_before_linking`, `child_set_replaces_in_both_trees`, `child_set_leaves_a_mislinked_child_alone`, `second_child_is_refused`, `build_refuses_a_repeated_child`, `remove_leaves_another_parents_child_alone`, `knob_overrides_group_defaults` |
