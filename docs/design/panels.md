@@ -54,20 +54,22 @@ Elements use the same flag and trait as any other type, so `ElementImpl::default
 
 ### Content on the field
 
-The field that receives a type's XAML child elements is marked where it's declared, with `#[xaml(content)]`, and the struct-level `#[xaml(content = name)]` is removed. Renaming the field then can't leave a stale name behind, and a property group can mark its own content field, which a struct-level name couldn't reach: a derive sees only its own struct, not the groups' fields.
+The field that receives a type's XAML child elements is marked where it's declared, with `#[xaml(content)]`, and the struct-level `#[xaml(content = name)]` is removed, so renaming the field can't leave a stale name behind. The derive checks that at most one field is marked. Content stays a field of the type itself: property groups hold properties only, as today, and every panel declares its own `children` (section 5).
 
-The loader needs no field path to add content, only a function: `XamlCollection::push_child(tree, owner, child)` (section 4) takes the tree and the owner's id, not the field. So content is described by the function of the content field's type, with the `Result` the [loader design](loader-values.md) gives its `add_child` thunk:
+Content is either of the two kinds the merged designs already have, and `TypeInfo.content` says which, taking the place of the [loader design](loader-values.md)'s separate `TypeInfo.add_child`:
 
 ```rust
-pub struct ContentInfo {
-  /// The content field, for diagnostics.
-  pub field: &'static str,
-  /// Adds a child element as content: the content field's `XamlCollection::push_child`.
-  pub push_child: fn(&mut UiTree, NodeId, NodeId) -> Result<(), ValueError>,
+pub enum Content {
+  /// A single child slot, `Property<Option<NodeId>>` such as `Border.child`, set through its
+  /// `PropertyAccess::set_node`.
+  Property(PropertyRef),
+  /// A collection: `add_child` appends one child element through the field's `XamlCollection`.
+  Collection {
+    field: &'static str,
+    add_child: fn(&mut UiTree, NodeId, NodeId) -> Result<(), ValueError>,
+  },
 }
 ```
-
-`TypeInfo.content` becomes `Option<ContentInfo>`, which takes the place of the loader design's separate `TypeInfo.add_child`, and a group exposes the same as `PropertyGroup::CONTENT`. The outer derive can't look inside a group, so it hands the choice to the compiler: `TypeInfo.content` is a `const` expression that takes the struct's own content field if it has one, otherwise the first flattened group's `CONTENT` that is `Some`, and a `const` assertion fails the build, with a message naming the rule, when more than one is `Some`. A type therefore has at most one content field, counting its groups, and content declared in a group reaches the loader as if the type had declared it. A group may hold a collection only as its content field; its other fields are still properties.
 
 ### Group names
 
@@ -133,7 +135,27 @@ impl Children {
 
 Linking both trees is a rule of panels, not of the tree: with templates (#84), a control's content is a logical child of the control and a visual child of a template part. So the rule lives with `Children`, not in `UiTree`.
 
-`XamlCollection` changes so the loader adds content through the tree: `fn push_child(tree: &mut UiTree, owner: NodeId, child: NodeId) -> Result<(), ValueError>`, an associated function with no `self`, which a collection that holds values can still reach through `tree.get_as_mut(owner)`. `Children` implements it with `Children::add`, refusing an owner or child that isn't in the tree instead of panicking. The `Vec<NodeId>` implementation is removed; nothing calls `push_child` yet.
+`Children::add`, `insert` and `remove` panic on a node that isn't in the tree, or a link that would make a cycle, as the `UiTree` methods they call do: in code, those are bugs. The loader reaches them through `XamlCollection`, which checks first and returns an error instead, since markup is input.
+
+`XamlCollection` changes so one trait serves both a collection that lives in the tree and one that lives in its field. The derive generates `add_child` for the content field, passing an accessor from the owner node to that field:
+
+```rust
+pub trait XamlCollection: Sized {
+  /// Adds `child` as content of `owner`. `field` reaches this collection inside the owner.
+  fn push_child(
+    tree: &mut UiTree,
+    owner: NodeId,
+    child: NodeId,
+    field: for<'a> fn(&'a mut UiTree, NodeId) -> Option<&'a mut Self>,
+  ) -> Result<(), ValueError>;
+}
+
+// generated for StackPanel's content field:
+//   |tree, owner, child| Children::push_child(tree, owner, child,
+//     |tree, owner| tree.get_as_mut::<StackPanel>(owner).map(|panel| &mut panel.children))
+```
+
+`Children` ignores `field` and links `child` into both trees, returning `ValueError::InvalidChild` (new) when the owner or child isn't in the tree or the link would make a cycle. A value collection such as `LinearGradientBrush`'s `Vec<GradientStop>` ([value objects](value-objects.md)) takes the staged value out of the tree, as `from_object` does, and pushes it through `field`. The `Vec<NodeId>` implementation is removed; nothing calls `push_child` yet.
 
 The builder ([builder API](builder-api.md), #43) takes children in the same expression as the properties, before `build` has the tree. The ids wait in a wrapper, not in the node, since a relationship is tree data:
 
@@ -141,7 +163,7 @@ The builder ([builder API](builder-api.md), #43) takes children in the same expr
 let ok = Button::new().content("Hi").build(tree);
 let panel = StackPanel::new()
   .spacing(8.0)
-  .children([ok])   // WithChildren<StackPanel, [NodeId; 1]>
+  .children([ok])   // WithChildren<StackPanel, [Handle<Button>; 1]>
   .build(tree);     // builds the node, then links each child
 
 /// A node waiting to be built, with the children to link once it is.
@@ -150,7 +172,7 @@ pub struct WithChildren<T, I> {
   children: I,
 }
 
-impl<T: XamlType, I: IntoIterator<Item = NodeId>> WithChildren<T, I> {
+impl<T: XamlType, I: IntoIterator<Item: Into<NodeId>>> WithChildren<T, I> {
   pub fn build(self, tree: &mut UiTree) -> Handle<T>;
 }
 ```
@@ -221,10 +243,10 @@ Elements return their own node; the tree of nodes is built by #54's walk, which 
 
 | Crate | Tests |
 | --- | --- |
-| `artic-macros` | `content_on_a_field`, `two_content_fields_across_groups_fail`, `struct_level_content_is_rejected`, `override_defaults_runs_after_field_defaults`, `override_defaults_without_an_impl_fails`, `element_adds_derive_xaml_type` |
+| `artic-macros` | `content_slot_on_a_field`, `content_collection_on_a_field`, `two_content_fields_fail`, `struct_level_content_is_rejected`, `override_defaults_runs_after_field_defaults`, `override_defaults_without_an_impl_fails`, `element_adds_derive_xaml_type` |
 | `artic-layout` | `collapsed_children_are_left_out`, `collapsing_a_child_remeasures_the_parent`, `showing_a_child_again_measures_it`, `collapsed_root_lays_out_nothing`, `snap_keeps_huge_rects_finite`, `alignments_parse_with_the_derive`, `orientation_parses_ignoring_case` |
 | `artic-render` | `nodes_not_laid_out_are_not_drawn` |
-| `artic-element` | `panel_children_update_tree_links` (add, insert and remove, in both trees), `knob_overrides_group_defaults` |
+| `artic-element` | `panel_children_update_tree_links` (add, insert and remove, in both trees), `push_child_refuses_nodes_not_in_the_tree`, `knob_overrides_group_defaults` |
 | `artic-controls` | `stack_vertical_measure`, `stack_horizontal_measure`, `stack_spacing_skips_collapsed`, `stack_arrange_positions_children` (both orientations), `stack_spacing_ignores_invalid_values`, `empty_stack_is_zero`, `stack_children_are_xaml_content`, `stack_panel_accesskit_node` (the role; child order is #54's, so the issue's child-order criterion moves there), and the property test `stack_invariants_hold` over random children in both orientations |
 | `artic-vello` | the golden `stack_panel_background`: a panel with a background and three fixed-size children |
 
