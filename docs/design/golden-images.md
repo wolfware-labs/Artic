@@ -40,7 +40,7 @@ pub fn render_tree(
 ) -> Result<Image, RenderError>;
 ```
 
-An `Image` holds straight RGBA, as `Rgba8` returns it and as PNG stores it. It reads and writes PNG with the `png` crate, which `artic-test` adds as a direct dependency in the workspace table at the version already in the lockfile, 0.18; no type of that crate appears in the API.
+An `Image` holds straight RGBA, row by row from the top, as `Rgba8` returns it and as PNG stores it. `new` panics when `pixels` doesn't hold `width × height` pixels, and `pixel` when `x` or `y` is outside the image, as slice indexing does. It reads and writes PNG with the `png` crate, which `artic-test` adds as a direct dependency in the workspace table at the version already in the lockfile, 0.18; no type of that crate appears in the API.
 
 `render` takes a `Scene`, which is how the primitive goldens are written. `render_tree` takes a root element, lays it out and composes it with a fresh `Pipeline` from `artic-platform`, then renders the frame: the entry point for control goldens (#45, #46, #121). For it, `artic-test` adds `artic-element` as a direct dependency, for `ElementTypes`, beside the `artic-platform` it already has.
 
@@ -78,12 +78,12 @@ pub enum GoldenError {
 }
 ```
 
-`golden!("box_shadow")` is `tests/goldens/box_shadow.png` under the directory of the crate whose tests call it. It's a macro so that `env!("CARGO_MANIFEST_DIR")` expands in the calling crate and names that crate's directory; in a function of `artic-test` it would name `artic-test`. `Golden::at` takes any path. `per_os` adds the operating system to the name, `box_shadow.linux.png`, for tests that draw text, whose fonts differ between systems; no other test uses it.
+`golden!("box_shadow")` is `tests/goldens/box_shadow.png` under the directory of the crate whose tests call it. It's a macro so that `env!("CARGO_MANIFEST_DIR")` expands in the calling crate and names that crate's directory; in a function of `artic-test` it would name `artic-test`. `Golden::at` takes any path. `per_os` adds the operating system, as `std::env::consts::OS` names it, to the file name: `box_shadow.linux.png`, for tests that draw text, whose fonts differ between systems; no other test uses it.
 
 `check` compares `actual` with the golden:
 
 - A pixel differs when any of its channels differs by more than `channel`.
-- The check fails when more than `pixels` of the image differ, rounded down: 4 pixels of a 64×64 image by default. It also fails when the sizes differ, or when the golden is missing, with a message naming `ARTIC_UPDATE_GOLDENS`.
+- The check fails when more than `pixels`, a fraction of the image, differ, rounded down: 4 pixels of a 64×64 image by default. A `pixels` below 0 or NaN counts as 0, and one above 1 as 1. It also fails when the sizes differ, or when the golden is missing, with a message naming `ARTIC_UPDATE_GOLDENS`.
 - When pixels differ it writes `<name>.actual.png` and `<name>.diff.png` beside the golden and returns them in `GoldenError::Pixels`, whose message prints both paths. When the sizes differ there's no pixel to pair, so it writes only `<name>.actual.png`, returned in `GoldenError::Size`. The diff shows matching pixels faded to gray and differing pixels in red. A passing check removes both files if an earlier run left them.
 
 A golden that can't be read or decoded, or an output that can't be written, is `GoldenError::Io` with the path; a PNG that isn't valid reads as an `io::Error` of kind `InvalidData`. `assert` panics with the error's message. `.gitignore` ignores `*.actual.png` and `*.diff.png`.
@@ -92,11 +92,11 @@ The default tolerance is a channel difference of 8 and 0.1% of the pixels. GPUs 
 
 ## 3. Updating and skipping
 
-Two environment variables, read once per check:
+Two environment variables, each on only when set to `1`:
 
 | Variable | Effect |
 | --- | --- |
-| `ARTIC_UPDATE_GOLDENS=1` | `check` writes the image as the golden and passes. Rerunning without it passes and changes no file. The new PNGs are reviewed in the pull request, where GitHub shows the old and new picture side by side |
+| `ARTIC_UPDATE_GOLDENS=1` | `check` writes the image as the golden, removes any `.actual.png` and `.diff.png` beside it, and passes. Rerunning without it passes and changes no file. The new PNGs are reviewed in the pull request, where GitHub shows the old and new picture side by side |
 | `ARTIC_REQUIRE_GPU=1` | a golden test that finds no usable GPU fails instead of skipping |
 
 ```rust
@@ -116,11 +116,15 @@ fn with_renderer(test: impl FnOnce(&mut Renderer)) {
 
 `no_gpu` prints `skipped: <reason>` and returns, or panics when `ARTIC_REQUIRE_GPU=1` is set. A test can't mark itself skipped at run time, so a skipped golden test passes with that line in its output.
 
-The variable is ours rather than the `CI` most CI services set, because a CI machine without a GPU is normal today: GitHub's Windows runners have only WARP, and its Ubuntu runners no adapter. #53 sets `ARTIC_REQUIRE_GPU=1` in the Ubuntu job that installs lavapipe, where a missing GPU is a broken job. GitHub's Windows runners have only WARP, so this design changes #53's plan, which named WARP: its Windows job installs Mesa's lavapipe for Windows (mesa-dist-win), sets `WGPU_BACKEND=vulkan`, which `artic-vello` already reads through `Backends::from_env` in place of its DX12 default, and sets `ARTIC_REQUIRE_GPU=1` too. The macOS job sets it as well, since GitHub's macOS runners have a Metal device. If vello can't run there, #53 drops Windows from its golden jobs and says so in its acceptance, rather than keeping a job that skips every golden and passes.
+The variable is ours rather than the `CI` most CI services set, because a CI machine without a GPU is normal today: GitHub's Windows runners have only WARP, and its Ubuntu runners no adapter. This design changes #53's plan, which ran Windows goldens on WARP:
+
+- Ubuntu installs lavapipe and sets `ARTIC_REQUIRE_GPU=1`.
+- Windows installs Mesa's lavapipe for Windows (mesa-dist-win) and sets `WGPU_BACKEND=vulkan`, which `artic-vello` already reads through `Backends::from_env` in place of its DX12 default, and `ARTIC_REQUIRE_GPU=1`. If vello can't run on lavapipe there, #53 drops Windows from its golden jobs and says so in its acceptance, rather than keeping a job that skips every golden and passes.
+- macOS sets `ARTIC_REQUIRE_GPU=1`; GitHub's macOS runners have a Metal device.
 
 ## 4. The primitive goldens
 
-`artic_test::scenes` builds one scene per primitive of #36, each `SIZE` (64×64) at scale 1:
+`artic_test::scenes` builds one scene per primitive of #36, each drawn at `scenes::SIZE`, a `PhysicalSize` of 64×64, at scale 1:
 
 | Scene | Draws |
 | --- | --- |
