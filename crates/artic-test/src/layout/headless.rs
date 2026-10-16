@@ -1,6 +1,8 @@
+use super::TOLERANCE;
+use super::compare::{rects_match, sizes_match};
 use artic_core::Object;
 use artic_core::tree::{NodeId, TreeKind, UiTree};
-use artic_layout::geometry::Size;
+use artic_layout::geometry::{Rect, Size};
 use artic_layout::{LayoutManager, LayoutNodes, LayoutStats};
 use std::collections::HashMap;
 
@@ -69,6 +71,61 @@ impl<N: LayoutNodes> Headless<N> {
   #[must_use]
   pub fn label(&self, node: NodeId) -> String {
     self.labels.get(&node).cloned().unwrap_or_else(|| format!("{node:?}"))
+  }
+
+  /// Checks that `node` asked for `expected`, within [`TOLERANCE`].
+  ///
+  /// # Panics
+  ///
+  /// When it asked for another size or wasn't measured, naming the node.
+  #[track_caller]
+  pub fn assert_desired(&self, node: NodeId, expected: Size) {
+    self.assert_desired_within(node, expected, TOLERANCE);
+  }
+
+  /// Checks that `node` asked for `expected`, within `tolerance` on each axis.
+  ///
+  /// # Panics
+  ///
+  /// When it asked for another size or wasn't measured, naming the node.
+  #[track_caller]
+  pub fn assert_desired_within(&self, node: NodeId, expected: Size, tolerance: f32) {
+    let Some(actual) = self.manager.desired(node) else {
+      panic!("{}: not measured", self.name(node));
+    };
+    assert!(
+      sizes_match(actual, expected, tolerance),
+      "{}: desired expected {expected}, got {actual}",
+      self.name(node)
+    );
+  }
+
+  /// Checks that `node` was arranged in `expected`, in its parent's coordinates, within
+  /// [`TOLERANCE`].
+  ///
+  /// # Panics
+  ///
+  /// When it was arranged elsewhere or not at all, naming the node.
+  #[track_caller]
+  pub fn assert_rect(&self, node: NodeId, expected: Rect) {
+    self.assert_rect_within(node, expected, TOLERANCE);
+  }
+
+  /// Checks that `node` was arranged in `expected`, within `tolerance` on each edge and side.
+  ///
+  /// # Panics
+  ///
+  /// When it was arranged elsewhere or not at all, naming the node.
+  #[track_caller]
+  pub fn assert_rect_within(&self, node: NodeId, expected: Rect, tolerance: f32) {
+    let Some(actual) = self.manager.rect(node) else {
+      panic!("{}: not arranged", self.name(node));
+    };
+    assert!(
+      rects_match(actual, expected, tolerance),
+      "{}: rect expected {expected}, got {actual}",
+      self.name(node)
+    );
   }
 
   pub(super) fn name(&self, node: NodeId) -> String {
