@@ -9,14 +9,14 @@ A golden test draws a scene into memory and compares the pixels with a PNG check
 fn box_shadow() {
   with_renderer(|renderer| {
     let image = golden::render(renderer, &scenes::box_shadow(), scenes::SIZE, 1.0).expect("renders");
-    Golden::new("box_shadow").assert(&image);
+    golden!("box_shadow").assert(&image);
   });
 }
 ```
 
 ## 1. Rendering into an image
 
-The harness lives in `artic_test::golden` and draws through the `Renderer` trait into `Target::Pixels`, in `PixelFormat::Rgba8`. The renderer copies the pixels back and strips the row padding itself, so the harness never touches wgpu, and the same calls work for any renderer.
+The harness lives in `artic_test::golden` and draws through the `Renderer` trait into `Target::Pixels`, in `PixelFormat::Rgba8`. The renderer copies the pixels back and strips the row padding itself, so the harness never touches wgpu, and the same calls work for any renderer that accepts pixel targets. The trait lets a renderer draw only on window handles; such a renderer can't have goldens, and `render` returns its `RenderError`.
 
 ```rust
 pub struct Image { /* width: u32, height: u32, pixels: Vec<[u8; 4]> */ }
@@ -52,32 +52,34 @@ pub struct Tolerance { pub channel: u8, pub pixels: f32 }
 
 pub struct Golden { /* path, tolerance, per_os */ }
 
+macro_rules! golden { ($name:expr) => { /* Golden::at(<calling crate>/tests/goldens/<name>.png) */ } }
+
 impl Golden {
-  pub fn new(name: &str) -> Golden;
   pub fn at(path: impl Into<PathBuf>) -> Golden;
   pub fn with_tolerance(self, tolerance: Tolerance) -> Golden;
   pub fn per_os(self) -> Golden;
-  pub fn check(&self, actual: &Image) -> Result<(), Mismatch>;
+  pub fn check(&self, actual: &Image) -> Result<(), GoldenError>;
   pub fn assert(&self, actual: &Image);
 }
 
 #[non_exhaustive]
-pub enum Mismatch {
+pub enum GoldenError {
   Missing { golden: PathBuf },
   Size { expected: (u32, u32), actual: (u32, u32) },
   Pixels { differing: usize, allowed: usize, actual: PathBuf, diff: PathBuf },
+  Io { path: PathBuf, error: io::Error },
 }
 ```
 
-`Golden::new("box_shadow")` is `tests/goldens/box_shadow.png` under the directory of the crate whose tests run, read from `CARGO_MANIFEST_DIR` at run time; `env!` would name `artic-test` itself. `Golden::at` takes any path. `per_os` adds the operating system to the name, `box_shadow.linux.png`, for tests that draw text, whose fonts differ between systems; no other test uses it.
+`golden!("box_shadow")` is `tests/goldens/box_shadow.png` under the directory of the crate whose tests call it. It's a macro so that `env!("CARGO_MANIFEST_DIR")` expands in that crate: in a function of `artic-test` it would name `artic-test`, and the variable at run time is set by `cargo test` but not when the test binary runs on its own. `Golden::at` takes any path. `per_os` adds the operating system to the name, `box_shadow.linux.png`, for tests that draw text, whose fonts differ between systems; no other test uses it.
 
 `check` compares `actual` with the golden:
 
 - A pixel differs when any of its channels differs by more than `channel`.
 - The check fails when more than `pixels` of the image differ, rounded down: 4 pixels of a 64×64 image by default. It also fails when the sizes differ, or when the golden is missing, with a message naming `ARTIC_UPDATE_GOLDENS`.
-- On failure it writes `<name>.actual.png` and `<name>.diff.png` beside the golden and returns them in the `Mismatch`, whose message prints both paths. The diff shows matching pixels faded to gray and differing pixels in red. A passing check removes both files if an earlier run left them.
+- On failure it writes `<name>.actual.png` and `<name>.diff.png` beside the golden and returns them in `GoldenError::Pixels`, whose message prints both paths. The diff shows matching pixels faded to gray and differing pixels in red. A passing check removes both files if an earlier run left them.
 
-`assert` panics with the `Mismatch`'s message. `.gitignore` ignores `*.actual.png` and `*.diff.png`.
+A golden that can't be read or decoded, or an output that can't be written, is `GoldenError::Io` with the path; a PNG that isn't valid reads as an `io::Error` of kind `InvalidData`. `assert` panics with the error's message. `.gitignore` ignores `*.actual.png` and `*.diff.png`.
 
 The default tolerance is a channel difference of 8 and 0.1% of the pixels. GPUs round anti-aliased edges and blurs differently by a few levels, which the channel limit absorbs. A wrong color changes a channel by far more than 8, and an edge one pixel off changes a whole row of pixels: 64, which is 1.6% of a 64×64 image. A test that needs another tolerance passes its own.
 
@@ -94,9 +96,20 @@ Two environment variables, read once per check:
 pub fn no_gpu(reason: impl Display);
 ```
 
-Each renderer's tests decide what a usable GPU is, and call `no_gpu` with the reason when there's none: for vello, an adapter that isn't WARP, Windows' software adapter, on which vello's compute shaders crash. `no_gpu` prints `skipped: <reason>` and returns, or panics when `ARTIC_REQUIRE_GPU=1` is set. A test can't mark itself skipped at run time, so a skipped golden test passes with that line in its output.
+Each renderer's tests decide what a usable GPU is, in the helper that hands the tests their renderer: for vello, an adapter that isn't WARP, Windows' software adapter, on which vello's compute shaders crash. When there's none, the helper calls `no_gpu` with the reason instead of running the test:
 
-The variable is ours rather than the `CI` most CI services set, because a CI machine without a GPU is normal today: GitHub's Windows runners have only WARP, and its Ubuntu runners no adapter. #53 sets `ARTIC_REQUIRE_GPU=1` in the jobs that install lavapipe, where a missing GPU is a broken job.
+```rust
+fn with_renderer(test: impl FnOnce(&mut Renderer)) {
+  match shared_renderer() {
+    Ok(renderer) => test(renderer),
+    Err(reason) => golden::no_gpu(reason),
+  }
+}
+```
+
+`no_gpu` prints `skipped: <reason>` and returns, or panics when `ARTIC_REQUIRE_GPU=1` is set. A test can't mark itself skipped at run time, so a skipped golden test passes with that line in its output.
+
+The variable is ours rather than the `CI` most CI services set, because a CI machine without a GPU is normal today: GitHub's Windows runners have only WARP, and its Ubuntu runners no adapter. #53 sets `ARTIC_REQUIRE_GPU=1` in the Ubuntu job that installs lavapipe, where a missing GPU is a broken job. Its Windows job doesn't set it: WARP can't run vello, so goldens verify on Windows only on a machine with a hardware adapter.
 
 ## 4. The primitive goldens
 
@@ -121,7 +134,7 @@ The exact pixel tests in `artic-vello/tests/pixels.rs` stay. They check rules a 
 
 | Feature | How it fits | Tracked in |
 | --- | --- | --- |
-| CI jobs that run the goldens on lavapipe and Wayland, and upload `.actual.png` and `.diff.png` | they set `ARTIC_REQUIRE_GPU=1` and collect `tests/goldens/*.{actual,diff}.png` | #53 |
+| A CI job that runs the goldens on lavapipe, and uploads `.actual.png` and `.diff.png` | it sets `ARTIC_REQUIRE_GPU=1` and collects `tests/goldens/*.{actual,diff}.png`. Wayland is covered by #53's separate smoke job, since goldens draw into memory, not on a window | #53 |
 | Control goldens | `render_tree` with the control's tree | #45, #46, #47 |
 | Theme state goldens | the same, once per state | #121 |
 | Text goldens | `per_os`, with the bundled test font | #37, #46 |
@@ -130,7 +143,7 @@ The exact pixel tests in `artic-vello/tests/pixels.rs` stay. They check rules a 
 
 | Crate | Tests |
 | --- | --- |
-| `artic-test` | `identical_images_match`, `small_differences_within_tolerance_match`, `too_many_differing_pixels_fail`, `different_sizes_fail`, `png_round_trips`, `golden_mismatch_writes_diff`, `passing_check_removes_old_outputs`, `missing_golden_says_how_to_create_it`, `updating_twice_changes_no_bytes`, `render_reads_the_renderers_pixels` and `render_tree_draws_the_root` (both with a renderer that fills the buffer with one color) |
+| `artic-test` | `identical_images_match`, `small_differences_within_tolerance_match`, `too_many_differing_pixels_fail`, `different_sizes_fail`, `png_round_trips`, `golden_mismatch_writes_diff`, `passing_check_removes_old_outputs`, `missing_golden_says_how_to_create_it`, `unreadable_golden_is_an_io_error`, `updating_twice_changes_no_bytes`, `render_reads_the_renderers_pixels` and `render_tree_draws_the_root` (both with a renderer that fills the buffer with one color) |
 | `artic-vello` goldens | one test per scene in section 4 |
 
 The file tests write into a temporary directory through `Golden::at`, and take the update mode as a value instead of setting the variable: `set_var` is `unsafe` in edition 2024 because tests run on parallel threads. The first run of the vello goldens creates the PNGs with `ARTIC_UPDATE_GOLDENS=1`, and each is checked by eye before it's committed.
@@ -140,4 +153,4 @@ The file tests write into a temporary directory through `Golden::at`, and take t
 | PR | Contents | Done when |
 | --- | --- | --- |
 | A | this document | approved |
-| B | `artic_test::golden` and `artic_test::scenes`, with rustdoc and an example; the vello goldens and their PNGs; the `.gitignore` entries | the tests in section 6 pass, and updating then rerunning leaves `git status` clean |
+| B | `artic_test::golden`, the `golden!` macro and `artic_test::scenes`, with rustdoc and an example; the vello goldens and their PNGs; the `.gitignore` entries | the tests in section 6 pass, and updating then rerunning leaves `git status` clean |
