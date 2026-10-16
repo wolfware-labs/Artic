@@ -109,13 +109,13 @@ pub trait Layoutable {
 }
 ```
 
-`#[element]` implements it from `appearance.visibility`. The manager leaves collapsed children out of `MeasureCx::children()` and `ArrangeCx::children()`, and so out of `measure_children` and `arrange_children`, so no panel writes code for them. A collapsed node keeps no results: `desired` and `rect` return `None`, as for a child a measure skipped. A collapsed root lays out nothing.
+`#[element]` implements it from `appearance.visibility`. The manager leaves collapsed children out of `MeasureCx::children()` and `ArrangeCx::children()`, and so out of `measure_children` and `arrange_children`, so no panel writes code for them. A container that names a collapsed child directly gets the same answer: `MeasureCx::measure` returns zero without measuring it and `ArrangeCx::arrange` does nothing, so no path leaves it with a size or rectangle. A collapsed node keeps no results: `desired` and `rect` return `None`, as for a child a measure skipped. A collapsed root lays out nothing.
 
 Collapsing a child used to reach its parent as a desired size that changed to zero. Now the child isn't measured, so the manager watches membership instead: when a dirty node's `collapsed()` answer differs from the last pass, its parent's measure is marked dirty, the same path a removed child takes. `Layout::measure` and `Layout::arrange` lose their `Collapsed` branch, since the manager no longer calls them for a collapsed node; `Hidden` is measured and arranged as before.
 
 The walks that follow layout skip a node it didn't lay out, with its subtree. Composition asks through its `Nodes` trait, which `ElementNodes` answers from `layout.rect(node).is_some()` instead of drawing at `Rect::ZERO`; hit testing follows the same rule, and #54's accesskit walk will too. `element.md`'s `Collapsed` row becomes: not laid out, no rectangle, skipped by drawing, hit testing and accessibility.
 
-`Rect::snap` changes too, for every panel: it multiplies edges by the scale, so an edge near `f32::MAX` overflows to infinity at scale 2 or 3 after the manager has checked the rectangle. A snapped edge whose scaled value isn't finite saturates instead, at `f32::MAX` or `f32::MIN` by its sign, so a finite rectangle stays finite and on the same side of the origin.
+Layout arithmetic gets one rule for overflow, in place of fixes at each place a sum can grow: the geometry operations layout uses saturate at the finite range. `Rect::snap`, which scales edges and subtracts them, `Rect::deflate` and `inflate`, which add margins, and `Size` sums return `f32::MAX` or `f32::MIN` by sign instead of an infinity, so finite inputs always give finite rectangles. That keeps the manager's rule, a finite desired size and rectangle, true however large the values a panel adds up, without each panel guarding every addition.
 
 ## 4. Children
 
@@ -209,7 +209,7 @@ Every panel's `Background` is the same property with one key, so a style that se
 | Measure | each child is offered the panel's available cross size and infinity on the stacking axis. The desired stacking size is the children's sum plus `Spacing` between each pair; the desired cross size is the largest child's. No children gives 0×0 |
 | Arrange | children are placed from the start of the stacking axis with `Spacing` between them. Each slot is as long as the child asked for on the stacking axis and as wide as the panel on the cross axis; the child's own margin and alignment place it inside. Space left over stays empty, and children past the end are still arranged |
 | `Spacing` | a value that isn't a finite number of 0 or more counts as 0, so children don't overlap by accident |
-| Overflow | sums and positions along the stacking axis saturate at `f32::MAX`, and a slot's length is cut so its far edge stays at or below `f32::MAX`, so a huge `Spacing` or huge children can't add up to infinity, which the manager rejects as a desired size or rectangle |
+| Overflow | sums and positions along the stacking axis use the saturating operations of section 3, so a huge `Spacing` or huge children can't add up to infinity |
 | Render | `self.panel.render(cx, scene)` |
 | Accessibility | nothing added: the default role is `GenericContainer` |
 
@@ -225,7 +225,7 @@ Elements return their own node; the tree of nodes is built by #54's walk, which 
 | --- | --- |
 | `docs/architecture.md` | `artic-layout` depends on `artic-core` and `artic-macros`; `artic-macros`' generated code may also name `artic_core::__private`; the rule about `artic-macros`' own tests covers dev-dependencies on any crate that uses the macros, `artic-element` included |
 | `docs/design/builder-api.md` | children wait in `WithChildren`, and `WithChildren::build` links them in both trees |
-| `docs/design/loader-values.md` | `TypeInfo.add_child` becomes `TypeInfo.content: Option<Content>` |
+| `docs/design/loader-values.md` | `TypeInfo.add_child` becomes `TypeInfo.content: Option<Content>`; `ValueError` gains `InvalidChild(LinkError)` |
 | `docs/design/element.md` | the group names; `ElementImpl::defaults` replaced by `override_defaults`; the `Collapsed` row and the paragraph on forgetting skipped children |
 | Spec crate table | panels live in `artic-controls`, not `artic-layout` |
 | Spec §3 | the `Button` example and the content rule use `#[xaml(content)]` on the field; `#[xaml(override_defaults)]` and `OverrideDefaults` join the attribute list; `XamlEnum` is usable from any crate that depends on `artic-core` |
@@ -247,7 +247,7 @@ Elements return their own node; the tree of nodes is built by #54's walk, which 
 | Crate | Tests |
 | --- | --- |
 | `artic-macros` | `content_slot_on_a_field`, `content_collection_on_a_field`, `two_content_fields_fail`, `struct_level_content_is_rejected`, `override_defaults_runs_after_field_defaults`, `override_defaults_without_an_impl_fails`, `element_adds_derive_xaml_type` |
-| `artic-layout` | `collapsed_children_are_left_out`, `collapsing_a_child_remeasures_the_parent`, `showing_a_child_again_measures_it`, `collapsed_root_lays_out_nothing`, `snap_keeps_huge_rects_finite`, `alignments_parse_with_the_derive`, `orientation_parses_ignoring_case` |
+| `artic-layout` | `collapsed_children_are_left_out`, `collapsing_a_child_remeasures_the_parent`, `showing_a_child_again_measures_it`, `collapsed_root_lays_out_nothing`, `measuring_a_collapsed_child_directly_does_nothing`, the property test `geometry_stays_finite` (snap, deflate and inflate over huge finite rectangles, margins and scales), `alignments_parse_with_the_derive`, `orientation_parses_ignoring_case` |
 | `artic-render` | `nodes_not_laid_out_are_not_drawn` |
 | `artic-element` | `panel_children_update_tree_links` (add, insert and remove, in both trees), `push_child_refuses_nodes_not_in_the_tree`, `add_checks_both_trees_before_linking`, `remove_leaves_another_parents_child_alone`, `knob_overrides_group_defaults` |
 | `artic-controls` | `stack_vertical_measure`, `stack_horizontal_measure`, `stack_spacing_skips_collapsed`, `stack_arrange_positions_children` (both orientations), `stack_spacing_ignores_invalid_values`, `empty_stack_is_zero`, `stack_children_are_xaml_content`, `stack_panel_accesskit_node` (the role; child order is #54's, so the issue's child-order criterion moves there), and the property test `stack_invariants_hold` over random children in both orientations |
@@ -261,7 +261,7 @@ The `artic-controls` tests use `artic_test::layout::Headless` with a `LayoutNode
 | --- | --- | --- |
 | A | this document | approved |
 | B | section 1: `#[element]` adding `derive(XamlType)`, `override_defaults`, `#[xaml(content)]` on fields, the group renames, with no change in behavior | the macro tests pass and every existing test passes after the renames |
-| C | sections 2 and 3: `XamlEnum` from `artic-core`, `Orientation`, the derived alignment parsers, `collapsed()`, the manager's filter, composition and hit testing skipping nodes not laid out, `Rect::snap` saturating, and the `architecture.md` and `element.md` changes | the layout and render tests pass |
+| C | sections 2 and 3: `XamlEnum` from `artic-core`, `Orientation`, the derived alignment parsers, `collapsed()`, the manager's filter, composition and hit testing skipping nodes not laid out, the saturating geometry, and the `architecture.md` and `element.md` changes | the layout and render tests pass |
 | D | sections 4 and 5: `Children`, `XamlCollection` on the tree, `Panel`, `StackPanel`, the controls tests and the golden; closes #44 | the tests in section 9 pass |
 
 B and C are independent; D needs both.
