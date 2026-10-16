@@ -9,10 +9,10 @@ use artic_render::{Layers, Shape, drawable_opacity};
 
 /// Where an element sits and how big it is: size, limits, margin and alignment.
 ///
-/// A control has it in its `layout` field. [`measure`](LayoutProperties::measure) and
-/// [`arrange`](LayoutProperties::arrange) apply it around the control's own layout.
+/// A control has it in its `layout` field. [`measure`](Layout::measure) and
+/// [`arrange`](Layout::arrange) apply it around the control's own layout.
 #[derive(Debug, XamlProperties)]
-pub struct LayoutProperties {
+pub struct Layout {
   /// An explicit width, or `None` to size to the content.
   #[xaml(affects = layout)]
   pub width: Property<Option<f32>>,
@@ -46,7 +46,7 @@ pub struct LayoutProperties {
 ///
 /// A control has it in its `appearance` field.
 #[derive(Debug, XamlProperties)]
-pub struct AppearanceProperties {
+pub struct Appearance {
   /// Whether the element is shown, hidden in its space, or collapsed to no space.
   #[xaml(affects = layout | render)]
   pub visibility: Property<Visibility>,
@@ -66,7 +66,7 @@ pub struct AppearanceProperties {
 ///
 /// A control has it in its `interaction` field.
 #[derive(Debug, XamlProperties)]
-pub struct InteractionProperties {
+pub struct Interaction {
   /// Whether the element takes input; a disabled ancestor disables it whatever it sets itself.
   #[xaml(default = true, affects = render, inherits = and)]
   pub is_enabled: Property<bool>,
@@ -88,7 +88,7 @@ pub struct InteractionProperties {
 ///
 /// A control has it in its `identity` field.
 #[derive(Debug, XamlProperties)]
-pub struct IdentityProperties {
+pub struct Identity {
   /// The element's name, which style selectors and code can find it by.
   #[xaml]
   pub name: Property<Option<String>>,
@@ -97,7 +97,7 @@ pub struct IdentityProperties {
   pub classes: Property<Classes>,
 }
 
-impl LayoutProperties {
+impl Layout {
   /// The size properties and alignments, for [`measure_with`] and [`arrange_with`].
   #[must_use]
   pub fn sizing(&self) -> Sizing {
@@ -148,7 +148,7 @@ impl LayoutProperties {
   }
 }
 
-impl AppearanceProperties {
+impl Appearance {
   /// The element's layers in composition for its arranged `size`: its opacity held to 0–1 (NaN
   /// counts as 1), its render transform around its centre in its own coordinates, whether it's
   /// visible, its z-index, and the control's `clip`.
@@ -168,7 +168,7 @@ impl AppearanceProperties {
   }
 }
 
-impl InteractionProperties {
+impl Interaction {
   /// Hit-tests the element at `point`: a miss when `visibility`, from the appearance group, isn't
   /// `Visible` or `IsHitTestVisible` is false; otherwise whether `point` is inside its bounds.
   #[must_use]

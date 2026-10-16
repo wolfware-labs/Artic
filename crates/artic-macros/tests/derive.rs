@@ -55,13 +55,13 @@ impl FromStr for Brush {
 struct PointerEvent;
 
 #[derive(Debug, Default)]
-struct LayoutProperties;
+struct Layout;
 
 /// The `Border` from the spec's §3, with `affects` added.
 #[derive(Debug, XamlType)]
 #[xaml(namespace = "https://artic.rs/ui", content = child)]
 struct Border {
-  _layout: LayoutProperties,
+  _layout: Layout,
   #[xaml]
   child: Property<Option<NodeId>>,
   #[xaml(default = Thickness::ZERO, affects = layout)]

@@ -9,14 +9,10 @@ use syn::{Attribute, DeriveInput, Error, Field, Fields, FieldsNamed, Ident, Item
 
 /// The fields `#[element]` adds, with their group types and docs, in the order it adds them.
 const GROUPS: [(&str, &str, &str); 4] = [
-  ("layout", "LayoutProperties", "Where the element sits and how big it is."),
-  ("appearance", "AppearanceProperties", "How the element is drawn."),
-  ("interaction", "InteractionProperties", "How the element takes input."),
-  (
-    "identity",
-    "IdentityProperties",
-    "What style selectors and code find the element by.",
-  ),
+  ("layout", "Layout", "Where the element sits and how big it is."),
+  ("appearance", "Appearance", "How the element is drawn."),
+  ("interaction", "Interaction", "How the element takes input."),
+  ("identity", "Identity", "What style selectors and code find the element by."),
 ];
 
 /// Makes the struct an element: adds the four property groups, writes what `derive(XamlType)`

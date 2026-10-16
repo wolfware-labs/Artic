@@ -45,7 +45,7 @@ pub trait Element: Object + Layoutable {
 ///
 /// `#[element]` calls these from its [`Element`] implementation, after the shared work of the
 /// property groups: margin, size limits and alignment around `measure_override` and
-/// `arrange_override`, from [`LayoutProperties`](crate::LayoutProperties); visibility, opacity and
+/// `arrange_override`, from [`Layout`](crate::Layout); visibility, opacity and
 /// transform around the rest. A control with nothing special writes
 /// `impl ElementImpl for Spacer {}`.
 pub trait ElementImpl {

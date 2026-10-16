@@ -274,7 +274,7 @@ mod tests {
     let input: DeriveInput = parse_quote! {
       #[xaml(namespace = "https://artic.rs/ui", content = child)]
       struct Border {
-        layout: LayoutProperties,
+        layout: Layout,
         #[xaml] child: Property<Option<NodeId>>,
         #[xaml(default = Thickness::ZERO)] padding: artic::Property<Thickness>,
         #[xaml] pointer_pressed: Event<PointerEvent>,
@@ -306,7 +306,7 @@ mod tests {
   fn flatten_makes_a_group() {
     let input: DeriveInput = parse_quote! {
       #[xaml(namespace = "https://artic.rs/ui")]
-      struct Border { #[xaml(flatten)] layout: LayoutProperties }
+      struct Border { #[xaml(flatten)] layout: Layout }
     };
 
     let analysis = analyze(&input).expect("valid struct");

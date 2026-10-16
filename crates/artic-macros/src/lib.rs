@@ -76,7 +76,7 @@ pub fn derive_xaml_type(input: TokenStream) -> TokenStream {
 }
 
 /// Makes a struct a property group: a set of properties several XAML types share by embedding it
-/// in a field marked `#[xaml(flatten)]`, as controls embed `LayoutProperties`.
+/// in a field marked `#[xaml(flatten)]`, as controls embed `Layout`.
 ///
 /// Fields follow `XamlType`'s rules for `Property` fields; a group holds no events or
 /// collections, and takes no attributes on the struct. The derive implements `Default` and
@@ -121,8 +121,8 @@ pub fn derive_xaml_enum(input: TokenStream) -> TokenStream {
 ///
 /// `#[element]` goes first, above the struct's `#[derive(...)]` and `#[xaml(...)]` attributes,
 /// and takes no settings. It adds four fields before the struct's own, each flattened into the
-/// struct's properties: `layout: LayoutProperties`, `appearance: AppearanceProperties`,
-/// `interaction: InteractionProperties` and `identity: IdentityProperties`. A field of the
+/// struct's properties: `layout: Layout`, `appearance: Appearance`,
+/// `interaction: Interaction` and `identity: Identity`. A field of the
 /// struct with one of those names is an error, as are `XamlType` and `Default` in its derives,
 /// since `#[element]` writes both. A unit struct gets the four fields; a tuple struct or a generic
 /// one is an error.

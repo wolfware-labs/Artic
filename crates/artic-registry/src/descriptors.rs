@@ -99,7 +99,7 @@ pub struct PropertyInfo {
   pub inherits: bool,
 }
 
-/// Properties several types share by embedding one struct, such as `LayoutProperties`.
+/// Properties several types share by embedding one struct, such as `Layout`.
 ///
 /// `#[derive(XamlProperties)]` implements it. A type lists a group's properties as its own by
 /// marking the field `#[xaml(flatten)]`.
