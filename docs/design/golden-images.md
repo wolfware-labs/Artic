@@ -71,7 +71,7 @@ pub enum GoldenError {
 }
 ```
 
-`golden!("box_shadow")` is `tests/goldens/box_shadow.png` under the directory of the crate whose tests call it. It's a macro so that `env!("CARGO_MANIFEST_DIR")` expands in that crate: in a function of `artic-test` it would name `artic-test`, and the variable at run time is set by `cargo test` but not when the test binary runs on its own. `Golden::at` takes any path. `per_os` adds the operating system to the name, `box_shadow.linux.png`, for tests that draw text, whose fonts differ between systems; no other test uses it.
+`golden!("box_shadow")` is `tests/goldens/box_shadow.png` under the directory of the crate whose tests call it. It's a macro so that `env!("CARGO_MANIFEST_DIR")` expands in the calling crate and names that crate's directory; in a function of `artic-test` it would name `artic-test`. `Golden::at` takes any path. `per_os` adds the operating system to the name, `box_shadow.linux.png`, for tests that draw text, whose fonts differ between systems; no other test uses it.
 
 `check` compares `actual` with the golden:
 
@@ -96,7 +96,7 @@ Two environment variables, read once per check:
 pub fn no_gpu(reason: impl Display);
 ```
 
-Each renderer's tests decide what a usable GPU is, in the helper that hands the tests their renderer: for vello, an adapter that isn't WARP, Windows' software adapter, on which vello's compute shaders crash. When there's none, the helper calls `no_gpu` with the reason instead of running the test:
+Each renderer's tests decide what a usable GPU is, in the helper that hands the tests their renderer: for vello, an adapter that isn't WARP, the software DX12 adapter of Windows, on which vello's compute shaders crash. The check looks for a CPU adapter on the DX12 backend, so Mesa's lavapipe, a CPU adapter on Vulkan, counts as usable on Windows too. When there's none, the helper calls `no_gpu` with the reason instead of running the test:
 
 ```rust
 fn with_renderer(test: impl FnOnce(&mut Renderer)) {
@@ -109,7 +109,7 @@ fn with_renderer(test: impl FnOnce(&mut Renderer)) {
 
 `no_gpu` prints `skipped: <reason>` and returns, or panics when `ARTIC_REQUIRE_GPU=1` is set. A test can't mark itself skipped at run time, so a skipped golden test passes with that line in its output.
 
-The variable is ours rather than the `CI` most CI services set, because a CI machine without a GPU is normal today: GitHub's Windows runners have only WARP, and its Ubuntu runners no adapter. #53 sets `ARTIC_REQUIRE_GPU=1` in the Ubuntu job that installs lavapipe, where a missing GPU is a broken job. Its Windows job doesn't set it: WARP can't run vello, so goldens verify on Windows only on a machine with a hardware adapter.
+The variable is ours rather than the `CI` most CI services set, because a CI machine without a GPU is normal today: GitHub's Windows runners have only WARP, and its Ubuntu runners no adapter. #53 sets `ARTIC_REQUIRE_GPU=1` in the Ubuntu job that installs lavapipe, where a missing GPU is a broken job. GitHub's Windows runners have only WARP, so #53's Windows job installs Mesa's lavapipe for Windows (mesa-dist-win), runs vello on Vulkan, and sets the variable too. If vello can't run there, #53 drops Windows from its golden jobs and says so in its acceptance, rather than keeping a job that skips every golden and passes.
 
 ## 4. The primitive goldens
 
