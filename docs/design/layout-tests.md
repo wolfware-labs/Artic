@@ -104,9 +104,9 @@ The manager already enforces the first of the three rules in #56, finite results
 1. **Deterministic.** A fresh `LayoutManager` on the same tree gives the same desired sizes and rectangles, within the tolerance. This catches an element whose answer depends on state from an earlier run.
 2. **Contained**, only after `.contained()`. When `available` is finite on both axes, each child's rectangle lies inside `(0, 0, parent width, parent height)`, within the tolerance.
 
-Containment is opt-in because some layouts break it on purpose: a negative margin, a canvas, a scrolled child. Snapping can't break it. Rectangles are in their parent's coordinates and all edges snap to the same device grid, and rounding never reorders two values, so a child edge inside its parent before snapping is still inside after.
+Containment is opt-in because some layouts break it on purpose: a negative margin, a canvas, a scrolled child, or a stack taller than its parent, since `Stack` gives each child the height it asked for. Snapping can't break it. Rectangles are in their parent's coordinates and all edges snap to the same device grid, and rounding never reorders two values, so a child edge inside its parent before snapping is still inside after.
 
-A broken invariant panics with the node's label and the input. The manager's panic carries no label, but either one fails the `proptest!` case, and proptest shrinks it to the smallest failing input.
+`layout_invariants_hold` leaves containment off, since its children can add up to more than the available height. A broken invariant panics with the node's label and the input. The manager's panic carries no label, but either one fails the `proptest!` case, and proptest shrinks it to the smallest failing input.
 
 ```rust
 proptest! {
@@ -117,9 +117,13 @@ proptest! {
     scale in strategy::scale(),
   ) {
     let mut layout = Headless::new(Boxes);
-    let children: Vec<_> = sizes.iter().map(|(w, h)| layout.add("child", Fixed::new(*w, *h))).collect();
+    let children: Vec<_> = sizes
+      .iter()
+      .enumerate()
+      .map(|(index, (w, h))| layout.add(&format!("child {index}"), Fixed::new(*w, *h)))
+      .collect();
     let root = layout.parent("stack", Stack::new(), &children);
-    Invariants::default().contained().assert(&mut layout, root, available, scale);
+    Invariants::default().assert(&mut layout, root, available, scale);
   }
 }
 ```
@@ -140,7 +144,7 @@ The 23 tests in `artic-layout/src/layout/tests.rs` keep their own helpers. Using
 
 | Crate | Tests |
 | --- | --- |
-| `artic-test` | `layout_invariants_hold`; `invariants_catch_a_child_outside_its_parent` and `invariants_catch_a_changing_answer`, each with a broken element that must fail; `failing_assertion_names_the_node`, `nodes_without_a_label_show_their_id`; `rects_within_tolerance_match`, `infinity_matches_only_infinity`, `nan_never_matches`; `available_sizes_cover_zero_finite_and_infinite` |
+| `artic-test` | `layout_invariants_hold`; `invariants_accept_children_inside_their_parent`, a stack whose children fit; `invariants_catch_a_child_outside_its_parent` and `invariants_catch_a_changing_answer`, each with a broken element that must fail; `failing_assertion_names_the_node`, `nodes_without_a_label_show_their_id`; `rects_within_tolerance_match`, `infinity_matches_only_infinity`, `nan_never_matches`; `available_sizes_cover_zero_finite_and_infinite` |
 
 The tests with a broken element prove that `Invariants` can fail. Without them, a helper that checked nothing would pass forever.
 
