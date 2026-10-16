@@ -99,15 +99,14 @@ impl Invariants {
 }
 ```
 
-`assert` runs layout from `root` and checks every node under it:
+The manager already enforces the first of the three rules in #56, finite results: a desired size or rectangle that isn't finite fails a `debug_assert!` naming the node by `NodeId`, and release builds replace it with 0. Tests run in debug builds, so a property test meets that panic before `assert` could see the value. `assert` runs layout from `root` and checks the other two rules on every node under it:
 
-1. **Finite.** Every desired size and every arranged rectangle is finite. In debug builds the manager panics first on a bad desired size, naming the node by `NodeId` and giving the available size, so `assert` reports only bad rectangles there. In release builds it reports both.
-2. **Deterministic.** A fresh `LayoutManager` on the same tree gives the same desired sizes and rectangles, within the tolerance. This catches an element whose answer depends on state from an earlier run.
-3. **Contained**, only after `.contained()`. When `available` is finite on both axes, each child's rectangle lies inside `(0, 0, parent width, parent height)`, within the tolerance.
+1. **Deterministic.** A fresh `LayoutManager` on the same tree gives the same desired sizes and rectangles, within the tolerance. This catches an element whose answer depends on state from an earlier run.
+2. **Contained**, only after `.contained()`. When `available` is finite on both axes, each child's rectangle lies inside `(0, 0, parent width, parent height)`, within the tolerance.
 
 Containment is opt-in because some layouts break it on purpose: a negative margin, a canvas, a scrolled child. Snapping can't break it. Rectangles are in their parent's coordinates and all edges snap to the same device grid, and rounding never reorders two values, so a child edge inside its parent before snapping is still inside after.
 
-A broken invariant panics with the node's label and the input. The manager's own panic carries no label, but it is still a panic, so in both cases it fails the `proptest!` case, and proptest shrinks it to the smallest failing input.
+A broken invariant panics with the node's label and the input. The manager's panic carries no label, but either one fails the `proptest!` case, and proptest shrinks it to the smallest failing input.
 
 ```rust
 proptest! {
