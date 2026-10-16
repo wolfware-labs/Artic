@@ -1,5 +1,4 @@
 use crate::xaml_type::attributes::{FieldAttributes, TypeAttributes, parse_field_attributes, parse_type_attributes};
-use proc_macro2::TokenStream;
 use syn::{Data, DeriveInput, Error, Field, Fields, GenericArgument, Ident, PathArguments, Type};
 
 /// A struct read for the derive: its attributes and its fields, sorted by role.
@@ -8,7 +7,6 @@ pub struct Analysis<'a> {
   pub attributes: TypeAttributes,
   pub xaml_fields: Vec<XamlField<'a>>,
   pub other_fields: Vec<&'a Ident>,
-  pub after_default: Option<TokenStream>,
 }
 
 /// A field marked `#[xaml]`.
@@ -94,7 +92,6 @@ pub fn analyze(input: &DeriveInput) -> syn::Result<Analysis<'_>> {
     attributes,
     xaml_fields,
     other_fields,
-    after_default: None,
   })
 }
 

@@ -6,8 +6,8 @@ use artic_core::input::InputEvent;
 use artic_core::property::{Precedence, Property};
 use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_element::{
-  AccessCx, Cursor, Element, ElementImpl, ElementTypes, EventCx, Handled, HasState, HitTestCx, HitTestResult, RenderCx,
-  Visibility,
+  AccessCx, Cursor, Element, ElementImpl, ElementTypes, EventCx, Handled, HasState, HitTestCx, HitTestResult, OverrideDefaults,
+  RenderCx, Visibility,
 };
 use artic_layout::geometry::{Point, Rect, Size, Thickness};
 use artic_layout::{ArrangeCx, LayoutManager, MeasureCx};
@@ -255,19 +255,22 @@ fn state_fields_give_their_traits() {
 /// A control that is focusable and shows a hand by default.
 #[element]
 #[derive(Debug)]
-#[xaml(namespace = "https://artic.rs/test")]
+#[xaml(namespace = "https://artic.rs/test", override_defaults)]
 struct Knob {}
 
-impl ElementImpl for Knob {
-  fn defaults(&self) {
+impl ElementImpl for Knob {}
+
+impl OverrideDefaults for Knob {
+  fn override_defaults(&self) {
     self.interaction.focusable.set_default(true);
     self.interaction.cursor.set_default(Cursor::Hand);
   }
 }
 
-// A control's defaults hold whether it is built by Default or by its TypeInfo's constructor.
+// A control's overridden group defaults hold whether it is built by Default or by its TypeInfo's
+// constructor.
 #[test]
-fn defaults_run_on_default_and_type_info_new() {
+fn knob_overrides_group_defaults() {
   let knob = Knob::default();
   assert!(knob.interaction.focusable.get());
   assert_eq!(knob.interaction.cursor.get(), Cursor::Hand);
@@ -285,6 +288,30 @@ fn style_setter_beats_control_default() {
   knob.interaction.focusable.set_at(Precedence::StyleSetter, false);
 
   assert!(!knob.interaction.focusable.get());
+}
+
+// `#[element]` adds `derive(XamlType)`, so the control is registered and built like any XAML type.
+#[test]
+fn element_adds_derive_xaml_type() {
+  let mut tree = UiTree::new();
+
+  let node = (<Knob as XamlType>::TYPE_INFO.new)(&mut tree);
+
+  assert!(tree.get_as::<Knob>(node).is_some());
+}
+
+/// A control that names its crate path itself.
+#[element]
+#[derive(Debug)]
+#[xaml(namespace = "https://artic.rs/test", crate = "artic_element")]
+struct Pinned {}
+
+impl ElementImpl for Pinned {}
+
+// A control that sets `crate` itself keeps it: `#[element]` adds the path only when it's missing.
+#[test]
+fn element_keeps_its_own_crate_path() {
+  assert_eq!(<Pinned as XamlType>::TYPE_INFO.name, "Pinned");
 }
 
 /// A control with nothing of its own.
@@ -307,22 +334,18 @@ fn unit_struct_gets_the_groups() {
   assert_eq!(fields, ["layout", "appearance", "interaction", "identity"]);
 }
 
-/// A control with a property of its own, whose default its `defaults` hook changes.
+/// A control with a property of its own, with its own default.
 #[element]
 #[derive(Debug)]
 #[xaml(namespace = "https://artic.rs/test")]
 struct Dial {
-  #[xaml]
+  #[xaml(default = 3)]
   turns: Property<i32>,
 }
 
-impl ElementImpl for Dial {
-  fn defaults(&self) {
-    self.turns.set_default(3);
-  }
-}
+impl ElementImpl for Dial {}
 
-// A control's own property is registered beside the groups' and built before `defaults` runs.
+// A control's own property is registered beside the groups' and built with its default.
 #[test]
 fn own_properties_register_beside_the_groups() {
   let info = <Dial as XamlType>::TYPE_INFO;

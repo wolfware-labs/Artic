@@ -1,7 +1,5 @@
 use crate::crate_root::{ELEMENT, crate_root};
 use crate::xaml_type::attributes::parse_type_attributes;
-use crate::xaml_type::fields::analyze;
-use crate::xaml_type::generate::generate;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::punctuated::Punctuated;
@@ -15,9 +13,9 @@ const GROUPS: [(&str, &str, &str); 4] = [
   ("identity", "Identity", "What style selectors and code find the element by."),
 ];
 
-/// Makes the struct an element: adds the four property groups, writes what `derive(XamlType)`
-/// writes with a `Default` that calls `ElementImpl::defaults`, and writes `Layoutable`, `Element`,
-/// `HasState` for its state fields and its cast-table entry.
+/// Makes the struct an element: adds the four property groups and `#[derive(XamlType)]`, with the
+/// crate it found as `#[xaml(crate = ...)]` unless the struct names one, and writes `Layoutable`,
+/// `Element`, `HasState` for its state fields and its cast-table entry.
 pub fn expand(attribute: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
   if !attribute.is_empty() {
     return Err(Error::new_spanned(attribute, "`#[element]` takes no settings"));
@@ -55,7 +53,6 @@ pub fn expand(attribute: TokenStream, item: TokenStream) -> syn::Result<TokenStr
   let probe: DeriveInput = syn::parse2(quote!(#item))?;
   let crate_path = parse_type_attributes(&probe)?.crate_path;
   let root = crate_root(crate_path.as_ref(), &ident, ELEMENT)?;
-  let root_path: Path = syn::parse2(root.clone())?;
 
   let added: FieldsNamed = {
     let groups = GROUPS.iter().map(|(name, ty, doc)| {
@@ -70,13 +67,13 @@ pub fn expand(attribute: TokenStream, item: TokenStream) -> syn::Result<TokenStr
   item.fields = Fields::Named(fields);
   item.semi_token = None;
 
-  let input: DeriveInput = syn::parse2(quote!(#item))?;
-  let mut analysis = analyze(&input)?;
-  analysis.attributes.crate_path = Some(root_path);
-  analysis.after_default = Some(quote!(<Self as __artic::ElementImpl>::defaults(&__artic_value);));
-  let xaml_type = generate(&analysis)?;
+  item.attrs.insert(0, parse_quote!(#[derive(#root::__private::XamlType)]));
+  if crate_path.is_none() {
+    let root_text = root.to_string().replace(' ', "");
+    item.attrs.push(parse_quote!(#[xaml(crate = #root_text)]));
+  }
 
-  strip_helpers(&mut item);
+  strip_element_settings(&mut item);
   let state_impls = states.iter().map(|(field_ident, ty)| {
     quote! {
       impl __artic::HasState<#ty> for #ident {
@@ -92,8 +89,6 @@ pub fn expand(attribute: TokenStream, item: TokenStream) -> syn::Result<TokenStr
   });
   Ok(quote! {
     #item
-
-    #xaml_type
 
     const _: () = {
       use #root::__private as __artic;
@@ -156,7 +151,7 @@ fn reject_written_derives(attributes: &[Attribute]) -> syn::Result<()> {
       };
       let message = match name.as_str() {
         "XamlType" => "`#[element]` writes `XamlType`; remove `XamlType` from this derive",
-        "Default" => "`#[element]` writes `Default`; remove it, and change defaults in `ElementImpl::defaults`",
+        "Default" => "`#[element]`'s derive writes `Default`; remove it, and change defaults with `#[xaml(override_defaults)]`",
         _ => continue,
       };
       return Err(Error::new_spanned(derive, message));
@@ -165,13 +160,13 @@ fn reject_written_derives(attributes: &[Attribute]) -> syn::Result<()> {
   Ok(())
 }
 
-/// Removes the `xaml` and `element` helper attributes from the struct and its fields, which only
-/// the macros read.
-fn strip_helpers(item: &mut ItemStruct) {
-  let is_helper = |attribute: &Attribute| attribute.path().is_ident("xaml") || attribute.path().is_ident("element");
-  item.attrs.retain(|attribute| !is_helper(attribute));
+/// Removes the `element` attributes from the struct and its fields, which only `#[element]` reads;
+/// the `xaml` attributes stay for the derive.
+fn strip_element_settings(item: &mut ItemStruct) {
+  let is_setting = |attribute: &Attribute| attribute.path().is_ident("element");
+  item.attrs.retain(|attribute| !is_setting(attribute));
   for field in &mut item.fields {
-    field.attrs.retain(|attribute| !is_helper(attribute));
+    field.attrs.retain(|attribute| !is_setting(attribute));
   }
 }
 

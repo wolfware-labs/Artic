@@ -95,7 +95,6 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
     .attributes
     .override_defaults
     .then(|| quote!(<Self as __artic::OverrideDefaults>::override_defaults(&__artic_value);));
-  let after_default = &analysis.after_default;
   let whitespace = match analysis.attributes.whitespace {
     Whitespace::Collapse => quote!(__artic::Whitespace::Collapse),
     Whitespace::Significant => quote!(__artic::Whitespace::Significant),
@@ -114,7 +113,6 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
             #(#other_fields: ::core::default::Default::default(),)*
           };
           #override_defaults
-          #after_default
           __artic_value
         }
       }

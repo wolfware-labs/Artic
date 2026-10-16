@@ -49,11 +49,6 @@ pub trait Element: Object + Layoutable {
 /// transform around the rest. A control with nothing special writes
 /// `impl ElementImpl for Spacer {}`.
 pub trait ElementImpl {
-  /// Changes the control's defaults, with `Property::set_default`, such as
-  /// `self.interaction.focusable.set_default(true)`. `#[element]` calls it once, when the control
-  /// is created; an inherited value, a style, a binding or markup still wins over these values.
-  fn defaults(&self) {}
-
   /// The content's size within `available`, which already excludes the margin and is held within
   /// the element's limits. By default, nothing.
   fn measure_override(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size {

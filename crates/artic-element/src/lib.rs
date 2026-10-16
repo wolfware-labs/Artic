@@ -26,6 +26,7 @@ mod surface;
 mod types;
 mod visibility;
 
+pub use artic_registry::OverrideDefaults;
 pub use classes::Classes;
 pub use context::{AccessCx, EventCx, Handled, HitTestCx, HitTestResult, RenderCx};
 pub use element::{Element, ElementImpl, HasState};
@@ -46,6 +47,7 @@ pub mod __private {
   pub use artic_core::input::InputEvent;
   pub use artic_layout::geometry::{Point, Rect, Size};
   pub use artic_layout::{ArrangeCx, Layoutable, MeasureCx};
+  pub use artic_macros::XamlType;
   pub use artic_registry::__private::*;
   pub use artic_render::{Layers, SceneBuilder};
   pub use linkme;

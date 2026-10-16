@@ -218,7 +218,7 @@ where
   }
 
   /// Sets the `Default` level: the value the property has while no other level holds one. A
-  /// control uses it in `ElementImpl::defaults` to change a default of its own.
+  /// control uses it in `OverrideDefaults::override_defaults` to change a default it doesn't declare.
   pub fn set_default(&self, value: T) {
     self.set_at(Precedence::Default, value);
   }

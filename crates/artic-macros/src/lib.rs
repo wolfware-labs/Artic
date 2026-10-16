@@ -126,11 +126,12 @@ pub fn derive_xaml_enum(input: TokenStream) -> TokenStream {
 /// struct's properties: `layout: Layout`, `appearance: Appearance`,
 /// `interaction: Interaction` and `identity: Identity`. A field of the
 /// struct with one of those names is an error, as are `XamlType` and `Default` in its derives,
-/// since `#[element]` writes both. A unit struct gets the four fields; a tuple struct or a generic
+/// since the derive `#[element]` adds writes both. A unit struct gets the four fields; a tuple struct or a generic
 /// one is an error.
 ///
-/// The struct's `Default` calls `ElementImpl::defaults` once, after building the fields, so a
-/// control can change its defaults there with `Property::set_default`.
+/// `#[element]` adds `#[derive(XamlType)]`, so the struct's `#[xaml(...)]` settings are the
+/// derive's: a control changes a group's default with `#[xaml(override_defaults)]` and an
+/// `OverrideDefaults` impl that calls `Property::set_default`.
 ///
 /// Each `Element` method does the groups' shared work, then calls the matching `ElementImpl`
 /// hook:
