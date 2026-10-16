@@ -42,7 +42,7 @@ pub fn render_tree(
 
 An `Image` holds straight RGBA, row by row from the top, as `Rgba8` returns it and as PNG stores it. `new` panics when `pixels` doesn't hold `width × height` pixels, and `pixel` when `x` or `y` is outside the image, as slice indexing does. It reads and writes PNG with the `png` crate, which `artic-test` adds as a direct dependency in the workspace table at the version already in the lockfile, 0.18; no type of that crate appears in the API.
 
-`render` takes a `Scene`, which is how the primitive goldens are written. `render_tree` takes a root element, lays it out and composes it with a fresh `Pipeline` from `artic-platform`, then renders the frame: the entry point for control goldens (#45, #46, #121). For it, `artic-test` adds `artic-element` as a direct dependency, for `ElementTypes`, beside the `artic-platform` it already has.
+`render` takes a `Scene`, which is how the primitive goldens are written. `render_tree` takes a root element, lays it out and composes it with a fresh `Pipeline` from `artic-platform`, then renders the frame. It lays out with `Axes::default()`, sizing to content on neither axis, so the root is arranged in the image's logical size, `size / scale`, as in a window of that size; a golden's size is its test's choice, never the content's. It's the entry point for control goldens (#45, #46, #121). For it, `artic-test` adds `artic-element` as a direct dependency, for `ElementTypes`, beside the `artic-platform` it already has.
 
 ## 2. Goldens
 
