@@ -306,11 +306,13 @@ impl LayoutNodes for Broken {
 }
 
 proptest! {
-  // A stack of any fixed-size children gives the same answer from a fresh manager, for any
-  // available size and scale. Containment stays off: the children can be taller than the stack.
+  // A stack of any fixed-size children, laid out once at another size first, gives the same answer
+  // as a fresh manager, for any available size and scale. Containment stays off: the children can
+  // be taller than the stack.
   #[test]
   fn layout_invariants_hold(
     sizes in proptest::collection::vec((0.0..500.0f32, 0.0..500.0f32), 0..6),
+    before in strategy::available(),
     available in strategy::available(),
     scale in strategy::scale(),
   ) {
@@ -321,6 +323,7 @@ proptest! {
       .map(|(index, (width, height))| layout.add(&format!("child {index}"), Fixed::new(*width, *height)))
       .collect();
     let root = layout.parent("stack", Stack::new(), &children);
+    layout.run(root, before, scale);
 
     Invariants::default().assert(&mut layout, root, available, scale);
   }
@@ -404,4 +407,18 @@ fn invariants_name_the_deepest_node() {
   let root = layout.parent("stack", Stack::new(), &[growing]);
 
   Invariants::default().assert(&mut layout, root, WINDOW, 1.0);
+}
+
+// Snapping can move a child's edge a device pixel past its snapped parent: a parent at y 0.6
+// with height 0.8 snaps to 1..1, while its child snaps to 0..1 in the parent's coordinates. That
+// layout is correct, so containment allows the pixel.
+#[test]
+fn containment_allows_a_device_pixel_of_snapping() {
+  let mut layout = Headless::new(Boxes);
+  let top = layout.add("top", Fixed::new(10.0, 0.6));
+  let leaf = layout.add("leaf", Fixed::new(10.0, 0.8));
+  let inner = layout.parent("inner", Stack::new(), &[leaf]);
+  let root = layout.parent("outer", Stack::new(), &[top, inner]);
+
+  Invariants::default().contained().assert(&mut layout, root, WINDOW, 1.0);
 }
