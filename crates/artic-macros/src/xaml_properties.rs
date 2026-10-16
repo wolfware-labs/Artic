@@ -1,6 +1,6 @@
 use crate::crate_root::{REGISTRY, crate_root};
 use crate::xaml_type::attributes::parse_field_attributes;
-use crate::xaml_type::fields::{Role, classify, reject_unmarked_member};
+use crate::xaml_type::fields::{Role, check_content, classify, reject_unmarked_member};
 use crate::xaml_type::generate::{default_field, key_static, property_info, value_check};
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -48,6 +48,11 @@ pub fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
       }
     }
   }
+  check_content(&properties)?;
+  let content = properties
+    .iter()
+    .position(|field| field.attributes.content.is_some())
+    .map(|index| quote!(const CONTENT: ::core::option::Option<&'static __artic::PropertyInfo> = ::core::option::Option::Some(&__PROPERTIES[#index]);));
   let root = crate_root(None, ident, REGISTRY)?;
   let keys = properties.iter().map(key_static);
   let defaults = properties.iter().map(default_field);
@@ -77,6 +82,7 @@ pub fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
 
       impl __artic::PropertyGroup for #ident {
         const PROPERTIES: &'static [__artic::PropertyInfo] = &__PROPERTIES;
+        #content
 
         fn visit_properties(&self, visit: &mut dyn ::core::ops::FnMut(&dyn __artic::AnyProperty)) {
           #(#visits)*

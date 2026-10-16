@@ -4,8 +4,8 @@
 use artic_core::event::Event;
 use artic_core::property::{Affects, Inheritance, Precedence, Property, PropertyKey};
 use artic_core::tree::{NodeId, TreeKind, UiTree};
-use artic_macros::XamlType;
-use artic_registry::{AttachedTarget, OverrideDefaults, Registry, TypeInfo, Whitespace, XamlType};
+use artic_macros::{XamlProperties, XamlType};
+use artic_registry::{AttachedTarget, ContentInfo, OverrideDefaults, PropertyRef, Registry, TypeInfo, Whitespace, XamlType};
 use pretty_assertions::assert_eq;
 use std::str::FromStr;
 
@@ -59,10 +59,10 @@ struct Layout;
 
 /// The `Border` from the spec's §3, with `affects` added.
 #[derive(Debug, XamlType)]
-#[xaml(namespace = "https://artic.rs/ui", content = child)]
+#[xaml(namespace = "https://artic.rs/ui")]
 struct Border {
   _layout: Layout,
-  #[xaml]
+  #[xaml(content)]
   child: Property<Option<NodeId>>,
   #[xaml(default = Thickness::ZERO, affects = layout)]
   padding: Property<Thickness>,
@@ -75,16 +75,16 @@ struct Border {
 }
 
 #[derive(Debug, XamlType)]
-#[xaml(namespace = "https://artic.rs/ui", content = children)]
+#[xaml(namespace = "https://artic.rs/ui")]
 struct StackPanel {
-  #[xaml]
+  #[xaml(content)]
   children: Vec<NodeId>,
 }
 
 #[derive(Debug, XamlType)]
-#[xaml(namespace = "https://artic.rs/ui", content = text, whitespace = "significant")]
+#[xaml(namespace = "https://artic.rs/ui", whitespace = "significant")]
 struct Run {
-  #[xaml]
+  #[xaml(content)]
   text: Property<String>,
 }
 
@@ -133,7 +133,6 @@ fn border_is_registered_with_its_members() {
     border.events.iter().map(|event| event.name).collect::<Vec<_>>(),
     ["PointerPressed"]
   );
-  assert_eq!(border.content, Some("child"));
   assert!(!border.is_collection);
   assert!(border.rust_path.ends_with("::Border"));
   assert!(std::ptr::eq(border, Border::TYPE_INFO));
@@ -169,7 +168,6 @@ fn collection_field_makes_the_type_a_collection() {
   let panel = lookup("StackPanel");
 
   assert!(panel.is_collection);
-  assert_eq!(panel.content, Some("children"));
   assert!(StackPanel::default().children.is_empty());
 }
 
@@ -410,4 +408,44 @@ fn override_defaults_runs_after_field_defaults() {
   let gauge = Gauge::default();
 
   assert_eq!((gauge.low.get(), gauge.high.get()), (1, 11));
+}
+
+// A property marked `content` is the type's content, as its own property.
+#[test]
+fn content_child_on_a_field() {
+  assert!(matches!(
+    lookup("Border").content,
+    Some(ContentInfo::Property(PropertyRef { group: None, info })) if info.name == "Child"
+  ));
+}
+
+// A collection field marked `content` is the type's content, by its field name.
+#[test]
+fn content_children_on_a_field() {
+  assert!(matches!(
+    lookup("StackPanel").content,
+    Some(ContentInfo::Collection { field: "children" })
+  ));
+}
+
+#[derive(Debug, XamlProperties)]
+struct Labeled {
+  #[xaml(content)]
+  label: Property<String>,
+}
+
+#[derive(Debug, XamlType)]
+#[xaml(namespace = "https://artic.rs/test")]
+struct Tag {
+  #[xaml(flatten)]
+  labeled: Labeled,
+}
+
+// Content marked in a group reaches the type as that group's property.
+#[test]
+fn content_property_in_a_group() {
+  assert!(matches!(
+    <Tag as XamlType>::TYPE_INFO.content,
+    Some(ContentInfo::Property(PropertyRef { group: Some("labeled"), info })) if info.name == "Label"
+  ));
 }

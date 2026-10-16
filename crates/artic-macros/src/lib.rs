@@ -14,7 +14,6 @@ use syn::{DeriveInput, parse_macro_input};
 /// # Struct attributes
 ///
 /// - `namespace = "..."` (required): the XML namespace the type's name belongs to.
-/// - `content = field`: the `#[xaml]` field that receives content written inside the element.
 /// - `override_defaults`: `Default` calls `OverrideDefaults::override_defaults` once after building
 ///   the fields, to change defaults the type doesn't declare, such as a flattened group's.
 /// - `whitespace = "significant"`: keep whitespace in text content (the default collapses it).
@@ -49,6 +48,9 @@ use syn::{DeriveInput, parse_macro_input};
 ///   listed and visited as the type's own. It takes no other settings.
 /// - Any other `#[xaml]` field is a collection of child elements and must implement
 ///   `XamlCollection`.
+/// - `#[xaml(content)]` on one `Property` or collection field: it receives content written inside
+///   the element. A flattened group may mark one of its properties instead; a type has at most one
+///   content member, counting its groups.
 ///
 /// Unmarked fields are created with their own `Default`.
 ///
@@ -81,7 +83,8 @@ pub fn derive_xaml_type(input: TokenStream) -> TokenStream {
 /// in a field marked `#[xaml(flatten)]`, as controls embed `Layout`.
 ///
 /// Fields follow `XamlType`'s rules for `Property` fields; a group holds no events or
-/// collections, and takes no attributes on the struct. The derive implements `Default` and
+/// collections, and takes no attributes on the struct. One property may be marked
+/// `#[xaml(content)]`, which makes it the content of every type that flattens the group. The derive implements `Default` and
 /// `PropertyGroup`. A group's keys are its own, so every type that flattens it shares them, and
 /// an inheriting property inherits across those types.
 #[proc_macro_derive(XamlProperties, attributes(xaml))]
@@ -113,9 +116,9 @@ pub fn derive_xaml_enum(input: TokenStream) -> TokenStream {
 /// ```ignore
 /// #[element]
 /// #[derive(Debug)]
-/// #[xaml(namespace = "https://artic.rs/ui", content = child)]
+/// #[xaml(namespace = "https://artic.rs/ui")]
 /// pub struct Border {
-///   #[xaml] pub child: Property<Option<NodeId>>,
+///   #[xaml(content)] pub child: Property<Option<NodeId>>,
 /// }
 ///
 /// impl ElementImpl for Border { /* measure_override, render, … */ }

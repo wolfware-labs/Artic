@@ -8,9 +8,9 @@ struct Common {
 }
 
 #[derive(Debug, XamlType)]
-#[xaml(namespace = "https://artic.rs/test", content = common)]
+#[xaml(namespace = "https://artic.rs/test")]
 struct Widget {
-  #[xaml(flatten)]
+  #[xaml(flatten, content)]
   common: Common,
 }
 

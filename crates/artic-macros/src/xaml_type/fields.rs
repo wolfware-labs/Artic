@@ -69,30 +69,32 @@ pub fn analyze(input: &DeriveInput) -> syn::Result<Analysis<'_>> {
   }
   check_attached(&attributes, &xaml_fields)?;
   check_positional(&input.ident, &attributes, &xaml_fields)?;
-  if let Some(content) = &attributes.content
-    && !xaml_fields.iter().any(|field| field.ident == content)
-  {
-    return Err(Error::new_spanned(
-      content,
-      format_args!("`content` names `{content}`, which is not a `#[xaml]` field of this struct"),
-    ));
-  }
-  if let Some(content) = &attributes.content
-    && xaml_fields
-      .iter()
-      .any(|field| field.ident == content && matches!(field.role, Role::Group))
-  {
-    return Err(Error::new_spanned(
-      content,
-      format_args!("`content` names `{content}`, a flattened property group, which can't receive content"),
-    ));
-  }
+  check_content(&xaml_fields)?;
   Ok(Analysis {
     ident: &input.ident,
     attributes,
     xaml_fields,
     other_fields,
   })
+}
+
+/// Rejects a second field marked `#[xaml(content)]`, and the mark on an event.
+pub fn check_content(xaml_fields: &[XamlField]) -> syn::Result<()> {
+  let mut marked = xaml_fields
+    .iter()
+    .filter_map(|field| field.attributes.content.map(|span| (field, span)));
+  if let Some((field, span)) = marked.next()
+    && matches!(field.role, Role::Event { .. })
+  {
+    return Err(Error::new(
+      span,
+      "`content` goes on a `Property` or a collection field, not an event",
+    ));
+  }
+  if let Some((_, span)) = marked.next() {
+    return Err(Error::new(span, "a type has at most one `#[xaml(content)]` member"));
+  }
+  Ok(())
 }
 
 /// Rejects two attached properties with one name, and an attached property whose helpers would
@@ -269,10 +271,10 @@ mod tests {
   #[test]
   fn fields_are_sorted_by_role() {
     let input: DeriveInput = parse_quote! {
-      #[xaml(namespace = "https://artic.rs/ui", content = child)]
+      #[xaml(namespace = "https://artic.rs/ui")]
       struct Border {
         layout: Layout,
-        #[xaml] child: Property<Option<NodeId>>,
+        #[xaml(content)] child: Property<Option<NodeId>>,
         #[xaml(default = Thickness::ZERO)] padding: artic::Property<Thickness>,
         #[xaml] pointer_pressed: Event<PointerEvent>,
         #[xaml] items: Vec<NodeId>,
@@ -335,17 +337,17 @@ mod tests {
     assert_eq!(names, ["row", "column_span", "name"]);
   }
 
-  // `content` must name a `#[xaml]` field.
+  // An event can't be content: content is a value or child elements.
   #[test]
-  fn content_must_name_a_xaml_field() {
+  fn content_on_an_event_is_an_error() {
     let input: DeriveInput = parse_quote! {
-      #[xaml(namespace = "https://artic.rs/ui", content = missing)]
-      struct Border { #[xaml] child: Property<Option<NodeId>> }
+      #[xaml(namespace = "https://artic.rs/ui")]
+      struct Button { #[xaml(content)] click: Event<ClickEvent> }
     };
 
-    let error = analyze(&input).err().expect("unknown content field");
+    let error = analyze(&input).err().expect("content on an event");
 
-    assert!(error.to_string().contains("`missing`"));
+    assert!(error.to_string().contains("not an event"));
   }
 
   // A `Property` field without `#[xaml]` is rejected, since the derive must create it with a key.

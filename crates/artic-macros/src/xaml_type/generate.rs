@@ -65,13 +65,29 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
     quote_spanned!(ty.span()=> __artic::assert_collection::<#ty>();)
   });
   let namespace = &analysis.attributes.namespace;
-  let content = match &analysis.attributes.content {
-    Some(content) => {
-      let content = content.to_string();
-      quote!(::core::option::Option::Some(#content))
-    }
-    None => quote!(::core::option::Option::None),
-  };
+  let own_content = analysis
+    .xaml_fields
+    .iter()
+    .find(|field| field.attributes.content.is_some())
+    .map_or_else(
+      || quote!(::core::option::Option::None),
+      |field| {
+        let name = field.ident.to_string();
+        match properties.iter().position(|property| property.ident == field.ident) {
+          Some(index) => quote!(::core::option::Option::Some(__artic::ContentInfo::Property(__artic::PropertyRef {
+            group: ::core::option::Option::None,
+            info: &__PROPERTIES[#index],
+          }))),
+          None => quote!(::core::option::Option::Some(__artic::ContentInfo::Collection { field: #name })),
+        }
+      },
+    );
+  let group_contents = groups.iter().map(|field| {
+    let ty = field.ty;
+    let field_name = field.ident.to_string();
+    quote!(__artic::group_content(#field_name, <#ty as __artic::PropertyGroup>::CONTENT))
+  });
+  let content = quote!(__artic::one_content(&[#own_content, #(#group_contents),*]));
   let is_collection = !collections.is_empty();
   let attached = &analysis.attributes.attached;
   let attached_keys = attached.iter().map(attached_key);

@@ -4,8 +4,8 @@ use std::fmt::{Debug, Formatter, Result};
 use std::str::FromStr;
 
 pub use crate::{
-  ArgInfo, AttachedPropertyInfo, AttachedTarget, EventInfo, MarkupExtensionInfo, OverrideDefaults, PropertyGroup,
-  PropertyGroupInfo, PropertyInfo, TypeInfo, Whitespace, XamlCollection, XamlType, register_type,
+  ArgInfo, AttachedPropertyInfo, AttachedTarget, ContentInfo, EventInfo, MarkupExtensionInfo, OverrideDefaults, PropertyGroup,
+  PropertyGroupInfo, PropertyInfo, PropertyRef, TypeInfo, Whitespace, XamlCollection, XamlType, register_type,
 };
 pub use artic_core::Object;
 pub use artic_core::event::Event;
@@ -50,6 +50,39 @@ pub const fn assert_collection<T: XamlCollection>() {}
 
 /// Compiles only if `T` is a property group.
 pub const fn assert_property_group<T: PropertyGroup>() {}
+
+/// The content a flattened group gives the type that holds it in `field`.
+pub const fn group_content(field: &'static str, info: Option<&'static PropertyInfo>) -> Option<ContentInfo> {
+  match info {
+    Some(info) => Some(ContentInfo::Property(PropertyRef {
+      group: Some(field),
+      info,
+    })),
+    None => None,
+  }
+}
+
+/// The one content candidate that is set, if any.
+///
+/// # Panics
+///
+/// At compile time, when more than one is set: a type has at most one content member, counting the
+/// groups it flattens.
+pub const fn one_content(candidates: &[Option<ContentInfo>]) -> Option<ContentInfo> {
+  let mut found = None;
+  let mut index = 0;
+  while index < candidates.len() {
+    if let Some(candidate) = candidates[index] {
+      assert!(
+        found.is_none(),
+        "a type has at most one `#[xaml(content)]` member, counting the groups it flattens"
+      );
+      found = Some(candidate);
+    }
+    index += 1;
+  }
+  found
+}
 
 #[cfg(test)]
 mod tests {

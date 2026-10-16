@@ -16,8 +16,8 @@ pub struct TypeInfo {
   pub rust_path: &'static str,
   /// Creates a node of this type with its default values and returns its id.
   pub new: fn(&mut UiTree) -> NodeId,
-  /// The field that receives content written directly inside the element, if any.
-  pub content: Option<&'static str>,
+  /// What receives content written directly inside the element, if anything.
+  pub content: Option<ContentInfo>,
   /// Whether the type is a collection that accepts child elements.
   pub is_collection: bool,
   /// The type's settable XAML properties.
@@ -107,6 +107,9 @@ pub trait PropertyGroup {
   /// The group's properties.
   const PROPERTIES: &'static [PropertyInfo];
 
+  /// The group's property marked `#[xaml(content)]`, if any.
+  const CONTENT: Option<&'static PropertyInfo> = None;
+
   /// Lists the group's properties, as [`Object::visit_properties`](artic_core::Object::visit_properties)
   /// does for a node.
   fn visit_properties(&self, visit: &mut dyn FnMut(&dyn AnyProperty));
@@ -119,6 +122,18 @@ pub struct PropertyGroupInfo {
   pub field: &'static str,
   /// The group's properties.
   pub properties: &'static [PropertyInfo],
+}
+
+/// What a type takes as XAML content: a property, or a collection field of child elements.
+#[derive(Debug, Clone, Copy)]
+pub enum ContentInfo {
+  /// A property that takes the content as its value, set through its property access.
+  Property(PropertyRef),
+  /// A collection field that takes child elements.
+  Collection {
+    /// The collection field.
+    field: &'static str,
+  },
 }
 
 /// A property found on a type, with the field of the group it lives in, if any.
@@ -211,7 +226,7 @@ mod tests {
     namespace: "https://artic.rs/ui",
     rust_path: "artic_controls::Border",
     new: new_border,
-    content: Some("child"),
+    content: None,
     is_collection: false,
     properties: &[PropertyInfo {
       name: PADDING.name(),

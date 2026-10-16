@@ -6,7 +6,6 @@ use syn::{DeriveInput, Error, Expr, Field, Ident, LitStr, Meta, Path, Token, Typ
 #[cfg_attr(test, derive(Debug))]
 pub struct TypeAttributes {
   pub namespace: LitStr,
-  pub content: Option<Ident>,
   pub whitespace: Whitespace,
   pub crate_path: Option<Path>,
   pub attached: Vec<Attached>,
@@ -50,6 +49,7 @@ pub struct FieldAttributes {
   pub inherits: Option<Inherits>,
   pub name: Option<LitStr>,
   pub flatten: Option<Span>,
+  pub content: Option<Span>,
 }
 
 /// How a property inherits, from a bare `inherits` or `inherits = path`.
@@ -70,7 +70,6 @@ pub struct Affects {
 /// Reads the struct's `#[xaml(...)]` attributes.
 pub fn parse_type_attributes(input: &DeriveInput) -> syn::Result<TypeAttributes> {
   let mut namespace = None;
-  let mut content = None;
   let mut whitespace = Whitespace::Collapse;
   let mut crate_path = None;
   let mut attached = Vec::new();
@@ -80,8 +79,6 @@ pub fn parse_type_attributes(input: &DeriveInput) -> syn::Result<TypeAttributes>
     attribute.parse_nested_meta(|meta| {
       if meta.path.is_ident("namespace") {
         namespace = Some(meta.value()?.parse::<LitStr>()?);
-      } else if meta.path.is_ident("content") {
-        content = Some(meta.value()?.parse::<Ident>()?);
       } else if meta.path.is_ident("whitespace") {
         let value: LitStr = meta.value()?.parse()?;
         whitespace = match value.value().as_str() {
@@ -101,7 +98,7 @@ pub fn parse_type_attributes(input: &DeriveInput) -> syn::Result<TypeAttributes>
       } else {
         return Err(unknown_key(
           &meta,
-          "`namespace`, `content`, `whitespace`, `crate`, `attached`, `markup_extension` or `override_defaults`",
+          "`namespace`, `whitespace`, `crate`, `attached`, `markup_extension` or `override_defaults`",
         ));
       }
       Ok(())
@@ -115,7 +112,6 @@ pub fn parse_type_attributes(input: &DeriveInput) -> syn::Result<TypeAttributes>
   })?;
   Ok(TypeAttributes {
     namespace,
-    content,
     whitespace,
     crate_path,
     attached,
@@ -216,10 +212,12 @@ pub fn parse_field_attributes(field: &Field) -> syn::Result<Option<FieldAttribut
         attributes.name = Some(meta.value()?.parse::<LitStr>()?);
       } else if meta.path.is_ident("flatten") {
         attributes.flatten = Some(meta.path.get_ident().map_or_else(Span::call_site, Ident::span));
+      } else if meta.path.is_ident("content") {
+        attributes.content = Some(meta.path.get_ident().map_or_else(Span::call_site, Ident::span));
       } else {
         return Err(unknown_key(
           &meta,
-          "`default`, `key`, `affects`, `inherits`, `name` or `flatten`",
+          "`default`, `key`, `affects`, `inherits`, `name`, `flatten` or `content`",
         ));
       }
       Ok(())
@@ -231,7 +229,8 @@ pub fn parse_field_attributes(field: &Field) -> syn::Result<Option<FieldAttribut
       || attributes.key.is_some()
       || attributes.affects.is_some()
       || attributes.inherits.is_some()
-      || attributes.name.is_some())
+      || attributes.name.is_some()
+      || attributes.content.is_some())
   {
     return Err(Error::new_spanned(
       field,
@@ -290,17 +289,14 @@ mod tests {
   #[test]
   fn type_attributes_are_parsed() {
     let input: DeriveInput = parse_quote! {
-      #[xaml(namespace = "https://artic.rs/ui", content = child, whitespace = "significant")]
+      #[xaml(namespace = "https://artic.rs/ui", override_defaults, whitespace = "significant")]
       struct Border { child: u8 }
     };
 
     let attributes = parse_type_attributes(&input).expect("valid attributes");
 
     assert_eq!(attributes.namespace.value(), "https://artic.rs/ui");
-    assert_eq!(
-      attributes.content.map(|content| content.to_string()),
-      Some("child".to_owned())
-    );
+    assert!(attributes.override_defaults);
     assert_eq!(attributes.whitespace, Whitespace::Significant);
   }
 
