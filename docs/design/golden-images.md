@@ -40,7 +40,7 @@ pub fn render_tree(
 ) -> Result<Image, RenderError>;
 ```
 
-An `Image` holds straight RGBA, as `Rgba8` returns it and as PNG stores it. It reads and writes PNG with the `png` crate, already in the lockfile, and no type of that crate appears in the API.
+An `Image` holds straight RGBA, as `Rgba8` returns it and as PNG stores it. It reads and writes PNG with the `png` crate, which `artic-test` adds as a direct dependency in the workspace table at the version already in the lockfile, 0.18; no type of that crate appears in the API.
 
 `render` takes a `Scene`, which is how the primitive goldens are written. `render_tree` takes a root element, lays it out and composes it with a fresh `Pipeline` from `artic-platform`, then renders the frame: the entry point for control goldens (#45, #46, #121).
 
@@ -116,7 +116,7 @@ fn with_renderer(test: impl FnOnce(&mut Renderer)) {
 
 `no_gpu` prints `skipped: <reason>` and returns, or panics when `ARTIC_REQUIRE_GPU=1` is set. A test can't mark itself skipped at run time, so a skipped golden test passes with that line in its output.
 
-The variable is ours rather than the `CI` most CI services set, because a CI machine without a GPU is normal today: GitHub's Windows runners have only WARP, and its Ubuntu runners no adapter. #53 sets `ARTIC_REQUIRE_GPU=1` in the Ubuntu job that installs lavapipe, where a missing GPU is a broken job. GitHub's Windows runners have only WARP, so this design changes #53's plan, which named WARP: its Windows job installs Mesa's lavapipe for Windows (mesa-dist-win), sets `WGPU_BACKEND=vulkan`, which `artic-vello` already reads through `Backends::from_env` in place of its DX12 default, and sets `ARTIC_REQUIRE_GPU=1` too. If vello can't run there, #53 drops Windows from its golden jobs and says so in its acceptance, rather than keeping a job that skips every golden and passes.
+The variable is ours rather than the `CI` most CI services set, because a CI machine without a GPU is normal today: GitHub's Windows runners have only WARP, and its Ubuntu runners no adapter. #53 sets `ARTIC_REQUIRE_GPU=1` in the Ubuntu job that installs lavapipe, where a missing GPU is a broken job. GitHub's Windows runners have only WARP, so this design changes #53's plan, which named WARP: its Windows job installs Mesa's lavapipe for Windows (mesa-dist-win), sets `WGPU_BACKEND=vulkan`, which `artic-vello` already reads through `Backends::from_env` in place of its DX12 default, and sets `ARTIC_REQUIRE_GPU=1` too. The macOS job sets it as well, since GitHub's macOS runners have a Metal device. If vello can't run there, #53 drops Windows from its golden jobs and says so in its acceptance, rather than keeping a job that skips every golden and passes.
 
 ## 4. The primitive goldens
 
