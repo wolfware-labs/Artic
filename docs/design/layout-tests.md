@@ -1,0 +1,155 @@
+# Design: layout tests
+
+Issue: #56. Builds on: the layout manager (#41), the tree (#7, #14), sizes and rectangles (#22). Unblocks: #44 (`Panel` and `StackPanel`), #71.
+
+A layout test builds a tree with no window and no GPU, runs `LayoutManager`, and checks sizes and rectangles. When a check fails, the message names the node and shows both values. Property tests run the same checks over random available sizes and scales.
+
+```rust
+#[test]
+fn stack_puts_children_top_to_bottom() {
+  let mut layout = Headless::new(Boxes);
+  let first = layout.add("first", Fixed::new(100.0, 20.0));
+  let second = layout.add("second", Fixed::new(80.0, 30.0));
+  let root = layout.parent("stack", Stack::new(), &[first, second]);
+
+  layout.run(root, Size::new(400.0, 300.0), 1.0);
+
+  layout.assert_desired(root, Size::new(100.0, 50.0));
+  layout.assert_rect(second, Rect::new(0.0, 20.0, 400.0, 30.0));
+}
+```
+
+## 1. Running layout headless
+
+The helpers live in `artic_test::layout`. The module imports `artic-core`, `artic-layout` and `proptest`, and nothing from `artic-render`, so a layout test never needs a GPU.
+
+```rust
+pub struct Headless<N: LayoutNodes> { /* tree, manager, nodes, labels */ }
+
+impl<N: LayoutNodes> Headless<N> {
+  pub fn new(nodes: N) -> Headless<N>;
+  pub fn add(&mut self, label: &str, object: impl Object) -> NodeId;
+  pub fn parent(&mut self, label: &str, object: impl Object, children: &[NodeId]) -> NodeId;
+  pub fn tree(&mut self) -> &mut UiTree;
+  pub fn manager(&mut self) -> &mut LayoutManager;
+  pub fn run(&mut self, root: NodeId, available: Size, scale: f32) -> LayoutStats;
+  pub fn label(&self, node: NodeId) -> String;
+}
+```
+
+`parent` adds the node and links `children` as its visual children, in order. `run` calls `LayoutManager::run` with snapping on, since a window always snaps. A test that needs snapping off, or anything else `Headless` doesn't wrap, calls `tree()` and `manager()` directly.
+
+`label` returns the label given to `add` or `parent`. A node allocated through `tree()` has none and shows as its `NodeId`.
+
+## 2. Assertions
+
+```rust
+pub const TOLERANCE: f32 = 0.001;
+
+impl<N: LayoutNodes> Headless<N> {
+  #[track_caller] pub fn assert_desired(&self, node: NodeId, expected: Size);
+  #[track_caller] pub fn assert_desired_within(&self, node: NodeId, expected: Size, tolerance: f32);
+  #[track_caller] pub fn assert_rect(&self, node: NodeId, expected: Rect);
+  #[track_caller] pub fn assert_rect_within(&self, node: NodeId, expected: Rect, tolerance: f32);
+}
+```
+
+A failure panics with the label and both values, at the test's line:
+
+```text
+"second": rect expected 0,20,400,30, got 0,20,400,24
+```
+
+A node that wasn't measured or arranged fails with `"second": not arranged`.
+
+The tolerance is absolute, in logical units. Layout values are a few thousand units at most, and snapping already rounds to the device grid, so the remaining error is `f32` arithmetic, far below 0.001. A relative tolerance would only add a second number to reason about. Each value is compared on its own: infinity matches the same infinity only, and NaN never matches, so a NaN in a result always fails.
+
+## 3. Test elements
+
+Most layout tests need a leaf of a known size and a parent that places its children. `artic_test::layout` ships both, so #44 and later panels don't each write their own.
+
+| Item | What it does |
+| --- | --- |
+| `Fixed` | a leaf: `Fixed::new(width, height)` asks for that size whatever is available. `set_size` changes it, for tests that invalidate. `measured()` and `arranged()` count the calls |
+| `Stack` | places its children top to bottom, each as wide as the stack and as tall as it asked; asks for the widest child's width and the sum of the heights. It counts calls the same way |
+| `Boxes` | the `LayoutNodes` for both |
+
+A test with its own element writes its own `LayoutNodes` and passes it to `Headless::new`, the same way.
+
+## 4. Strategies and invariants
+
+```rust
+pub mod strategy {
+  pub fn available() -> impl Strategy<Value = Size>;
+  pub fn scale() -> impl Strategy<Value = f32>;
+}
+```
+
+`available` picks each axis on its own: 0, a value from 1 to 1000, or infinity. `scale` picks 1, 1.25, 1.5, 2 or 3, the scales displays use, where snapping differs.
+
+```rust
+#[derive(Default)]
+pub struct Invariants { /* contained: bool */ }
+
+impl Invariants {
+  pub fn contained(self) -> Invariants;
+  #[track_caller]
+  pub fn assert<N: LayoutNodes>(&self, layout: &mut Headless<N>, root: NodeId, available: Size, scale: f32);
+}
+```
+
+`assert` runs layout from `root` and checks every node under it:
+
+1. **Finite.** Every desired size and every arranged rectangle is finite. Debug builds of the manager already catch a bad desired size; this check also covers rectangles and release builds.
+2. **Deterministic.** A fresh `LayoutManager` on the same tree gives the same desired sizes and rectangles, within the tolerance. This catches an element whose answer depends on state from an earlier run.
+3. **Contained**, only after `.contained()`. When `available` is finite on both axes, each child's rectangle lies inside `(0, 0, parent width, parent height)`, within the tolerance.
+
+Containment is opt-in because some layouts break it on purpose: a negative margin, a canvas, a scrolled child. Snapping can't break it. Rectangles are in their parent's coordinates and all edges snap to the same device grid, and rounding never reorders two values, so a child edge inside its parent before snapping is still inside after.
+
+A broken invariant panics with the node's label and the input. Inside `proptest!` that panic fails the case, and proptest shrinks it to the smallest failing input.
+
+```rust
+proptest! {
+  #[test]
+  fn layout_invariants_hold(
+    sizes in vec((0.0..500.0f32, 0.0..500.0f32), 0..6),
+    available in strategy::available(),
+    scale in strategy::scale(),
+  ) {
+    let mut layout = Headless::new(Boxes);
+    let children: Vec<_> = sizes.iter().map(|(w, h)| layout.add("child", Fixed::new(*w, *h))).collect();
+    let root = layout.parent("stack", Stack::new(), &children);
+    Invariants::default().contained().assert(&mut layout, root, available, scale);
+  }
+}
+```
+
+## 5. Porting the #41 tests
+
+The 23 tests in `artic-layout/src/layout/tests.rs` move to `artic-layout/tests/layout.rs` and use the helpers. They have to become integration tests: `artic-test` depends on `artic-layout`, so a unit test inside `artic-layout` that used `artic-test` would see two copies of every layout type. `artic-layout` takes `artic-test` as a dev-dependency; the tests already use only public API.
+
+The local `Node`, `Nodes`, `leaf`, `stack`, `counts` and `run` go away in favor of `Fixed`, `Stack`, `Boxes` and `Headless`. Tests with an element of their own (the bounds, skipping, misuse and overlay groups) keep it and pass their own `LayoutNodes` to `Headless`. The tests that toggle snapping call `manager()` directly. Every test keeps its name.
+
+## 6. What waits
+
+| Feature | How it fits | Tracked in |
+| --- | --- | --- |
+| `StackPanel` and `Panel` tests | `Headless` with the element types, and `Invariants` over random children | #44 |
+| Simulated input | a separate `TestHost` | #101 |
+| Tree snapshots | a separate serializer | #60 |
+
+## 7. Testing
+
+| Crate | Tests |
+| --- | --- |
+| `artic-test` | `layout_invariants_hold`; `invariants_catch_a_child_outside_its_parent` and `invariants_catch_a_changing_answer`, each with a broken element that must fail; `failing_assertion_names_the_node`, `nodes_without_a_label_show_their_id`; `rects_within_tolerance_match`, `infinity_matches_only_infinity`, `nan_never_matches`; `available_sizes_cover_zero_finite_and_infinite` |
+| `artic-layout` | the 23 ported tests in `tests/layout.rs` |
+
+The tests with a broken element prove that `Invariants` can fail. Without them, a helper that checked nothing would pass forever.
+
+## 8. Pull requests
+
+| PR | Contents | Done when |
+| --- | --- | --- |
+| A | this document | approved |
+| B | `artic_test::layout` with `Headless`, the assertions, `Fixed`, `Stack`, `Boxes`, `strategy` and `Invariants`, with a rustdoc example; `proptest` as a dependency of `artic-test`; the #41 tests moved to `artic-layout/tests/layout.rs` | the tests in section 7 pass, and `artic_test::layout` imports nothing from `artic-render` |
