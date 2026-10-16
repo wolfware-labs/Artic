@@ -5,6 +5,7 @@
 use artic_core::input::InputEvent;
 use artic_core::property::{Precedence, Property};
 use artic_core::tree::{NodeId, TreeKind, UiTree};
+use artic_element as element_crate;
 use artic_element::{
   AccessCx, Cursor, Element, ElementImpl, ElementTypes, EventCx, Handled, HasState, HitTestCx, HitTestResult, OverrideDefaults,
   RenderCx, Visibility,
@@ -303,7 +304,7 @@ fn element_adds_derive_xaml_type() {
 /// A control that names its crate path itself.
 #[element]
 #[derive(Debug)]
-#[xaml(namespace = "https://artic.rs/test", crate = "artic_element")]
+#[xaml(namespace = "https://artic.rs/test", crate = "element_crate")]
 struct Pinned {}
 
 impl ElementImpl for Pinned {}

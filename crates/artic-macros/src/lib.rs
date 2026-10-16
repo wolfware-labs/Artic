@@ -129,7 +129,7 @@ pub fn derive_xaml_enum(input: TokenStream) -> TokenStream {
 /// struct's properties: `layout: Layout`, `appearance: Appearance`,
 /// `interaction: Interaction` and `identity: Identity`. A field of the
 /// struct with one of those names is an error, as are `XamlType` and `Default` in its derives,
-/// since the derive `#[element]` adds writes both. A unit struct gets the four fields; a tuple struct or a generic
+/// since `#[element]` adds a derive that writes both. A unit struct gets the four fields; a tuple struct or a generic
 /// one is an error.
 ///
 /// `#[element]` adds `#[derive(XamlType)]`, so the struct's `#[xaml(...)]` settings are the
