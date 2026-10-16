@@ -213,7 +213,7 @@ Elements return their own node; the tree of nodes is built by #54's walk, which 
 | --- | --- | --- |
 | `Grid`, `DockPanel`, `WrapPanel`, `UniformGrid`, `Canvas` | each flattens `Panel`, declares `Children` and writes measure and arrange | #67 to #70 |
 | Child order in the accesskit tree | the walk in section 6 | #54 |
-| `.children(…)` on the builder, through `WithChildren` | generated with the other builder methods | #43 |
+| `.children(…)` on the builder, through `WithChildren` | comes beside the other builder methods | #43 |
 | Filling `Children` from markup | the loader calls `XamlCollection::push_child` | the XAML runtime and compiler |
 | Virtualization | a different panel over the same `Children` | #131 |
 
