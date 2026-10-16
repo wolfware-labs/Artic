@@ -15,6 +15,8 @@ use syn::{DeriveInput, parse_macro_input};
 ///
 /// - `namespace = "..."` (required): the XML namespace the type's name belongs to.
 /// - `content = field`: the `#[xaml]` field that receives content written inside the element.
+/// - `override_defaults`: `Default` calls `OverrideDefaults::override_defaults` once after building
+///   the fields, to change defaults the type doesn't declare, such as a flattened group's.
 /// - `whitespace = "significant"`: keep whitespace in text content (the default collapses it).
 /// - `crate = "path"`: where generated code finds artic, if neither `artic` nor `artic-registry`
 ///   is a direct dependency under its usual name.

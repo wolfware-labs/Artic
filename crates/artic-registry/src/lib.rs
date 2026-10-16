@@ -7,10 +7,12 @@
 #[doc(hidden)]
 pub mod __private;
 mod collection;
+mod defaults;
 mod descriptors;
 mod registry;
 
 pub use collection::XamlCollection;
+pub use defaults::OverrideDefaults;
 pub use descriptors::{
   ArgInfo, AttachedPropertyInfo, AttachedTarget, EventInfo, MarkupExtensionInfo, PropertyGroup, PropertyGroupInfo,
   PropertyInfo, PropertyRef, TypeInfo, Whitespace, XamlType,

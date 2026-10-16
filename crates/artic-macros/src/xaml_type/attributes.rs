@@ -12,6 +12,7 @@ pub struct TypeAttributes {
   pub attached: Vec<Attached>,
   /// The properties set by position, in order, if the type is a markup extension.
   pub markup_extension: Option<Vec<Ident>>,
+  pub override_defaults: bool,
 }
 
 /// One `attached(...)` entry on the struct: an attached property the type owns.
@@ -74,6 +75,7 @@ pub fn parse_type_attributes(input: &DeriveInput) -> syn::Result<TypeAttributes>
   let mut crate_path = None;
   let mut attached = Vec::new();
   let mut markup_extension = None;
+  let mut override_defaults = false;
   for attribute in input.attrs.iter().filter(|attribute| attribute.path().is_ident("xaml")) {
     attribute.parse_nested_meta(|meta| {
       if meta.path.is_ident("namespace") {
@@ -94,10 +96,12 @@ pub fn parse_type_attributes(input: &DeriveInput) -> syn::Result<TypeAttributes>
         attached.push(parse_attached(&meta)?);
       } else if meta.path.is_ident("markup_extension") {
         markup_extension = Some(parse_markup_extension(&meta)?);
+      } else if meta.path.is_ident("override_defaults") {
+        override_defaults = true;
       } else {
         return Err(unknown_key(
           &meta,
-          "`namespace`, `content`, `whitespace`, `crate`, `attached` or `markup_extension`",
+          "`namespace`, `content`, `whitespace`, `crate`, `attached`, `markup_extension` or `override_defaults`",
         ));
       }
       Ok(())
@@ -116,6 +120,7 @@ pub fn parse_type_attributes(input: &DeriveInput) -> syn::Result<TypeAttributes>
     crate_path,
     attached,
     markup_extension,
+    override_defaults,
   })
 }
 

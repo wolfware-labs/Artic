@@ -91,6 +91,10 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
       (&&__artic::ValueCheck::<#value>(__artic::PhantomData)).value_must_implement_fromstr_or_derive_xamltype();
     )
   });
+  let override_defaults = analysis
+    .attributes
+    .override_defaults
+    .then(|| quote!(<Self as __artic::OverrideDefaults>::override_defaults(&__artic_value);));
   let after_default = &analysis.after_default;
   let whitespace = match analysis.attributes.whitespace {
     Whitespace::Collapse => quote!(__artic::Whitespace::Collapse),
@@ -109,6 +113,7 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
             #(#default_fields,)*
             #(#other_fields: ::core::default::Default::default(),)*
           };
+          #override_defaults
           #after_default
           __artic_value
         }

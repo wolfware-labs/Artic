@@ -5,7 +5,7 @@ use artic_core::event::Event;
 use artic_core::property::{Affects, Inheritance, Precedence, Property, PropertyKey};
 use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_macros::XamlType;
-use artic_registry::{AttachedTarget, Registry, TypeInfo, Whitespace, XamlType};
+use artic_registry::{AttachedTarget, OverrideDefaults, Registry, TypeInfo, Whitespace, XamlType};
 use pretty_assertions::assert_eq;
 use std::str::FromStr;
 
@@ -387,4 +387,27 @@ fn combining_property_ands_with_its_ancestor() {
   assert!(!enabled(&tree));
   tree.get_as::<Switch>(parent).unwrap().enabled.set(true);
   assert!(enabled(&tree));
+}
+
+#[derive(Debug, XamlType)]
+#[xaml(namespace = "https://artic.rs/test", override_defaults)]
+struct Gauge {
+  #[xaml(default = 1)]
+  low: Property<i32>,
+  #[xaml(default = 2)]
+  high: Property<i32>,
+}
+
+impl OverrideDefaults for Gauge {
+  fn override_defaults(&self) {
+    self.high.set_default(self.low.get() + 10);
+  }
+}
+
+// The hook runs after every field has its declared default, so it can read them.
+#[test]
+fn override_defaults_runs_after_field_defaults() {
+  let gauge = Gauge::default();
+
+  assert_eq!((gauge.low.get(), gauge.high.get()), (1, 11));
 }

@@ -4,8 +4,8 @@ use std::fmt::{Debug, Formatter, Result};
 use std::str::FromStr;
 
 pub use crate::{
-  ArgInfo, AttachedPropertyInfo, AttachedTarget, EventInfo, MarkupExtensionInfo, PropertyGroup, PropertyGroupInfo,
-  PropertyInfo, TypeInfo, Whitespace, XamlCollection, XamlType, register_type,
+  ArgInfo, AttachedPropertyInfo, AttachedTarget, EventInfo, MarkupExtensionInfo, OverrideDefaults, PropertyGroup,
+  PropertyGroupInfo, PropertyInfo, TypeInfo, Whitespace, XamlCollection, XamlType, register_type,
 };
 pub use artic_core::Object;
 pub use artic_core::event::Event;
