@@ -1,4 +1,4 @@
-//! [`proptest`] strategies for layout inputs.
+//! [`proptest`](mod@proptest) strategies for layout inputs.
 
 use artic_layout::geometry::Size;
 use proptest::prelude::*;

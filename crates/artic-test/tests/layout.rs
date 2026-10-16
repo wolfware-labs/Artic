@@ -70,7 +70,11 @@ fn set_size_shows_after_invalidating() {
   let root = layout.parent("stack", Stack::new(), &[leaf]);
   layout.run(root, WINDOW, 1.0);
 
-  layout.tree().get_as::<Fixed>(leaf).expect("a fixed").set_size(Size::new(10.0, 40.0));
+  layout
+    .tree()
+    .get_as::<Fixed>(leaf)
+    .expect("a fixed")
+    .set_size(Size::new(10.0, 40.0));
   LayoutManager::invalidate_measure(layout.tree(), leaf);
   layout.run(root, WINDOW, 1.0);
 
@@ -207,7 +211,11 @@ fn available_sizes_cover_zero_finite_and_infinite() {
 
   for axis in axes {
     let values: Vec<f32> = sizes.iter().map(axis).collect();
-    assert!(values.iter().all(|value| *value == 0.0 || (1.0..1000.0).contains(value) || *value == f32::INFINITY));
+    assert!(
+      values
+        .iter()
+        .all(|value| *value == 0.0 || (1.0..1000.0).contains(value) || *value == f32::INFINITY)
+    );
     assert!(values.contains(&0.0));
     assert!(values.contains(&f32::INFINITY));
     assert!(values.iter().any(|value| value.is_finite() && *value >= 1.0));
@@ -337,7 +345,9 @@ fn invariants_catch_a_child_outside_its_parent() {
   let pushed = layout.add("pushed", Fixed::new(10.0, 10.0));
   let root = layout.parent("shove", Shove, &[pushed]);
 
-  Invariants::default().contained().assert(&mut layout, root, Size::new(100.0, 100.0), 1.0);
+  Invariants::default()
+    .contained()
+    .assert(&mut layout, root, Size::new(100.0, 100.0), 1.0);
 }
 
 // Containment says nothing when an axis is infinite.
@@ -347,7 +357,9 @@ fn containment_ignores_infinite_available() {
   let pushed = layout.add("pushed", Fixed::new(10.0, 10.0));
   let root = layout.parent("shove", Shove, &[pushed]);
 
-  Invariants::default().contained().assert(&mut layout, root, Size::new(100.0, f32::INFINITY), 1.0);
+  Invariants::default()
+    .contained()
+    .assert(&mut layout, root, Size::new(100.0, f32::INFINITY), 1.0);
 }
 
 // Without `.contained()`, the same layout passes.

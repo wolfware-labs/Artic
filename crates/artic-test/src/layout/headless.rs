@@ -64,7 +64,9 @@ impl<N: LayoutNodes> Headless<N> {
 
   /// Lays out `root`'s subtree in `available`, at `scale` device pixels per logical pixel.
   pub fn run(&mut self, root: NodeId, available: Size, scale: f32) -> LayoutStats {
-    self.manager.run(&mut self.tree, &self.nodes, root, available, scale, self.snap)
+    self
+      .manager
+      .run(&mut self.tree, &self.nodes, root, available, scale, self.snap)
   }
 
   /// The label `node` was added with, or its id for a node made through [`tree`](Headless::tree).
