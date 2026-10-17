@@ -50,9 +50,9 @@ The framework is a Cargo workspace of layered crates; each layer depends only on
 
 ```mermaid
 flowchart BT
-  L0["Layer 0: artic-core, artic-macros, artic-xaml"]
+  L0["Layer 0: artic-core, artic-macros, artic-xaml, artic-test-fonts"]
   L1["Layer 1: artic-registry, artic-layout, artic-i18n"]
-  L2["Layer 2: artic-render, artic-style, artic-xaml-compiler, artic-xaml-runtime"]
+  L2["Layer 2: artic-render, artic-text, artic-style, artic-xaml-compiler, artic-xaml-runtime"]
   L3["Layer 3: artic-element, artic-lsp"]
   L4["Layer 4: artic-controls, artic-platform, artic-cli"]
   L5["Layer 5: artic-theme, artic-test, artic-winit, artic-vello"]
@@ -70,11 +70,12 @@ Each layer builds on the ones below it. The exact dependency edges and the rules
 | `artic-xaml` | Parser: XML → XAML Infoset (MS-XAML §5), markup-extension grammar, diagnostics with spans | `XamlDocument`, `XamlNode`, `MarkupExtensionAst`, `Diagnostic` |
 | `artic-xaml-compiler` | Infoset → Rust source (`build.rs` API and `cargo artic` CLI) | `compile_dir()`, `CompileOptions` |
 | `artic-xaml-runtime` | Infoset → live object tree using the registry; file watcher and hot-swap | `XamlLoader`, `HotReload` |
-| `artic-layout` | Measure/arrange protocol, invalidation | `Layoutable`, `MeasureCx`, `ArrangeCx`, `LayoutManager`, `Size`, `Rect`, `Thickness` |
+| `artic-layout` | Measure/arrange protocol, invalidation; the text values layout and renderers share, and the `TextEngine` seam | `Layoutable`, `MeasureCx`, `ArrangeCx`, `LayoutManager`, `Size`, `Rect`, `Thickness`, `TextEngine`, `FontFamily`, `TextStyle`, `Paragraph` |
 | `artic-element` | The `Element` trait and its render, hit-test, event and accessibility contexts; the property groups every control has; gesture recognizers. Shared by controls and the platform host (D25) | `Element`, `Layout`, `RenderCx`, `EventCx`, `AccessCx` |
 | `artic-controls` | Templated controls, primitives, panels, default `ControlTemplate`s | `Button`, `TextBox`, `ItemsControl`, … |
 | `artic-style` | Selector parser and matcher, `Style`, `Setter`, pseudo-classes, resource dictionaries, theme switching | `Selector`, `Style`, `ResourceDictionary` |
-| `artic-render` | `Renderer` trait, scene graph (display list), `Target`; text shaping via `parley`. No backend dependencies | `Renderer`, `Scene`, `Target`, `DrawingContext` |
+| `artic-render` | `Renderer` trait, scene graph (display list), `Target`. No backend dependencies | `Renderer`, `Scene`, `Target`, `DrawingContext` |
+| `artic-text` | Text shaping and line breaking via `parley`, system fonts via `fontique` | `Engine` |
 | `artic-platform` | `Host`, `AppHandler` and `HostContext` with its capabilities, `artic::run`, frame pipeline (with facade-registered hooks). No backend dependencies | `Host`, `AppHandler`, `HostContext`, `SurfaceInfo` |
 | `artic-winit` | Adapter: the desktop and mobile `Host` on `winit`, with `muda`, `rfd`, `arboard`, `accesskit_winit` | `Host` |
 | `artic-vello` | Adapter: the default `Renderer`, `vello` on `wgpu` | `Renderer` |
@@ -82,6 +83,7 @@ Each layer builds on the ones below it. The exact dependency edges and the rules
 | `artic-theme` | Default theme: token dictionaries (light, dark, touch density) and the default `ControlTemplate` for every v1 control (D18) | `ArticTheme` |
 | `artic-i18n` | Optional fluent-rs implementation of the `Localizer` trait (D6) | `FluentLocalizer` |
 | `artic-test` | Dev-dependency test utilities: `TestHost`, headless tree helpers, tree serializer (D14) | `TestHost` |
+| `artic-test-fonts` | The test font's files and licence as byte constants, with no dependencies, so `artic-text`'s tests and `artic-test` share one copy | `REGULAR`, `BOLD` |
 | `artic-cli` | `cargo-artic` binary: `check`, `new`, `schema`, `inspect`, `ios`, `android`, `lsp` (D15) | CLI |
 | `artic-lsp` | Language server: source-based type index, diagnostics, completion, hover, navigation, formatting, rename (D21, D22) | `Server` |
 
@@ -621,7 +623,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - `Renderer` trait: `accepts(TargetKind)`, `render(&Scene, SurfaceView)` and an optional `surface_lost`. A `SurfaceView` is the host's id, its size in device pixels, its scale, and a `Target`: `Handles` (`raw-window-handle`: OS windows, DRM/GBM screens, canvases; valid until the surface is lost; the renderer presents), `Pixels` (a CPU buffer; the host presents) or `Custom` (a type one adapter's host and renderer agree on). A renderer that doesn't accept what the host offers is a startup error. Other renderers, such as skia or a CPU `tiny-skia`, are adapter crates, not features.
 - Retained `Scene`: each element owns a `SceneFragment` (a backend-neutral recording that each backend translates, D24) with a generation that increases when it changes, so a renderer may cache unchanged fragments; `render()` is called only for render-dirty nodes and the root composes fragments with transforms, clips, and opacity groups. Siblings are drawn in `ZIndex` order (ties in tree order), and a node that isn't `Visible` is skipped together with its subtree ([elements design](../design/element.md#7-accessibility-and-composition)). Untouched subtrees cost nothing per frame.
 - Primitives, all required of every renderer and all drawable on a CPU: paths (fill/stroke), rounded rects, images, glyph runs, linear/radial gradients, box shadows (blurred rect), clip (rect, rounded rect, path), layers with opacity and blend mode `Normal` only. Images are shared data (`Arc<ImageData>`) that a renderer uploads once and caches.
-- Text: artic shapes and breaks lines with `parley` in `artic-render`, with system font discovery via `fontique`, so layout doesn't depend on the renderer. The scene carries positioned glyph runs; a renderer only draws glyphs (`skrifa` outlines for CPU renderers) and keeps its own glyph cache. Emoji: `COLRv1` via `vello` where supported, bitmap fallback.
+- Text: artic shapes and breaks lines with `parley` in `artic-text`, with system font discovery via `fontique`, so layout doesn't depend on the renderer. The scene carries positioned glyph runs; a renderer only draws glyphs (`skrifa` outlines for CPU renderers) and caches them as it needs to; vello caches outlines itself, keyed by font identity, so fonts keep a stable identity. Emoji: `COLRv1` via `vello` where supported, bitmap fallback.
 - `wgpu` backends (the `artic-vello` adapter): DX12 on Windows, Metal on macOS and iOS, Vulkan on Linux and Android. Android requires Vulkan 1.1; GLES-only devices are not supported in v1 and the app reports the missing capability instead of starting (D6, M6-03).
 - Frame pacing: render only when dirty or an animation is running. Frames are per surface, each paced by its host's frame callback (`CADisplayLink`, `Choreographer`, `DwmFlush`, Wayland frame callbacks), so displays with different refresh rates each run at their own rate.
 
@@ -733,7 +735,7 @@ Accessibility, text editing, and input are cross-cutting: every control implemen
 
 ### Text
 
-- Fonts: `FontFamily` accepts a list (`"Inter, Segoe UI, sans-serif"`); resolution through `fontique` with per-platform default stacks; app fonts bundled via `Source="crate://…"`.
+- Fonts: `FontFamily` accepts a list (`"Inter, Segoe UI, sans-serif"`); resolution through `fontique`, falling back to the engine's default family (`system-ui`, which `fontique` maps per platform); app fonts bundled via `Source="crate://…"`.
 - `TextBlock`: shaping, bidi, line breaking (UAX #14), `TextWrapping`, `TextTrimming`, `MaxLines`, `LineHeight`, inline runs with per-run brush/weight/style.
 - `TextBox` editing model: `TextEditor` service (in `artic-core::text`) owns the rope-like buffer, selection, undo/redo, and word/line navigation; `TextBox` is a thin control over it. Grapheme-cluster cursor movement, `Ctrl/Alt+Arrow` word jumps, platform shortcut mapping (`Cmd` on Apple).
 - IME: composition events (`ImeStart/Update/Commit`) from the platform draw the preedit inline with underline styling; the control reports the cursor rect through `set_ime` so candidate windows and the mobile keyboard position correctly. `InputMode` (`Text`, `Numeric`, `Decimal`, `Tel`, `Email`, `Url`, `Search`, as HTML `inputmode`) maps to keyboard types on mobile.

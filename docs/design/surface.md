@@ -30,7 +30,7 @@ A **surface** is a root the app asks the host to present: an OS window on a desk
 | Who | Writes | Sees |
 | --- | --- | --- |
 | App code | an `Application` holding `Surface`s, each holding a view, usually a `UserControl`; `IsOpen` to open and close one | `Application`, `Surface`, `Desktop`, `UserControl` |
-| The facade (#55) | builds the tree from the views, then `Runner::new(tree, renderer, application)` and `artic_platform::run(host, runner)` | `Runner`, `run` |
+| The facade (#55) | builds the tree from the views, then `Runner::new(tree, renderer, engine, application)` (the engine is `artic_text::Engine::system()`, [text design](text.md)) and `artic_platform::run(host, runner)` | `Runner`, `run` |
 | Control authors | `measure_override(&mut MeasureCx, …)` and `arrange_override(&mut ArrangeCx, …)` | `MeasureCx`, `ArrangeCx` |
 | Host adapters | `Windows::open`, `update` and `close` | `WindowDesc`, `Windows` |
 
@@ -101,6 +101,8 @@ Writing `Local` shadows a binding: after the OS closes a surface whose `IsOpen` 
 | Reads the tree, `measure(child, available)` | yes | |
 | `arrange(child, rect)`, `desired_size(child)` | | yes |
 | `scale()`, `snap(rect)` | | yes |
+| `text()`, the text engine ([text design](text.md)) | yes | yes |
+| `set_measured(result)` / `set_arranged(result)` | yes | yes |
 
 `Layoutable::measure` and `ElementImpl::measure_override` take `&mut MeasureCx`; `arrange` and `arrange_override` take `&mut ArrangeCx`. A desired size is in logical pixels and can't depend on the display, which spec §7 (layout protocol, rule 5) already intends and the types now enforce: a `measure_override` that reads the scale doesn't compile.
 

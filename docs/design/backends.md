@@ -194,7 +194,8 @@ The seams live in crates with no backend dependencies, and each backend is an ad
 
 | Crate | Holds | Doesn't depend on |
 | --- | --- | --- |
-| `artic-render` | `Renderer`, `Scene`, `Target`, `PixelBuffer`, text shaping (`parley`) | `vello`, `wgpu`, skia |
+| `artic-render` | `Renderer`, `Scene`, `Target`, `PixelBuffer` | `vello`, `wgpu`, skia |
+| `artic-text` | text shaping (`parley`) and fonts (`fontique`) | any renderer |
 | `artic-platform` | `Host`, `AppHandler` and `HostContext` with its capabilities, `artic::run`'s pairing check, the frame pipeline | `winit`, `muda`, `rfd`, `arboard` |
 | `artic-core` | raw input event types (controls see them without the platform, as today) | |
 | `artic-element` | the action mapping and directional focus, next to focus navigation | |
@@ -205,7 +206,7 @@ Compared with today's §2 and `docs/architecture.md`:
 
 - `vello` moves out of `artic-render` into `artic-vello`, and `winit` and the OS crates move out of `artic-platform` into `artic-winit`. #34 builds `artic-vello`, #39 builds `artic-winit`.
 - The facade's `skia` feature goes away: a skia renderer is an adapter crate like any other.
-- The rule "text measurement reaches layout through a small trait implemented by the renderer" becomes "implemented by `artic-render`'s text shaping", the same for every renderer.
+- The rule "text measurement reaches layout through a small trait implemented by the renderer" becomes "implemented by `artic-text`", the same for every renderer ([text design](text.md)).
 - `artic-test`'s `TestHost` implements `Host`, and a test renderer draws to `Pixels`, so artic's own tests exercise the seams the way third-party adapters do.
 
 ## What this changes

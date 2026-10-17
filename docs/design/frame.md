@@ -8,7 +8,7 @@ A **frame** turns changed state into pixels on one surface: posted work runs, th
 
 | Who | Writes | Sees |
 | --- | --- | --- |
-| The facade (#55) | builds the tree from the views, then `Runner::new(tree, renderer, application)` ([surface design](surface.md)) and `artic_platform::run(host, runner)` | `Runner`, `run`, `Hooks`, `Error` |
+| The facade (#55) | builds the tree from the views, then `Runner::new(tree, renderer, engine, application)` with the engine it creates, `artic_text::Engine::system()` ([surface design](surface.md), [text design](text.md)) and `artic_platform::run(host, runner)` | `Runner`, `run`, `Hooks`, `Error` |
 | Features that run inside a frame (style pass, size classes, accesskit, transitions) | a closure registered on `Hooks` | `Hooks`, `UiTree`, `SurfaceInfo`, `FrameStats` |
 | Tests and the debug overlay (#165) | | `FrameStats`, per frame and per surface |
 | Host adapters | nothing new | `Runner` is an ordinary `AppHandler` |
@@ -75,8 +75,8 @@ Pending work never keeps the loop awake by itself: the queue is empty after each
 3. Drain again, so the effects of the hooks' writes land, then `take_pending()`; if true, mark every surface and request frames for the others. Writes from step 2, such as the style pass's, count for this frame.
 4. If this surface isn't marked, nothing changed for it, but the host still asked for pixels: an OS redraw, such as a window uncovered or restored, reaches `frame` like a requested one, and a host can't always tell them apart (winit can't). The pipeline presents the last `Scene` again, with nothing measured or recorded, then settles and returns; the loop goes back to sleep. A surface with no scene yet goes on to step 5.
 5. Clear the mark and `pipeline.prepare(tree, root, info, &types)`, lending the runner's `ElementTypes`, from which the pipeline builds the `LayoutNodes` and render `Nodes` for this frame:
-   - `LayoutManager::run` at `size / scale` in logical units, with pixel snapping. It measures only layout-dirty nodes and those whose desired size a change reached, and reports the nodes whose arranged size changed.
-   - `Compositor::compose` through the pipeline's render `Nodes` (section 5). It records only render-dirty nodes and the nodes layout resized, and reuses every other fragment.
+   - `LayoutManager::run` at `size / scale` in logical units, with pixel snapping and the runner's text engine ([text design](text.md)). It measures only layout-dirty nodes and those whose desired size a change reached, and reports the nodes whose arranged size changed and the nodes whose layout result was set or dropped, including by a `measure` call since the last run.
+   - `Compositor::compose` through the pipeline's render `Nodes` (section 5). It records only render-dirty nodes and the nodes layout resized or changed the layout result of, and reuses every other fragment.
 6. `pipeline.present(renderer, frame, target)` builds the renderer's `SurfaceView` from the frame's id, size and scale and the lent target, and renders; then the `after_present` hooks run and the surface's `FrameStats` are kept.
 7. If any `wants_frame` hook returns true, mark the surface and request its next frame.
 8. Settle (section 3). A write made in steps 5 to 7, such as by an `after_present` hook, sets the pending flag after step 3 read it; settling marks the surfaces and asks for exactly one more frame.
@@ -96,8 +96,8 @@ v1 renders on the UI thread, but a render thread must stay possible without chan
 The pipeline answers the compositor's `Nodes` for any `dyn Element`, through `ElementTypes`:
 
 - `layers(tree, node)` casts the node and calls `Element::layers` with its arranged size from `LayoutManager::rect`. The element's own transform pivots on its centre in its own coordinates, so the node's layout offset is composed after it: `transform.then(translate(rect.origin))`, or the offset alone when the element has none. `LayoutManager::rect` is in the parent's coordinates, and the compositor nests children inside their parent's layers, so offsets add up down the tree.
-- `record(tree, node, builder)` casts the node and calls `Element::render` with a `RenderCx` for it, which carries the node's arranged size (`RenderCx::size`), so an element draws to the box layout gave it.
-- `stale(node)` is true for the nodes layout resized and the compositor hasn't recorded since. The pipeline keeps them in a set that layout's `resized` adds to and recording removes from, and drops entries for nodes that left the root's subtree, so a node resized while hidden, which the compositor skips, is still recorded again when it's shown. The compositor re-records a node that is render-dirty, stale, or has no fragment yet, so a node whose box changed without any property changing doesn't keep a drawing of the old size. A node that only moved stays as recorded: its offset is a layer.
+- `record(tree, node, builder)` casts the node and calls `Element::render` with a `RenderCx` for it, which carries the node's arranged size (`RenderCx::size`) and its layout result (`RenderCx::layout_result`, such as a shaped paragraph), so an element draws to the box layout gave it, with what layout worked out.
+- `stale(node)` is true for the nodes layout resized or changed the layout result of, and the compositor hasn't recorded since. The pipeline keeps them in a set that layout's `resized` and `results` add to and recording removes from, and drops entries for nodes that left the root's subtree, so a node resized while hidden, which the compositor skips, is still recorded again when it's shown. The compositor re-records a node that is render-dirty, stale, or has no fragment yet, so a node whose box changed without any property changing doesn't keep a drawing of the old size. A node that only moved stays as recorded: its offset is a layer.
 
 A node that isn't an element gets default layers and records nothing.
 
@@ -116,17 +116,17 @@ A node that isn't an element gets default layers and records nothing.
 
 ## 7. Stats
 
-Each stage counts what it did: `LayoutManager::run` returns `LayoutStats { measured, arranged, resized }`, where `resized` lists the nodes whose arranged size changed, the compositor counts the fragments it recorded, and `present` sets `rendered`. A frame that stops at step 4 has `FrameStats { rendered: true, ..Default::default() }`, and nothing else ran. They're plain integers returned from the call that did the work, always on, so tests read exactly the frame they ran and the debug overlay reads `Runner::stats`.
+Each stage counts what it did: `LayoutManager::run` returns `LayoutStats { measured, arranged, resized, results }`, where `resized` lists the nodes whose arranged size changed and `results` the nodes whose layout result was set or dropped since the last run ([text design](text.md)), the compositor counts the fragments it recorded, and `present` sets `rendered`. A frame that stops at step 4 has `FrameStats { rendered: true, ..Default::default() }`, and nothing else ran. They're plain integers returned from the call that did the work, always on, so tests read exactly the frame they ran and the debug overlay reads `Runner::stats`.
 
 ## 8. Testing
 
 | Crate | Tests |
 | --- | --- |
 | `artic-core` | `property_write_sets_pending`, `mark_dirty_sets_pending`, `child_change_sets_pending`, `take_pending_resets` |
-| `artic-layout` | `run_reports_measured_and_arranged`: a second run with nothing dirty reports zero; `run_reports_resized`: a node whose size changed is listed, one that only moved isn't |
+| `artic-layout` | `run_reports_measured_and_arranged`: a second run with nothing dirty reports zero; `run_reports_resized`: a node whose size changed is listed, one that only moved isn't; the `results` tests are in the [text design](text.md) |
 | `artic-render` | `compose_reports_recorded`: only render-dirty nodes count; `stale_node_is_recorded_again`; `write_during_record_stays_dirty` |
 | `artic-platform` | `layout_offset_applies_after_render_transform`, `render_cx_has_the_arranged_size`, `frame_is_send` |
-| `artic-platform`, through `Runner`, a fake `HostContext` and a counting renderer on a `Pixels` target | `clean_frame_is_skipped` (an unasked-for frame measures and records nothing, presents the last scene, and requests no frame, so the loop sleeps), `os_redraw_presents_the_last_scene`, `render_only_change_skips_layout`, `layout_change_remeasures_subtree`, `resize_invalidates_root`, `resized_node_is_recorded_again`, `node_resized_while_hidden_is_recorded_when_shown`, `windows_keep_their_own_caches`, `write_after_present_requests_one_frame`, `surface_lost_render_error_resets_the_renderer`, `style_write_lands_in_same_frame`, `hook_write_effects_land_in_same_frame`, `wants_frame_requests_another`, `closing_last_window_exits`, `closed_window_is_released_from_the_renderer`, `render_error_is_returned_from_run`, `render_error_reaches_on_error`, `mismatched_renderer_is_rejected` |
+| `artic-platform`, through `Runner`, a fake `HostContext` and a counting renderer on a `Pixels` target | `clean_frame_is_skipped` (an unasked-for frame measures and records nothing, presents the last scene, and requests no frame, so the loop sleeps), `os_redraw_presents_the_last_scene`, `render_only_change_skips_layout`, `layout_change_remeasures_subtree`, `resize_invalidates_root`, `resized_node_is_recorded_again`, `replaced_result_is_recorded_again`, `node_resized_while_hidden_is_recorded_when_shown`, `windows_keep_their_own_caches`, `write_after_present_requests_one_frame`, `surface_lost_render_error_resets_the_renderer`, `style_write_lands_in_same_frame`, `hook_write_effects_land_in_same_frame`, `wants_frame_requests_another`, `closing_last_window_exits`, `closed_window_is_released_from_the_renderer`, `render_error_is_returned_from_run`, `render_error_reaches_on_error`, `mismatched_renderer_is_rejected` |
 
 An `artic-winit` example, `frames`, opens a window with one element through `Runner` and `artic_vello::Renderer`, changes a property once, and exits with an error if any frame runs in the last 500 ms of a 1.5 s run. The Windows and macOS CI jobs run it next to `smoke`. A quiet window, not a frame count, is what it asserts, so a transient resize at startup can't fail it.
 

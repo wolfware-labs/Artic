@@ -38,6 +38,8 @@ impl<N: LayoutNodes> Headless<N> {
 }
 ```
 
+`Headless` owns the test text engine (`artic_test::text::engine()`, from the [text design](text.md)) and passes it to `LayoutManager::run`, so `run` keeps its arguments and text measures the same on every machine.
+
 `parent` adds the node and links `children` as its visual children, in order. `run` calls `LayoutManager::run` with the `LayoutNodes` given to `new`. Snapping is on, since a window always snaps, until `set_snap(false)`. A test that needs something else `Headless` doesn't wrap, such as invalidating a node, calls `tree()` and `manager()` directly.
 
 `label` returns the label given to `add` or `parent`. A node allocated through `tree()` has none and shows as its `NodeId`.
