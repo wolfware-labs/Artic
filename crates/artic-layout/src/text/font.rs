@@ -137,9 +137,10 @@ pub enum FamilyProblem {
   /// A quote isn't closed, as in `'Segoe UI`.
   #[error("a quote isn't closed")]
   UnclosedQuote,
-  /// Something other than a comma follows a quoted name, as `UI` does in `'Segoe' UI`.
-  #[error("'{0}' follows a quoted name")]
-  AfterQuote(String),
+  /// A name is only partly quoted, as `'Segoe' UI` and `Arial "Black"` are: a name is quoted
+  /// whole or not at all.
+  #[error("'{0}' is partly quoted")]
+  PartlyQuoted(String),
 }
 
 impl FromStr for FontFamily {
@@ -161,50 +162,51 @@ fn parse_family(text: &str) -> Result<Vec<FamilyName>, FamilyProblem> {
   if text.trim().is_empty() {
     return Err(FamilyProblem::Empty);
   }
+  split_names(text)?.into_iter().map(parse_name).collect()
+}
+
+fn split_names(text: &str) -> Result<Vec<&str>, FamilyProblem> {
   let mut names = Vec::new();
-  let mut rest = Some(text);
-  while let Some(entry) = rest {
-    let entry = entry.trim_start();
-    let (name, after) = match entry.chars().next() {
-      Some(quote @ ('\'' | '"')) => parse_quoted(&entry[1..], quote)?,
-      _ => parse_unquoted(entry)?,
-    };
-    names.push(name);
-    rest = after;
+  let mut start = 0;
+  let mut open = None;
+  for (at, character) in text.char_indices() {
+    match (open, character) {
+      (Some(quote), _) if character == quote => open = None,
+      (None, '\'' | '"') => open = Some(character),
+      (None, ',') => {
+        names.push(&text[start..at]);
+        start = at + 1;
+      }
+      _ => {}
+    }
   }
+  if open.is_some() {
+    return Err(FamilyProblem::UnclosedQuote);
+  }
+  names.push(&text[start..]);
   Ok(names)
 }
 
-fn parse_quoted(text: &str, quote: char) -> Result<(FamilyName, Option<&str>), FamilyProblem> {
-  let (name, after) = text.split_once(quote).ok_or(FamilyProblem::UnclosedQuote)?;
-  if name.trim().is_empty() {
-    return Err(FamilyProblem::EmptyName);
+fn parse_name(text: &str) -> Result<FamilyName, FamilyProblem> {
+  let text = text.trim();
+  if let Some(quote) = text.chars().next().filter(|first| matches!(first, '\'' | '"')) {
+    return match text[1..].split_once(quote) {
+      Some((name, "")) if name.trim().is_empty() => Err(FamilyProblem::EmptyName),
+      Some((name, "")) => Ok(FamilyName::named(name)),
+      _ => Err(FamilyProblem::PartlyQuoted(text.to_owned())),
+    };
   }
-  let after = after.trim_start();
-  let rest = match after.strip_prefix(',') {
-    Some(rest) => Some(rest),
-    None if after.is_empty() => None,
-    None => {
-      let stray = after.split(',').next().unwrap_or(after).trim_end();
-      return Err(FamilyProblem::AfterQuote(stray.to_owned()));
-    }
-  };
-  Ok((FamilyName::named(name), rest))
-}
-
-fn parse_unquoted(text: &str) -> Result<(FamilyName, Option<&str>), FamilyProblem> {
-  let (name, rest) = match text.split_once(',') {
-    Some((name, rest)) => (name, Some(rest)),
-    None => (text, None),
-  };
-  let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+  if text.contains(['\'', '"']) {
+    return Err(FamilyProblem::PartlyQuoted(text.to_owned()));
+  }
+  let name = text.split_whitespace().collect::<Vec<_>>().join(" ");
   if name.is_empty() {
     return Err(FamilyProblem::EmptyName);
   }
   let generic = GenericFamily::ALL
     .into_iter()
     .find(|generic| generic.keyword().eq_ignore_ascii_case(&name));
-  Ok((generic.map_or_else(|| FamilyName::named(&name), FamilyName::Generic), rest))
+  Ok(generic.map_or_else(|| FamilyName::named(&name), FamilyName::Generic))
 }
 
 /// How heavy a font's strokes are, from 1 to 1000, as in CSS: 400 is normal and 700 bold.
@@ -527,13 +529,18 @@ mod tests {
     );
   }
 
-  // Text after a closing quote, other than a comma, is `AfterQuote` with the text up to the next comma.
+  // A name with a quote that doesn't wrap all of it is `PartlyQuoted` with the whole name, and a
+  // comma inside its quotes doesn't split it.
   #[test]
-  fn text_after_a_quote_is_reported() {
-    assert_eq!(problem("'Segoe' UI , Arial"), FamilyProblem::AfterQuote(String::from("UI")));
+  fn partly_quoted_name_is_reported() {
+    let partly = |name: &str| FamilyProblem::PartlyQuoted(String::from(name));
+    assert_eq!(problem("'Segoe' UI , Arial"), partly("'Segoe' UI"));
+    assert_eq!(problem(r#"Arial "A, B", Inter"#), partly(r#"Arial "A, B""#));
+    assert_eq!(problem("'a' 'b, c'"), partly("'a' 'b, c'"));
+    assert_eq!(problem("Arial'"), FamilyProblem::UnclosedQuote);
     assert_eq!(
       "'Segoe' UI".parse::<FontFamily>().unwrap_err().to_string(),
-      "invalid FontFamily ''Segoe' UI': 'UI' follows a quoted name; expected forms like 'Inter, sans-serif' or 'system-ui'"
+      "invalid FontFamily ''Segoe' UI': ''Segoe' UI' is partly quoted; expected forms like 'Inter, sans-serif' or 'system-ui'"
     );
   }
 }
