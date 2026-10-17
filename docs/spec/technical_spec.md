@@ -70,7 +70,7 @@ Each layer builds on the ones below it. The exact dependency edges and the rules
 | `artic-xaml` | Parser: XML → XAML Infoset (MS-XAML §5), markup-extension grammar, diagnostics with spans | `XamlDocument`, `XamlNode`, `MarkupExtensionAst`, `Diagnostic` |
 | `artic-xaml-compiler` | Infoset → Rust source (`build.rs` API and `cargo artic` CLI) | `compile_dir()`, `CompileOptions` |
 | `artic-xaml-runtime` | Infoset → live object tree using the registry; file watcher and hot-swap | `XamlLoader`, `HotReload` |
-| `artic-layout` | Measure/arrange protocol, invalidation | `Layoutable`, `MeasureCx`, `ArrangeCx`, `LayoutManager`, `Size`, `Rect`, `Thickness` |
+| `artic-layout` | Measure/arrange protocol, invalidation; the text values layout and renderers share, and the `TextEngine` seam | `Layoutable`, `MeasureCx`, `ArrangeCx`, `LayoutManager`, `Size`, `Rect`, `Thickness`, `TextEngine`, `FontFamily`, `TextStyle`, `Paragraph` |
 | `artic-element` | The `Element` trait and its render, hit-test, event and accessibility contexts; the property groups every control has; gesture recognizers. Shared by controls and the platform host (D25) | `Element`, `Layout`, `RenderCx`, `EventCx`, `AccessCx` |
 | `artic-controls` | Templated controls, primitives, panels, default `ControlTemplate`s | `Button`, `TextBox`, `ItemsControl`, … |
 | `artic-style` | Selector parser and matcher, `Style`, `Setter`, pseudo-classes, resource dictionaries, theme switching | `Selector`, `Style`, `ResourceDictionary` |
@@ -734,7 +734,7 @@ Accessibility, text editing, and input are cross-cutting: every control implemen
 
 ### Text
 
-- Fonts: `FontFamily` accepts a list (`"Inter, Segoe UI, sans-serif"`); resolution through `fontique` with per-platform default stacks; app fonts bundled via `Source="crate://…"`.
+- Fonts: `FontFamily` accepts a list (`"Inter, Segoe UI, sans-serif"`); resolution through `fontique`, falling back to the engine's default family (`system-ui`, which `fontique` maps per platform); app fonts bundled via `Source="crate://…"`.
 - `TextBlock`: shaping, bidi, line breaking (UAX #14), `TextWrapping`, `TextTrimming`, `MaxLines`, `LineHeight`, inline runs with per-run brush/weight/style.
 - `TextBox` editing model: `TextEditor` service (in `artic-core::text`) owns the rope-like buffer, selection, undo/redo, and word/line navigation; `TextBox` is a thin control over it. Grapheme-cluster cursor movement, `Ctrl/Alt+Arrow` word jumps, platform shortcut mapping (`Cmd` on Apple).
 - IME: composition events (`ImeStart/Update/Commit`) from the platform draw the preedit inline with underline styling; the control reports the cursor rect through `set_ime` so candidate windows and the mobile keyboard position correctly. `InputMode` (`Text`, `Numeric`, `Decimal`, `Tel`, `Email`, `Url`, `Search`, as HTML `inputmode`) maps to keyboard types on mobile.

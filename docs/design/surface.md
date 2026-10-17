@@ -101,6 +101,8 @@ Writing `Local` shadows a binding: after the OS closes a surface whose `IsOpen` 
 | Reads the tree, `measure(child, available)` | yes | |
 | `arrange(child, rect)`, `desired_size(child)` | | yes |
 | `scale()`, `snap(rect)` | | yes |
+| `text()`, the text engine ([text design](text.md)) | yes | yes |
+| `set_measured(result)` / `set_arranged(result)` | yes | yes |
 
 `Layoutable::measure` and `ElementImpl::measure_override` take `&mut MeasureCx`; `arrange` and `arrange_override` take `&mut ArrangeCx`. A desired size is in logical pixels and can't depend on the display, which spec §7 (layout protocol, rule 5) already intends and the types now enforce: a `measure_override` that reads the scale doesn't compile.
 
