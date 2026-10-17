@@ -76,6 +76,7 @@ pub struct Leaf {
   color: Property<u32>,
   turn: Property<bool>,
   pub seen: Cell<Option<Size>>,
+  pub collapsed: Cell<bool>,
 }
 
 impl Object for Leaf {
@@ -92,6 +93,10 @@ impl Layoutable for Leaf {
   }
 
   fn arrange(&self, _cx: &mut ArrangeCx<'_>, _rect: Rect) {}
+
+  fn collapsed(&self) -> bool {
+    self.collapsed.get()
+  }
 }
 
 impl Element for Leaf {
@@ -175,6 +180,7 @@ pub fn leaf(tree: &mut UiTree, height: f32) -> LeafHandles {
     color,
     turn,
     seen: Cell::new(None),
+    collapsed: Cell::new(false),
   }));
   LeafHandles { id, height, color, turn }
 }

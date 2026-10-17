@@ -62,8 +62,8 @@ pub trait ElementImpl {
 
 | Method | Shared work, from the groups | Then calls |
 | --- | --- | --- |
-| `measure` | `layout`, with `appearance.visibility`. `Collapsed`: returns zero, children not measured. Otherwise #41's `measure_with`: margin off, limits on | `measure_override` |
-| `arrange` | `layout`, with `appearance.visibility`. `Collapsed`: returns, children not arranged, since `arrange_with` would stretch a zero size to the slot. Otherwise #41's `arrange_with`: margin, limits, alignment | `arrange_override` with the content's size |
+| `measure` | `layout`: #41's `measure_with`, margin off, limits on. `Collapsed` never reaches it: the manager leaves the node out (`Layoutable::collapsed`) | `measure_override` |
+| `arrange` | `layout`: #41's `arrange_with`, margin, limits, alignment. `Collapsed` never reaches it | `arrange_override` with the content's size |
 | `render` | | `ElementImpl::render`; a hidden subtree is skipped by composition (section 7) |
 | `hit_test` | `appearance.visibility` not `Visible`, or `interaction.is_hit_test_visible` false: a miss. Otherwise the trait default, `cx.bounds_test(point)` | |
 | `on_event` | `interaction.is_enabled` false (own AND ancestors'): `Handled::No`, the control isn't called | `ElementImpl::on_event` |
@@ -129,7 +129,7 @@ The pipeline builds a `TypeId → ElementType` map once. `cast` answers `LayoutN
 
 ## 5. The property groups
 
-The properties every control has come in four groups, each in the field `#[element]` adds: `layout: Layout` (where the element sits and how big it is), `appearance: Appearance` (how it's drawn), `interaction: Interaction` (how it takes input) and `identity: Identity` (what selectors and code find it by). Control code reads `self.layout.margin` or `self.interaction.is_enabled`, and what is special about a control stays in its own fields. Each group is a property group, not a XAML type: `#[derive(XamlProperties)]` gives it its keys, `PROPERTIES`, `visit_properties` and `Default`, and markup can't create one. Its keys are generated once, so every control shares them, and `IsEnabled` inherits across control types. `Visibility` is in `appearance`, where people look for showing and hiding, though `Collapsed` also changes layout: `Layout::measure` and `arrange` take it as an argument.
+The properties every control has come in four groups, each in the field `#[element]` adds: `layout: Layout` (where the element sits and how big it is), `appearance: Appearance` (how it's drawn), `interaction: Interaction` (how it takes input) and `identity: Identity` (what selectors and code find it by). Control code reads `self.layout.margin` or `self.interaction.is_enabled`, and what is special about a control stays in its own fields. Each group is a property group, not a XAML type: `#[derive(XamlProperties)]` gives it its keys, `PROPERTIES`, `visit_properties` and `Default`, and markup can't create one. Its keys are generated once, so every control shares them, and `IsEnabled` inherits across control types. `Visibility` is in `appearance`, where people look for showing and hiding, though `Collapsed` also changes layout: `#[element]` reports it to the layout manager through `Layoutable::collapsed`.
 
 | Group | Property | Type | Default | Affects | Inherits |
 | --- | --- | --- | --- | --- | --- |
@@ -181,11 +181,11 @@ The three states are what web and mobile developers already know: CSS `visibilit
 | --- | --- | --- | --- | --- |
 | `Visible` | yes | yes | yes | normal |
 | `Hidden` | yes | no | no | not emitted |
-| `Collapsed` | no: desired size zero, children not measured | no | no | not emitted |
+| `Collapsed` | no: not laid out and no rectangle; its parent doesn't see it | no | no | not emitted |
 
 Whether an element and all its ancestors are visible is computed when needed, for example by a future `is_visible(tree, node)`, never set.
 
-`LayoutManager` (#41) needs one change for `Collapsed` to hold for a whole subtree. Its upward pass measures dirty nodes on their own, and its waiting pass arranges nodes from their cached rectangles, so a child laid out before its parent collapsed would still be reached through its cached results. The manager therefore forgets what it knew about the children a node's `measure` didn't measure, together with their subtrees; a forgotten node has no cached size or rectangle, so both passes skip it until its parent measures it again. `artic-layout` still never names `Visibility`: "didn't measure this child" is all it sees.
+`LayoutManager` leaves collapsed nodes out. `#[element]` implements `Layoutable::collapsed` from `Visibility`, and the manager drops such a node from its parent's `children()`, ignores direct `measure` and `arrange` calls on it, measures the parent again when the answer changes, and lays out nothing for a collapsed root. Children a measure didn't measure are still forgotten with their subtrees, which keeps a collapsed node's descendants out of the dirty and waiting passes. `artic-layout` still never names `Visibility`.
 
 ## 6. Registry: flattened groups
 

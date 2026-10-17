@@ -105,7 +105,7 @@ fn element_render_calls_hook() {
   assert_eq!(tile.rendered.get(), 1);
 }
 
-// A collapsed Tile takes no space, and its measure_override isn't called.
+// A collapsed Tile takes no part in layout: its measure_override isn't called and it keeps no size.
 #[test]
 fn collapsed_element_skips_measure_override() {
   let mut tree = UiTree::new();
@@ -123,7 +123,7 @@ fn collapsed_element_skips_measure_override() {
     false,
   );
 
-  assert_eq!(layout.desired(node), Some(Size::ZERO));
+  assert_eq!(layout.desired(node), None);
   assert_eq!(tree.get_as::<Tile>(node).unwrap().measured.get(), 0);
 }
 

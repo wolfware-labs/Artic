@@ -129,24 +129,26 @@ impl Object for Boxed {
 impl Layoutable for Boxed {
   fn measure(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size {
     self.measured.set(self.measured.get() + 1);
-    self
-      .layout
-      .measure(cx, self.appearance.visibility.get(), available, |cx, inner| {
-        let children: Vec<NodeId> = cx.children().collect();
-        for child in children {
-          cx.measure(child, inner);
-        }
-        self.content
-      })
+    self.layout.measure(cx, available, |cx, inner| {
+      let children: Vec<NodeId> = cx.children().collect();
+      for child in children {
+        cx.measure(child, inner);
+      }
+      self.content
+    })
   }
 
   fn arrange(&self, cx: &mut ArrangeCx<'_>, slot: Rect) {
-    self.layout.arrange(cx, self.appearance.visibility.get(), slot, |cx, size| {
+    self.layout.arrange(cx, slot, |cx, size| {
       let children: Vec<NodeId> = cx.children().collect();
       for child in children {
         cx.arrange(child, Rect::new(0.0, 0.0, size.width, size.height));
       }
     });
+  }
+
+  fn collapsed(&self) -> bool {
+    self.appearance.visibility.get() == Visibility::Collapsed
   }
 }
 
@@ -222,9 +224,8 @@ fn collapsed_takes_no_space() {
     .visibility
     .set(Visibility::Collapsed);
   layout.run(&mut tree, &Boxes, parent, available, 1.0, false);
-  assert_eq!(layout.desired(parent), Some(Size::ZERO));
-  assert_eq!(layout.rect(parent).map(|bounds| bounds.size()), Some(Size::ZERO));
-  assert_eq!(layout.rect(child), None);
+  assert_eq!((layout.desired(parent), layout.rect(parent)), (None, None));
+  assert_eq!((layout.desired(child), layout.rect(child)), (None, None));
 
   LayoutManager::invalidate_measure(&mut tree, child);
   layout.run(&mut tree, &Boxes, parent, available, 1.0, false);
