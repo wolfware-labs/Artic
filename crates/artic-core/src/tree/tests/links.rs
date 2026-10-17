@@ -1,6 +1,6 @@
 use crate::Object;
 use crate::property::{Affects, AnyProperty};
-use crate::tree::{NodeId, TreeKind, UiTree};
+use crate::tree::{LinkError, NodeId, TreeKind, UiTree};
 use pretty_assertions::assert_eq;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -336,4 +336,35 @@ fn visual_edits_mark_the_parent_for_layout() {
   clean(&mut tree, &ids);
   tree.detach(TreeKind::Visual, child);
   assert_eq!(tree.dirty(other), Affects::LAYOUT);
+}
+
+// `check_link` reports, without changing anything, each case `add_child` and `insert_child` panic on.
+#[test]
+fn check_link_reports_without_changing_anything() {
+  let mut tree = UiTree::new();
+  let [parent, child, stale] = nodes(&mut tree, 3)[..] else {
+    unreachable!()
+  };
+  tree.free(stale);
+  tree.add_child(TreeKind::Visual, parent, child);
+
+  assert_eq!(tree.check_link(TreeKind::Visual, parent, None, child), Ok(()));
+  assert_eq!(
+    tree.check_link(TreeKind::Visual, parent, None, stale),
+    Err(LinkError::NotInTree(stale))
+  );
+  assert_eq!(
+    tree.check_link(TreeKind::Visual, child, None, parent),
+    Err(LinkError::Cycle {
+      tree: TreeKind::Visual,
+      parent: child,
+      child: parent
+    })
+  );
+  assert_eq!(
+    tree.check_link(TreeKind::Logical, parent, Some(1), child),
+    Err(LinkError::IndexOutOfRange { index: 1, len: 0 })
+  );
+  assert_eq!(tree.check_link(TreeKind::Visual, parent, Some(0), child), Ok(()));
+  assert_eq!(children(&tree, TreeKind::Visual, parent), [child]);
 }

@@ -119,6 +119,42 @@ pub enum TreeKind {
   Visual,
 }
 
+/// Why a link between two nodes can't be made, or a node isn't where it was expected.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, thiserror::Error)]
+pub enum LinkError {
+  /// A node was freed, or never belonged to this tree.
+  #[error("node {0:?} is not in the arena")]
+  NotInTree(NodeId),
+  /// An insertion index past the end of the parent's children.
+  #[error("child index {index} is out of range for {len} children")]
+  IndexOutOfRange {
+    /// The index asked for.
+    index: usize,
+    /// How many children the parent has, not counting the node being moved.
+    len: usize,
+  },
+  /// The parent is the child or one of its descendants.
+  #[error("adding node {child:?} under {parent:?} would create a cycle in the {tree:?} tree")]
+  Cycle {
+    /// The tree the link is in.
+    tree: TreeKind,
+    /// The would-be parent.
+    parent: NodeId,
+    /// The would-be child.
+    child: NodeId,
+  },
+  /// A node expected under `parent` isn't its child.
+  #[error("node {child:?} is not a child of {parent:?} in the {tree:?} tree")]
+  NotAChild {
+    /// The tree that was checked.
+    tree: TreeKind,
+    /// The expected parent.
+    parent: NodeId,
+    /// The node.
+    child: NodeId,
+  },
+}
+
 impl UiTree {
   /// Creates an empty tree.
   ///
@@ -420,14 +456,35 @@ impl UiTree {
   /// the number of children.
   #[track_caller]
   pub fn insert_child(&mut self, tree: TreeKind, parent: NodeId, index: usize, child: NodeId) {
-    self.check_attach(tree, parent, child);
-    let mut len = self.tree(tree).children(parent).len();
-    if self.tree(tree).parent(child) == Some(parent) {
-      len -= 1;
+    if let Err(error) = self.check_link(tree, parent, Some(index), child) {
+      panic!("{error}");
     }
-    assert!(index <= len, "child index {index} is out of range for {len} children");
     self.unlink(tree, child);
     self.attach(tree, parent, index, child);
+  }
+
+  /// Whether linking `child` under `parent` in `tree` would succeed, at `index` or at the end: both
+  /// nodes in the tree, `index` in range once `child` has left its current parent, and no cycle.
+  /// Changes nothing.
+  pub fn check_link(&self, tree: TreeKind, parent: NodeId, index: Option<usize>, child: NodeId) -> Result<(), LinkError> {
+    for node in [parent, child] {
+      if !self.contains(node) {
+        return Err(LinkError::NotInTree(node));
+      }
+    }
+    if self.tree(tree).would_cycle(parent, child) {
+      return Err(LinkError::Cycle { tree, parent, child });
+    }
+    if let Some(index) = index {
+      let mut len = self.tree(tree).children(parent).len();
+      if self.tree(tree).parent(child) == Some(parent) {
+        len -= 1;
+      }
+      if index > len {
+        return Err(LinkError::IndexOutOfRange { index, len });
+      }
+    }
+    Ok(())
   }
 
   /// Removes `node` from its parent's children in `tree` and returns that parent.
@@ -673,13 +730,9 @@ impl UiTree {
 
   #[track_caller]
   fn check_attach(&self, tree: TreeKind, parent: NodeId, child: NodeId) {
-    self.check(parent);
-    self.check(child);
-    let is_cycle = self.tree(tree).would_cycle(parent, child);
-    assert!(
-      !is_cycle,
-      "adding node {child:?} under {parent:?} would create a cycle in the {tree:?} tree"
-    );
+    if let Err(error) = self.check_link(tree, parent, None, child) {
+      panic!("{error}");
+    }
   }
 
   fn attach(&mut self, tree: TreeKind, parent: NodeId, index: usize, child: NodeId) {
