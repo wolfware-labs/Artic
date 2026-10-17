@@ -19,6 +19,8 @@ artic-macros.workspace = true
 
 [dev-dependencies]
 accesskit.workspace = true
+artic-test.workspace = true
+proptest.workspace = true
 pretty_assertions.workspace = true
 
 [lints]

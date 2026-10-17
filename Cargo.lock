@@ -128,7 +128,9 @@ dependencies = [
  "artic-registry",
  "artic-render",
  "artic-style",
+ "artic-test",
  "pretty_assertions",
+ "proptest",
 ]
 
 [[package]]
