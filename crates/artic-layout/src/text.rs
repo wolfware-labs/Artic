@@ -4,8 +4,10 @@
 //! engine shaped from them.
 
 mod font;
+mod paragraph;
 
 pub use font::{
   FamilyName, FamilyProblem, FontFamily, FontStyle, FontWeight, GenericFamily, ParseFontFamilyError, ParseFontWeightError,
   WeightProblem,
 };
+pub use paragraph::{FontData, Glyph, GlyphRun, Line, Paragraph, Synthesis};
