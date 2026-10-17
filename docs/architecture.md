@@ -8,7 +8,7 @@ A crate depends only on crates in lower layers. Crates in the same layer never d
 
 | Layer | Crates | Role |
 | --- | --- | --- |
-| 0 | `artic-core`, `artic-macros`, `artic-xaml` | Foundations with no artic dependencies: the reactive core and tree, the proc macros, and the XAML parser |
+| 0 | `artic-core`, `artic-macros`, `artic-xaml`, `artic-test-fonts` | Foundations with no artic dependencies: the reactive core and tree, the proc macros, the XAML parser, and the test font |
 | 1 | `artic-registry`, `artic-layout`, `artic-i18n` | Type metadata, geometry, layout and text values, localization |
 | 2 | `artic-render`, `artic-text`, `artic-style`, `artic-xaml-compiler`, `artic-xaml-runtime` | The `Renderer` seam and scene; text shaping and fonts; styling; the two XAML back ends |
 | 3 | `artic-element`, `artic-lsp` | The `Element` trait, its contexts and the property groups every control has; the language server |
@@ -43,6 +43,7 @@ flowchart TD
   test[artic-test] --> platform
   test --> style
   test --> text
+  test --> fonts[artic-test-fonts]
 
   winit[artic-winit] --> platform
   vello[artic-vello] --> render
@@ -72,6 +73,7 @@ The graph omits edges that a lower edge already implies (for example `artic-cont
 | `artic-core` | none |
 | `artic-macros` | none (proc-macro; generated code names `artic::__private`, `artic_registry::__private` or, for `XamlEnum`, `artic_core::__private`, whichever the calling crate depends on) |
 | `artic-xaml` | none |
+| `artic-test-fonts` | none (data only: the test font's bytes) |
 | `artic-registry` | `artic-core` |
 | `artic-layout` | `artic-core`, `artic-macros` |
 | `artic-i18n` | `artic-core` |
@@ -86,7 +88,7 @@ The graph omits edges that a lower edge already implies (for example `artic-cont
 | `artic-cli` | `artic-xaml`, `artic-xaml-compiler`, `artic-lsp` (shared source index for `check` and `lsp`) |
 | `artic-lsp` | `artic-xaml`, `artic-xaml-compiler` |
 | `artic-theme` | `artic-controls`, `artic-style` |
-| `artic-test` | `artic-core`, `artic-registry`, `artic-layout`, `artic-render`, `artic-text`, `artic-element`, `artic-style`, `artic-platform` |
+| `artic-test` | `artic-core`, `artic-registry`, `artic-layout`, `artic-render`, `artic-text`, `artic-test-fonts`, `artic-element`, `artic-style`, `artic-platform` |
 | `artic-winit` | `artic-core`, `artic-render`, `artic-platform` |
 | `artic-vello` | `artic-layout`, `artic-render` |
 | `artic` | every app-facing crate; `artic-xaml-runtime` only with the `hot-reload` or `runtime-xaml` feature |
@@ -101,6 +103,7 @@ The graph omits edges that a lower edge already implies (for example `artic-cont
 - OS services that controls use (clipboard, IME requests, cursor) are traits in `artic-core`. Hosts provide them as capabilities on `HostContext` ([host design](design/host.md)), the facade registers them, and controls reach them through their context or app services, never through the `Host`.
 - Code that needs concrete controls but serves the runtime or tooling (hot-reload overlay and state restore, debug overlay) lives in the facade.
 - Dev-dependencies may point from any crate to `artic-test`, as long as `artic-test` does not depend back on that crate. Control, theme and language-server tests use `TestHost` this way.
+- Test data that a crate below `artic-test` needs too, such as the test font, lives in a data-only crate with no dependencies (`artic-test-fonts`), not in `artic-test`, so the crate's tests can use it without a cycle.
 - The crates under `crates/artic-registry/fixtures/` are test-only (`publish = false`) and sit outside the layers. Two register one XAML type each; `artic-registry-linking` holds the tests that check which of them reach the registry.
 - `artic-macros`' own tests dev-depend on crates that use the macros, such as `artic-core`, `artic-registry` and `artic-element`. Cargo allows these dev-only loops: `artic-macros` itself depends on no artic crate, so its build has no cycle.
 - `artic-xaml` does not depend on the registry. Type references stay unresolved in the infoset, so parser tests need no registry.

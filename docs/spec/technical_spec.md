@@ -50,9 +50,9 @@ The framework is a Cargo workspace of layered crates; each layer depends only on
 
 ```mermaid
 flowchart BT
-  L0["Layer 0: artic-core, artic-macros, artic-xaml"]
+  L0["Layer 0: artic-core, artic-macros, artic-xaml, artic-test-fonts"]
   L1["Layer 1: artic-registry, artic-layout, artic-i18n"]
-  L2["Layer 2: artic-render, artic-style, artic-xaml-compiler, artic-xaml-runtime"]
+  L2["Layer 2: artic-render, artic-text, artic-style, artic-xaml-compiler, artic-xaml-runtime"]
   L3["Layer 3: artic-element, artic-lsp"]
   L4["Layer 4: artic-controls, artic-platform, artic-cli"]
   L5["Layer 5: artic-theme, artic-test, artic-winit, artic-vello"]
