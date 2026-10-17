@@ -393,7 +393,7 @@ pub trait Element: Object + Layoutable {          // Layoutable (§7 Layout prot
     fn hit_test(&self, cx: &HitTestCx, point: Point) -> HitTestResult { cx.bounds_test(point) }
     fn on_event(&mut self, cx: &mut EventCx, event: &InputEvent) -> Handled { Handled::No }
     fn accessibility(&self, cx: &AccessCx) -> accesskit::Node;
-    fn layers(&self, size: Size) -> Layers { Layers::default() }   // transform, clip, opacity, visibility, z-index
+    fn layers(&self, size: Size) -> Layers { Layers::default() }   // transform and opacity around the node and its children, clip around the children, visibility, z-index
 }
 pub trait ElementImpl {                           // what a control writes; #[element] calls it
     fn measure_override(&self, cx: &mut MeasureCx, available: Size) -> Size { Size::ZERO }
@@ -401,7 +401,7 @@ pub trait ElementImpl {                           // what a control writes; #[el
     fn render(&self, cx: &mut RenderCx, scene: &mut SceneBuilder) {}
     fn on_event(&mut self, cx: &mut EventCx, event: &InputEvent) -> Handled { Handled::No }   // not called while disabled
     fn accessibility(&self, cx: &AccessCx, node: &mut accesskit::Node) {}   // adds to the default node
-    fn clip(&self, size: Size) -> Option<Shape> { None }                   // clips the element and its descendants
+    fn clip(&self, size: Size) -> Option<Shape> { None }                   // clips the element's descendants, not its own drawing
     fn on_apply_template(&mut self, cx: &mut TemplateCx) {}   // per-control hooks live here, defaulted; added with TemplateCx in #84
 }
 pub trait HasState<S> { fn state(&self) -> &S; fn state_mut(&mut self) -> &mut S; }

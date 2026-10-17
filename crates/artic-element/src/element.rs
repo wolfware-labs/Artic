@@ -79,8 +79,8 @@ pub trait ElementImpl {
     let _ = (cx, node);
   }
 
-  /// Clips the element and its descendants, in its own coordinates, for its arranged `size`. By
-  /// default, no clip.
+  /// Clips the element's descendants, in its own coordinates, for its arranged `size`; the
+  /// element's own drawing isn't clipped. By default, no clip.
   fn clip(&self, size: Size) -> Option<Shape> {
     let _ = size;
     None

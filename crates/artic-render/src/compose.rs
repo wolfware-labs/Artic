@@ -5,14 +5,16 @@ use artic_layout::geometry::Transform;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// How composition treats a node: its transform, clip and opacity, which wrap it and its visual
-/// descendants, whether they're drawn at all, and its drawing order among its siblings.
+/// How composition treats a node: its transform and opacity, which wrap it and its visual
+/// descendants, its clip, which wraps only the descendants, whether they're drawn at all, and its
+/// drawing order among its siblings.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Layers {
   /// Maps the node's coordinates to its parent's, if they differ. An element's own layers hold
   /// only its render transform; the frame pipeline adds its layout offset.
   pub transform: Option<Transform>,
-  /// Keeps the node and its descendants inside this shape, in the node's coordinates.
+  /// Keeps the node's descendants inside this shape, in the node's coordinates, as CSS's
+  /// `overflow: hidden` does; the node's own drawing isn't clipped.
   pub clip: Option<Shape>,
   /// Blends the node and its descendants as one group, from 0 to 1.
   pub opacity: f32,
@@ -62,9 +64,9 @@ pub struct Compositor {
 impl Compositor {
   /// Builds the frame for `root`'s visual subtree.
   ///
-  /// Each node is wrapped in its layers (transform, then clip, then opacity, each only if set),
-  /// which also wrap its visual descendants; it draws before them, and they draw in `z_index`
-  /// order, ties in tree order. A node that isn't visible is skipped with its whole subtree, which
+  /// Each node is wrapped in its transform and opacity layers, each only if set, which also wrap
+  /// its visual descendants. It draws before them, and they draw inside its clip layer, when it
+  /// has one and at least one of them is drawn, in `z_index` order, ties in tree order. A node that isn't visible is skipped with its whole subtree, which
   /// keeps its fragments and its render flags, so it comes back without recording what didn't
   /// change. A node is recorded again only if it's render-dirty, [stale](Nodes::stale) or has no
   /// fragment yet. Its render flag is cleared before it's recorded, so a write made while recording
@@ -108,7 +110,6 @@ impl<N: Nodes> Walk<'_, N> {
     }
     let set = [
       layers.transform.map(Layer::Transform),
-      layers.clip.map(Layer::Clip),
       (layers.opacity < 1.0).then_some(Layer::Opacity(layers.opacity)),
     ];
     let mut pushed = 0;
@@ -131,6 +132,12 @@ impl<N: Nodes> Walk<'_, N> {
       .children(TreeKind::Visual, node)
       .map(|child| (child, self.nodes.layers(tree, child)))
       .collect();
+    if let Some(clip) = layers.clip
+      && children.iter().any(|(_, child)| child.visible)
+    {
+      self.items.push(SceneItem::Push(Layer::Clip(clip)));
+      pushed += 1;
+    }
     children.sort_by_key(|(_, layers)| layers.z_index);
     for (child, layers) in children {
       self.visit(tree, child, layers);
@@ -205,6 +212,19 @@ mod tests {
     tree.add_child(TreeKind::Visual, root, b);
     tree.add_child(TreeKind::Visual, a, c);
     [root, a, b, c]
+  }
+
+  /// What `scene` pushes, pops and draws, in order, with fragments named by `names`.
+  fn shape(scene: &Scene, names: &HashMap<NodeId, &str>) -> Vec<String> {
+    scene
+      .items()
+      .iter()
+      .map(|item| match item {
+        SceneItem::Push(layer) => format!("push {layer:?}"),
+        SceneItem::Pop => "pop".to_owned(),
+        SceneItem::Fragment(fragment) => format!("fragment {}", names[&fragment.node()]),
+      })
+      .collect()
   }
 
   /// The nodes whose fragments `scene` draws, in order.
@@ -380,9 +400,9 @@ mod tests {
     assert!(!tree.dirty(b).contains(Affects::RENDER));
   }
 
-  // A node's transform, clip and opacity are pushed in that order around it and its descendants.
+  // A node's clip fences its children, not its own fragment; its transform and opacity cover both.
   #[test]
-  fn composition_applies_transform_clip_opacity() {
+  fn clip_applies_to_children_not_the_node() {
     let mut tree = UiTree::new();
     let [root, a, b, c] = sample(&mut tree);
     let names = HashMap::from([(root, "root"), (a, "a"), (b, "b"), (c, "c")]);
@@ -399,24 +419,15 @@ mod tests {
 
     let scene = Compositor::default().compose(&mut tree, root, &mut nodes);
 
-    let shape: Vec<String> = scene
-      .items()
-      .iter()
-      .map(|item| match item {
-        SceneItem::Push(layer) => format!("push {layer:?}"),
-        SceneItem::Pop => "pop".to_owned(),
-        SceneItem::Fragment(fragment) => format!("fragment {}", names[&fragment.node()]),
-      })
-      .collect();
     let push = |layer: Layer| format!("push {layer:?}");
     assert_eq!(
-      shape,
+      shape(&scene, &names),
       [
         "fragment root".to_owned(),
         push(Layer::Transform(transform)),
-        push(Layer::Clip(clip)),
         push(Layer::Opacity(0.5)),
         "fragment a".to_owned(),
+        push(Layer::Clip(clip)),
         "fragment c".to_owned(),
         "pop".to_owned(),
         "pop".to_owned(),
@@ -424,6 +435,58 @@ mod tests {
         "fragment b".to_owned(),
       ]
     );
+  }
+
+  // A clip on a node without children pushes nothing.
+  #[test]
+  fn no_clip_without_children() {
+    let mut tree = UiTree::new();
+    let [root, a, b, c] = sample(&mut tree);
+    let names = HashMap::from([(root, "root"), (a, "a"), (b, "b"), (c, "c")]);
+    let mut nodes = Table::default();
+    let clip = Some(Shape::Rect(Rect::new(0.0, 0.0, 4.0, 4.0)));
+    nodes.layers.insert(
+      b,
+      Layers {
+        clip,
+        ..Layers::default()
+      },
+    );
+
+    let scene = Compositor::default().compose(&mut tree, root, &mut nodes);
+
+    assert_eq!(
+      shape(&scene, &names),
+      ["fragment root", "fragment a", "fragment c", "fragment b"]
+    );
+  }
+
+  // A clip whose children are all hidden pushes nothing either.
+  #[test]
+  fn no_clip_when_no_child_is_drawn() {
+    let mut tree = UiTree::new();
+    let [root, a, b, c] = sample(&mut tree);
+    let names = HashMap::from([(root, "root"), (a, "a"), (b, "b"), (c, "c")]);
+    let mut nodes = Table::default();
+    let clip = Some(Shape::Rect(Rect::new(0.0, 0.0, 4.0, 4.0)));
+    nodes.layers.insert(
+      a,
+      Layers {
+        clip,
+        ..Layers::default()
+      },
+    );
+    nodes.layers.insert(
+      c,
+      Layers {
+        visible: false,
+        ..Layers::default()
+      },
+    );
+
+    let scene = Compositor::default().compose(&mut tree, root, &mut nodes);
+
+    assert_eq!(shape(&scene, &names), ["fragment root", "fragment a", "fragment b"]);
   }
 
   // A node that leaves the subtree loses its fragment, so freed nodes don't leak.

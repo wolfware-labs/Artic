@@ -133,7 +133,7 @@ fn renders_scene_into_pixels() {
   });
 }
 
-// A child draws over its parent, moved by the parent's transform and cut by its own clip.
+// A child draws over its parent, moved by the parent's transform and cut by the parent's clip.
 #[test]
 fn transform_and_clip_place_the_child() {
   with_renderer(|renderer| {
@@ -148,12 +148,6 @@ fn transform_and_clip_place_the_child() {
       panel,
       Layers {
         transform: Some(Transform::translate(4.0, 4.0)),
-        ..Layers::default()
-      },
-    );
-    nodes.layers.insert(
-      child,
-      Layers {
         clip: Some(Rect::new(0.0, 0.0, 2.0, 4.0).into()),
         ..Layers::default()
       },

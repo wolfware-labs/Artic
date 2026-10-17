@@ -65,7 +65,7 @@ pub enum Layer { Transform(Transform), Clip(Shape), Opacity(f32) }
 
 `Shape` converts from each of its three types, and `Shape::bounds()` is the box a brush's relative points resolve against. A stroke's brush resolves against the same bounds, without the stroke width, as in WPF.
 
-The `Clip` enum is gone: a clip is a `Shape`, so rectangles, rounded rectangles and paths all clip. `ElementImpl::clip` returns `Option<Shape>`, and the compositor's `Layers.clip` holds one. `Layer` and `Layers` stop being `Copy`, since a shape can hold a path; cloning one is still cheap.
+The `Clip` enum is gone: a clip is a `Shape`, so rectangles, rounded rectangles and paths all clip. `ElementImpl::clip` returns `Option<Shape>`, and the compositor's `Layers.clip` holds one; it clips the node's descendants, not the node's own drawing ([border design](border.md)). `Layer` and `Layers` stop being `Copy`, since a shape can hold a path; cloning one is still cheap.
 
 ### Strokes
 
@@ -78,7 +78,7 @@ pub enum LineCap { Flat, Round, Square }
 Stroke::new(2.0).with_join(LineJoin::Round).with_cap(LineCap::Round)
 ```
 
-The defaults are WPF's and Avalonia's: width `1`, `Miter`, `Flat`, miter limit `10`. The names are the XAML ones (`Flat`, not SVG's `Butt`), since markup will set them once shapes become elements. A stroke is centered on the outline; `Border` insets its rectangle by half the thickness to keep its stroke inside.
+The defaults are WPF's and Avalonia's: width `1`, `Miter`, `Flat`, miter limit `10`. The names are the XAML ones (`Flat`, not SVG's `Butt`), since markup will set them once shapes become elements. A stroke is centered on the outline. `Border` draws its outline as a filled even-odd ring instead, so its sides can differ in width ([border design](border.md)).
 
 `Stroke` is `#[non_exhaustive]` and built with `new` and `with_*` methods, so code outside `artic-render` can't write it as a literal, and adding fields (dashes, below) breaks no caller.
 
@@ -91,7 +91,7 @@ pub struct BoxShadow { pub offset: Point, pub blur: f32, pub spread: f32, pub co
 BoxShadow::new(Point::new(0.0, 2.0), 8.0, Color::rgba(0, 0, 0, 64)).with_spread(2.0)
 ```
 
-`new` takes the offset, blur and color, with no spread; like `Stroke`, it is `#[non_exhaustive]` and grows with `with_*` methods. A box shadow is CSS's outer `box-shadow`: the rounded rectangle, grown by `spread`, moved by `offset`, blurred by `blur`, in `color`. As in CSS, it shows only outside the rounded rectangle that casts it, so a translucent background doesn't darken. It is drawn behind what casts it, so `Border` records it before its background. This is the render-side value; the XAML value that parses from text belongs to #45, which converts into it. The name leaves room for a `DropShadow` effect on whole elements later (section 5).
+`new` takes the offset, blur and color, with no spread; like `Stroke`, it is `#[non_exhaustive]` and grows with `with_*` methods. A box shadow is CSS's outer `box-shadow`: the rounded rectangle, grown by `spread`, moved by `offset`, blurred by `blur`, in `color`. As in CSS, it shows only outside the rounded rectangle that casts it, so a translucent background doesn't darken. It is drawn behind what casts it, so `Border` records it before its background. It also parses from text in CSS's form, `offset-x offset-y [blur [spread]] color` ([border design](border.md)). The name leaves room for a `DropShadow` effect on whole elements later (section 5).
 
 ## 3. The builder
 
