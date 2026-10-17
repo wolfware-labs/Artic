@@ -66,9 +66,9 @@ impl Compositor {
   ///
   /// Each node is wrapped in its transform and opacity layers, each only if set, which also wrap
   /// its visual descendants. It draws before them, and they draw inside its clip layer, when it
-  /// has one and at least one of them is drawn, in `z_index` order, ties in tree order. A node that isn't visible is skipped with its whole subtree, which
-  /// keeps its fragments and its render flags, so it comes back without recording what didn't
-  /// change. A node is recorded again only if it's render-dirty, [stale](Nodes::stale) or has no
+  /// has one and at least one of them is drawn, in `z_index` order, ties in tree order. A node
+  /// that isn't visible is skipped with its whole subtree, which keeps its fragments and its
+  /// render flags, so it comes back without recording what didn't change. A node is recorded again only if it's render-dirty, [stale](Nodes::stale) or has no
   /// fragment yet. Its render flag is cleared before it's recorded, so a write made while recording
   /// keeps it dirty for the next frame. Fragments of nodes no longer in the subtree are dropped.
   pub fn compose(&mut self, tree: &mut UiTree, root: NodeId, nodes: &mut impl Nodes) -> Scene {

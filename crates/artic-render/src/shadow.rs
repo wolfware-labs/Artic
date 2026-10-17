@@ -141,7 +141,7 @@ pub enum ShadowProblem {
   #[error("the blur '{0}' is negative")]
   NegativeBlur(String),
   /// The color doesn't parse.
-  #[error("its color is invalid: {}", .0.problem)]
+  #[error("its color '{}' is invalid: {}", .0.text, .0.problem)]
   Color(ParseColorError),
 }
 
@@ -248,6 +248,14 @@ mod tests {
     assert!(matches!(parse("4 4 #4000000"), Err(ShadowProblem::Color(_))));
     let error = "4 4".parse::<BoxShadow>().expect_err("no color");
     assert!(error.to_string().contains("'4 4'"), "{error}");
+  }
+
+  // A bad color is reported as the color's problem, quoting the color token.
+  #[test]
+  fn bad_color_message_quotes_the_color() {
+    let error = "4 4 #4000000".parse::<BoxShadow>().expect_err("bad color");
+
+    assert!(error.to_string().contains("its color '#4000000'"), "{error}");
   }
 
   // `inset` is refused by name wherever it is, before the numbers are read.
