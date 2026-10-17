@@ -19,8 +19,25 @@ fn check_both(tree: &UiTree, parent: NodeId, index: Option<usize>, child: NodeId
   TREES.iter().try_for_each(|kind| tree.check_link(*kind, parent, index, child))
 }
 
-fn current(tree: &UiTree, parent: NodeId) -> Option<NodeId> {
-  TREES.iter().find_map(|kind| tree.children(*kind, parent).next())
+fn current(tree: &UiTree, parent: NodeId) -> Result<Option<NodeId>, ValueError> {
+  let [logical, visual] = TREES.map(|kind| tree.children(kind, parent).collect::<Vec<NodeId>>());
+  let missing = |kind: TreeKind, have: &[NodeId], other: &[NodeId]| {
+    have.iter().find(|child| !other.contains(child)).map(|child| {
+      ValueError::InvalidChild(LinkError::NotAChild {
+        tree: kind,
+        parent,
+        child: *child,
+      })
+    })
+  };
+  if let Some(error) = missing(TreeKind::Visual, &logical, &visual).or_else(|| missing(TreeKind::Logical, &visual, &logical)) {
+    return Err(error);
+  }
+  match logical.as_slice() {
+    [] => Ok(None),
+    [child] => Ok(Some(*child)),
+    _ => Err(ValueError::OneChildOnly),
+  }
 }
 
 fn check_is_child(tree: &UiTree, parent: NodeId, child: NodeId) -> Result<(), LinkError> {
@@ -101,18 +118,18 @@ impl Child {
     tree.children(TreeKind::Visual, parent).next()
   }
 
-  /// Replaces the child: checks that the current child, if any, is `parent`'s child in both trees
-  /// and that `child` can be linked in both, then detaches the old child and links `child`.
+  /// Replaces the child: checks that both trees hold the same single child, or none, and that
+  /// `child` can be linked in both, then detaches the old child and links `child`.
   ///
   /// # Panics
   ///
   /// When a check fails; nothing has changed then.
   pub fn set(tree: &mut UiTree, parent: NodeId, child: Option<NodeId>) {
-    let old = current(tree, parent);
-    let checked = old
-      .map_or(Ok(()), |old| check_is_child(tree, parent, old))
-      .and_then(|()| child.map_or(Ok(()), |child| check_both(tree, parent, None, child)));
-    if let Err(error) = checked {
+    let old = match current(tree, parent) {
+      Ok(old) => old,
+      Err(error) => panic!("{error}"),
+    };
+    if let Some(Err(error)) = child.map(|child| check_both(tree, parent, None, child)) {
       panic!("{error}");
     }
     if let Some(old) = old {
@@ -136,7 +153,7 @@ impl XamlCollection for Child {
     field: for<'a> fn(&'a mut UiTree, NodeId) -> Option<&'a mut Self>,
   ) -> Result<(), ValueError> {
     field(tree, owner).ok_or(ValueError::WrongNode)?;
-    if current(tree, owner).is_some() {
+    if current(tree, owner)?.is_some() {
       return Err(ValueError::OneChildOnly);
     }
     check_both(tree, owner, None, child).map_err(ValueError::InvalidChild)?;

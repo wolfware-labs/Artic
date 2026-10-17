@@ -144,3 +144,18 @@ fn second_child_is_refused() {
   );
   assert_eq!(Child::get(&tree, border), Some(first));
 }
+
+// When the two trees don't hold the same single child, `set` refuses and changes nothing.
+#[test]
+fn child_set_refuses_trees_that_disagree() {
+  let mut tree = UiTree::new();
+  let (border, old, extra, new) = (node(&mut tree), node(&mut tree), node(&mut tree), node(&mut tree));
+  Child::set(&mut tree, border, Some(old));
+  tree.insert_child(TreeKind::Visual, border, 0, extra);
+
+  let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| Child::set(&mut tree, border, Some(new))));
+
+  assert!(refused.is_err());
+  assert_eq!(both(&tree, border), (vec![old], vec![extra, old]));
+  assert_eq!(tree.parent(TreeKind::Logical, new), None);
+}
