@@ -1,5 +1,6 @@
 //! Font families, weights and styles, and parsing them from XAML text.
 
+use artic_macros::XamlEnum;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -206,6 +207,148 @@ fn parse_unquoted(text: &str) -> Result<(FamilyName, Option<&str>), FamilyProble
   Ok((generic.map_or_else(|| FamilyName::named(&name), FamilyName::Generic), rest))
 }
 
+/// How heavy a font's strokes are, from 1 to 1000, as in CSS: 400 is normal and 700 bold.
+///
+/// It parses from a whole number or from one of WPF's `FontWeights` names, ignoring case: `Thin`
+/// 100, `ExtraLight` and `UltraLight` 200, `Light` 300, `Normal` and `Regular` 400, `Medium` 500,
+/// `SemiBold` and `DemiBold` 600, `Bold` 700, `ExtraBold` and `UltraBold` 800, `Black` and `Heavy`
+/// 900, `ExtraBlack` and `UltraBlack` 950. A family without a face of the weight asked for uses
+/// its nearest face.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FontWeight(u16);
+
+impl FontWeight {
+  /// 100.
+  pub const THIN: FontWeight = FontWeight(100);
+  /// 200.
+  pub const EXTRA_LIGHT: FontWeight = FontWeight(200);
+  /// 300.
+  pub const LIGHT: FontWeight = FontWeight(300);
+  /// 400, the default.
+  pub const NORMAL: FontWeight = FontWeight(400);
+  /// 500.
+  pub const MEDIUM: FontWeight = FontWeight(500);
+  /// 600.
+  pub const SEMI_BOLD: FontWeight = FontWeight(600);
+  /// 700.
+  pub const BOLD: FontWeight = FontWeight(700);
+  /// 800.
+  pub const EXTRA_BOLD: FontWeight = FontWeight(800);
+  /// 900.
+  pub const BLACK: FontWeight = FontWeight(900);
+  /// 950.
+  pub const EXTRA_BLACK: FontWeight = FontWeight(950);
+
+  /// The weight `value`, or `None` outside 1 to 1000.
+  #[must_use]
+  pub const fn new(value: u16) -> Option<FontWeight> {
+    if value >= 1 && value <= 1000 {
+      Some(FontWeight(value))
+    } else {
+      None
+    }
+  }
+
+  /// The weight as a number from 1 to 1000.
+  #[must_use]
+  pub const fn value(self) -> u16 {
+    self.0
+  }
+}
+
+impl Default for FontWeight {
+  /// [`FontWeight::NORMAL`].
+  fn default() -> FontWeight {
+    FontWeight::NORMAL
+  }
+}
+
+const WEIGHT_NAMES: [(&str, FontWeight); 16] = [
+  ("Thin", FontWeight::THIN),
+  ("ExtraLight", FontWeight::EXTRA_LIGHT),
+  ("UltraLight", FontWeight::EXTRA_LIGHT),
+  ("Light", FontWeight::LIGHT),
+  ("Normal", FontWeight::NORMAL),
+  ("Regular", FontWeight::NORMAL),
+  ("Medium", FontWeight::MEDIUM),
+  ("SemiBold", FontWeight::SEMI_BOLD),
+  ("DemiBold", FontWeight::SEMI_BOLD),
+  ("Bold", FontWeight::BOLD),
+  ("ExtraBold", FontWeight::EXTRA_BOLD),
+  ("UltraBold", FontWeight::EXTRA_BOLD),
+  ("Black", FontWeight::BLACK),
+  ("Heavy", FontWeight::BLACK),
+  ("ExtraBlack", FontWeight::EXTRA_BLACK),
+  ("UltraBlack", FontWeight::EXTRA_BLACK),
+];
+
+/// The error returned when text isn't a valid font weight.
+///
+/// The message repeats the text, says what is wrong, and shows the accepted forms.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("invalid FontWeight '{text}': {problem}; expected a number from 1 to 1000 or a name like 'Bold'")]
+pub struct ParseFontWeightError {
+  /// The text that failed to parse.
+  pub text: String,
+  /// What is wrong with it.
+  pub problem: WeightProblem,
+}
+
+/// What is wrong with font weight text.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum WeightProblem {
+  /// The text is neither a number nor one of the names [`FontWeight`] lists.
+  #[error("it isn't a number or a weight's name")]
+  UnknownName,
+  /// The text is a number, but not a whole one from 1 to 1000.
+  #[error("it isn't a whole number from 1 to 1000")]
+  OutOfRange,
+}
+
+impl FromStr for FontWeight {
+  type Err = ParseFontWeightError;
+
+  /// Parses a whole number from 1 to 1000 or a name [`FontWeight`] lists, ignoring case and the
+  /// whitespace around it.
+  fn from_str(text: &str) -> Result<FontWeight, ParseFontWeightError> {
+    let trimmed = text.trim();
+    let weight = match trimmed.parse::<f32>() {
+      Ok(number) => whole_weight(number).ok_or(WeightProblem::OutOfRange),
+      Err(_) => WEIGHT_NAMES
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case(trimmed))
+        .map(|&(_, weight)| weight)
+        .ok_or(WeightProblem::UnknownName),
+    };
+    weight.map_err(|problem| ParseFontWeightError {
+      text: text.to_owned(),
+      problem,
+    })
+  }
+}
+
+fn whole_weight(number: f32) -> Option<FontWeight> {
+  if number.fract() == 0.0 && (1.0..=1000.0).contains(&number) {
+    FontWeight::new(number as u16)
+  } else {
+    None
+  }
+}
+
+/// Whether a font's glyphs are upright or slanted.
+///
+/// A family without an italic face slants its upright one.
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, XamlEnum)]
+pub enum FontStyle {
+  /// Upright.
+  #[default]
+  Normal,
+  /// The family's italic face: a slanted, often more cursive design.
+  Italic,
+  /// The family's upright face, slanted.
+  Oblique,
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -223,6 +366,92 @@ mod tests {
 
   fn named(name: &str) -> FamilyName {
     FamilyName::named(name)
+  }
+
+  fn weight(text: &str) -> Result<u16, WeightProblem> {
+    text
+      .parse::<FontWeight>()
+      .map(FontWeight::value)
+      .map_err(|error| error.problem)
+  }
+
+  // WPF's names and their aliases parse ignoring case, and whole numbers parse as themselves.
+  #[test]
+  fn font_weight_names_and_numbers() {
+    let cases = [
+      ("Thin", 100),
+      ("extralight", 200),
+      ("UltraLight", 200),
+      ("Light", 300),
+      ("Normal", 400),
+      ("regular", 400),
+      ("Medium", 500),
+      ("SemiBold", 600),
+      ("DEMIBOLD", 600),
+      ("Bold", 700),
+      ("ExtraBold", 800),
+      ("UltraBold", 800),
+      ("Black", 900),
+      ("Heavy", 900),
+      ("ExtraBlack", 950),
+      ("UltraBlack", 950),
+      ("1", 1),
+      (" 450 ", 450),
+      ("1000", 1000),
+      ("+700", 700),
+      ("700.0", 700),
+    ];
+    for (text, value) in cases {
+      assert_eq!(weight(text), Ok(value), "{text}");
+    }
+  }
+
+  // The constants match WPF's weights, the default is normal, and `new` keeps to 1 to 1000.
+  #[test]
+  fn font_weight_constants_and_range() {
+    assert_eq!(FontWeight::default(), FontWeight::NORMAL);
+    assert_eq!(FontWeight::BOLD.value(), 700);
+    assert_eq!(FontWeight::EXTRA_BLACK.value(), 950);
+    assert!(FontWeight::BOLD > FontWeight::NORMAL);
+    assert_eq!(FontWeight::new(1).map(FontWeight::value), Some(1));
+    assert_eq!(FontWeight::new(0), None);
+    assert_eq!(FontWeight::new(1001), None);
+  }
+
+  // Text that is neither a number nor a weight's name is `UnknownName`, and the message quotes it.
+  #[test]
+  fn unknown_weight_name() {
+    for text in ["Bolder", "", "semi bold"] {
+      assert_eq!(weight(text), Err(WeightProblem::UnknownName), "{text}");
+    }
+    assert_eq!(
+      "Bolder".parse::<FontWeight>().unwrap_err().to_string(),
+      "invalid FontWeight 'Bolder': it isn't a number or a weight's name; expected a number from 1 to 1000 or a name like 'Bold'"
+    );
+  }
+
+  // A number outside 1 to 1000, or one that isn't whole, is `OutOfRange`, and the message quotes it.
+  #[test]
+  fn weight_out_of_range() {
+    for text in ["0", "1001", "-1", "700.5", "NaN", "inf"] {
+      assert_eq!(weight(text), Err(WeightProblem::OutOfRange), "{text}");
+    }
+    assert_eq!(
+      "1001".parse::<FontWeight>().unwrap_err().to_string(),
+      "invalid FontWeight '1001': it isn't a whole number from 1 to 1000; expected a number from 1 to 1000 or a name like 'Bold'"
+    );
+  }
+
+  // `FontStyle` parses through `XamlEnum` ignoring case, and is normal by default.
+  #[test]
+  fn font_style_parses_ignoring_case() {
+    assert_eq!("italic".parse::<FontStyle>(), Ok(FontStyle::Italic));
+    assert_eq!("OBLIQUE".parse::<FontStyle>(), Ok(FontStyle::Oblique));
+    assert_eq!(FontStyle::default(), FontStyle::Normal);
+    assert_eq!(
+      "slanted".parse::<FontStyle>().unwrap_err().expected,
+      ["Normal", "Italic", "Oblique"]
+    );
   }
 
   // Quoted and unquoted names in one list, with a generic keyword recognized when unquoted.

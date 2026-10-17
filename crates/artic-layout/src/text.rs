@@ -5,4 +5,7 @@
 
 mod font;
 
-pub use font::{FamilyName, FamilyProblem, FontFamily, GenericFamily, ParseFontFamilyError};
+pub use font::{
+  FamilyName, FamilyProblem, FontFamily, FontStyle, FontWeight, GenericFamily, ParseFontFamilyError, ParseFontWeightError,
+  WeightProblem,
+};
