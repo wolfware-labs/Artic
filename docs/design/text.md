@@ -121,7 +121,7 @@ pub fn measure(&mut self, tree: &mut UiTree, nodes: &impl LayoutNodes, root: Nod
 
 `LayoutManager::measure`, which measures without arranging, runs controls' `measure` too, so it takes the engine as well. `available`, `scale` and `snap` become one `Viewport`, which also keeps `run` under clippy's argument limit. `Pass` holds the `&mut dyn TextEngine` beside its other borrows, so no control can keep the engine past the pass. Layout runs on the UI thread, so the engine needn't be `Send`, and `parley`'s contexts stay plain `&mut` state.
 
-The runner owns one engine for every surface, so system fonts are listed once. It passes the engine to each surface's `Pipeline::prepare`, which passes it to `run`, and to `Pipeline::measure`, which it calls before opening a window its content sizes, and which passes it to `LayoutManager::measure`. `Runner::new` takes the engine after the renderer. `artic-test`'s headless layout helper and `render_tree` use the test engine of section 7.
+The runner owns a single engine that every surface shares, so system fonts are listed once and a font keeps one identity in every window. It lends that same engine to each surface's `Pipeline::prepare`, which passes it to `run`, and to `Pipeline::measure`, which it calls before opening a window its content sizes, and which passes it to `LayoutManager::measure`. `Runner::new` takes the engine after the renderer. `artic-test`'s headless layout helper and `render_tree` use the test engine of section 7.
 
 ## 4. The engine
 
@@ -190,7 +190,7 @@ Freeing memory on a memory warning (#146) decides then what to drop; vello alrea
 
 ## 7. Testing
 
-The test font is a font under the SIL Open Font License, checked into `artic-test` with its licence file, picked in the plan by size, with a regular and a bold face as separate files and no italic face. Bold then selects a real face; italic is synthesized, and so is bold when the engine is given only the regular face. `artic_test::text::engine()` returns `Engine::with_fonts` with it. `artic-text`'s integration tests and every golden use it, so there's one copy.
+The test font is a font under the SIL Open Font License, picked in the plan by size, with a regular and a bold face as separate files and no italic face. Bold then selects a real face; italic is synthesized, and so is bold when the engine is given only the regular face. `artic-text` owns the files and their licence, behind a `test-fonts` feature: `Engine::test()` and `Engine::test_regular()` embed them with `include_bytes!`, so nothing outside the feature carries the bytes. `artic-text`'s integration tests declare `required-features = ["test-fonts"]`. `artic-test` enables the feature and its `text::engine()` returns `Engine::test()`; it depends on `artic-text`, never the other way, so there's no cycle and one copy of the font.
 
 | Crate | Tests |
 | --- | --- |
@@ -204,6 +204,7 @@ The test font is a font under the SIL Open Font License, checked into `artic-tes
 
 | Document | Change |
 | --- | --- |
+| `docs/design/frame.md`, `docs/design/surface.md` | the facade's call becomes `Runner::new(tree, renderer, engine, application)` |
 | `docs/architecture.md` | `artic-text` in layer 2, the graph and the edge table; the layer 1 role includes text values and the layer 2 role no longer says `artic-render` shapes text; the text-measurement bullet names `artic-text` as the trait's implementation |
 | Spec §2 | the crate table: `artic-render` no longer shapes text, and `artic-text` gets a row |
 | Spec §10 | the Text bullet: shaping is in `artic-text`, not `artic-render` |
@@ -229,5 +230,5 @@ The test font is a font under the SIL Open Font License, checked into `artic-tes
 | --- | --- | --- |
 | A | this document and the documents in section 8 | approved |
 | B | sections 2 and 3: the value types and parsers, `TextEngine`, `NoText`, `MeasureCx::text()` and `ArrangeCx::text()`, `Viewport`, and the engine through `LayoutManager::run` and `measure`, `Pipeline::prepare` and `measure`, and the runner; every caller passes `NoText` for now | the `artic-layout` and `artic-platform` tests in section 7 pass |
-| C | section 4: `artic-text`, with `parley` and `fontique` pinned exactly in the workspace beside `vello`; the test font and its licence; `artic_test::text::engine()`, which `artic-test`'s helpers pass instead of `NoText`; `Engine::system()` in the `frames` example | the `artic-text` tests pass |
+| C | section 4: `artic-text`, with `parley` and `fontique` pinned exactly in the workspace beside `vello`; the test font, its licence and the `test-fonts` feature; `artic_test::text::engine()`, which `artic-test`'s helpers pass instead of `NoText`; `Engine::system()` in the `frames` example | the `artic-text` tests pass |
 | D | sections 5 and 6: `Command::Text`, `SceneBuilder::text`, vello drawing, the goldens and the example; closes #37 | the `artic-render` and `artic-vello` tests pass |

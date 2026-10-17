@@ -30,7 +30,7 @@ A **surface** is a root the app asks the host to present: an OS window on a desk
 | Who | Writes | Sees |
 | --- | --- | --- |
 | App code | an `Application` holding `Surface`s, each holding a view, usually a `UserControl`; `IsOpen` to open and close one | `Application`, `Surface`, `Desktop`, `UserControl` |
-| The facade (#55) | builds the tree from the views, then `Runner::new(tree, renderer, application)` and `artic_platform::run(host, runner)` | `Runner`, `run` |
+| The facade (#55) | builds the tree from the views, then `Runner::new(tree, renderer, engine, application)` (the engine is `artic_text::Engine::system()`, [text design](text.md)) and `artic_platform::run(host, runner)` | `Runner`, `run` |
 | Control authors | `measure_override(&mut MeasureCx, …)` and `arrange_override(&mut ArrangeCx, …)` | `MeasureCx`, `ArrangeCx` |
 | Host adapters | `Windows::open`, `update` and `close` | `WindowDesc`, `Windows` |
 

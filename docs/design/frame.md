@@ -8,7 +8,7 @@ A **frame** turns changed state into pixels on one surface: posted work runs, th
 
 | Who | Writes | Sees |
 | --- | --- | --- |
-| The facade (#55) | builds the tree from the views, then `Runner::new(tree, renderer, application)` ([surface design](surface.md)) and `artic_platform::run(host, runner)` | `Runner`, `run`, `Hooks`, `Error` |
+| The facade (#55) | builds the tree from the views, then `Runner::new(tree, renderer, engine, application)` ([surface design](surface.md), [text design](text.md)) and `artic_platform::run(host, runner)` | `Runner`, `run`, `Hooks`, `Error` |
 | Features that run inside a frame (style pass, size classes, accesskit, transitions) | a closure registered on `Hooks` | `Hooks`, `UiTree`, `SurfaceInfo`, `FrameStats` |
 | Tests and the debug overlay (#165) | | `FrameStats`, per frame and per surface |
 | Host adapters | nothing new | `Runner` is an ordinary `AppHandler` |
