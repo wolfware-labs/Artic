@@ -143,6 +143,12 @@ pub enum LinkError {
     /// The would-be child.
     child: NodeId,
   },
+  /// A node's logical and visual children differ, where they should be the same, in order.
+  #[error("the logical and visual children of node {parent:?} differ")]
+  ChildrenDiffer {
+    /// The node.
+    parent: NodeId,
+  },
   /// A node expected under `parent` isn't its child.
   #[error("node {child:?} is not a child of {parent:?} in the {tree:?} tree")]
   NotAChild {

@@ -15,25 +15,22 @@ pub struct Child;
 
 const TREES: [TreeKind; 2] = [TreeKind::Logical, TreeKind::Visual];
 
+fn agreed(tree: &UiTree, parent: NodeId) -> Result<Vec<NodeId>, LinkError> {
+  let [logical, visual] = TREES.map(|kind| tree.children(kind, parent).collect::<Vec<NodeId>>());
+  if logical == visual {
+    Ok(logical)
+  } else {
+    Err(LinkError::ChildrenDiffer { parent })
+  }
+}
+
 fn check_both(tree: &UiTree, parent: NodeId, index: Option<usize>, child: NodeId) -> Result<(), LinkError> {
+  agreed(tree, parent)?;
   TREES.iter().try_for_each(|kind| tree.check_link(*kind, parent, index, child))
 }
 
 fn current(tree: &UiTree, parent: NodeId) -> Result<Option<NodeId>, ValueError> {
-  let [logical, visual] = TREES.map(|kind| tree.children(kind, parent).collect::<Vec<NodeId>>());
-  let missing = |kind: TreeKind, have: &[NodeId], other: &[NodeId]| {
-    have.iter().find(|child| !other.contains(child)).map(|child| {
-      ValueError::InvalidChild(LinkError::NotAChild {
-        tree: kind,
-        parent,
-        child: *child,
-      })
-    })
-  };
-  if let Some(error) = missing(TreeKind::Visual, &logical, &visual).or_else(|| missing(TreeKind::Logical, &visual, &logical)) {
-    return Err(error);
-  }
-  match logical.as_slice() {
+  match agreed(tree, parent).map_err(ValueError::InvalidChild)?.as_slice() {
     [] => Ok(None),
     [child] => Ok(Some(*child)),
     _ => Err(ValueError::OneChildOnly),
@@ -88,7 +85,7 @@ impl Children {
   ///
   /// When `child` isn't `parent`'s child in both trees.
   pub fn remove(tree: &mut UiTree, parent: NodeId, child: NodeId) {
-    if let Err(error) = check_is_child(tree, parent, child) {
+    if let Err(error) = agreed(tree, parent).and_then(|_| check_is_child(tree, parent, child)) {
       panic!("{error}");
     }
     for kind in TREES {

@@ -121,7 +121,7 @@ fn child_set_replaces_in_both_trees() {
 
 // A current child linked elsewhere in one tree is a bug: nothing changes.
 #[test]
-#[should_panic(expected = "is not a child of")]
+#[should_panic(expected = "children of")]
 fn child_set_leaves_a_mislinked_child_alone() {
   let mut tree = UiTree::new();
   let (border, other, first, second) = (node(&mut tree), node(&mut tree), node(&mut tree), node(&mut tree));
@@ -158,4 +158,23 @@ fn child_set_refuses_trees_that_disagree() {
   assert!(refused.is_err());
   assert_eq!(both(&tree, border), (vec![old], vec![extra, old]));
   assert_eq!(tree.parent(TreeKind::Logical, new), None);
+}
+
+// When a panel's two trees already hold different children, adding, inserting and removing refuse
+// and change nothing.
+#[test]
+fn children_refuse_trees_that_disagree() {
+  let mut tree = UiTree::new();
+  let (panel, old, extra, new) = (node(&mut tree), node(&mut tree), node(&mut tree), node(&mut tree));
+  Children::add(&mut tree, panel, old);
+  tree.insert_child(TreeKind::Visual, panel, 0, extra);
+
+  let add = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| Children::add(&mut tree, panel, new)));
+  let insert = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| Children::insert(&mut tree, panel, 0, new)));
+  let remove = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| Children::remove(&mut tree, panel, old)));
+  let pushed = Children::push_child(&mut tree, panel, new, children_field);
+
+  assert!(add.is_err() && insert.is_err() && remove.is_err());
+  assert!(matches!(pushed, Err(ValueError::InvalidChild(_))));
+  assert_eq!(both(&tree, panel), (vec![old], vec![extra, old]));
 }
