@@ -18,6 +18,7 @@
 
 extern crate self as artic_element;
 
+mod children;
 mod classes;
 mod context;
 mod element;
@@ -27,6 +28,7 @@ mod types;
 mod visibility;
 
 pub use artic_registry::OverrideDefaults;
+pub use children::{Child, Children};
 pub use classes::Classes;
 pub use context::{AccessCx, EventCx, Handled, HitTestCx, HitTestResult, RenderCx};
 pub use element::{Element, ElementImpl, HasState};

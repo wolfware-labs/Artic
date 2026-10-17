@@ -1,0 +1,146 @@
+//! Content the tree owns: a panel's children and a single child, as logical and visual children of
+//! the same element.
+
+use artic_core::tree::{LinkError, NodeId, TreeKind, UiTree};
+use artic_registry::{ValueError, XamlCollection};
+
+/// Marks an element's XAML children: they become its logical and visual children, which the tree
+/// holds; the field itself holds nothing.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Children;
+
+/// Marks an element's single XAML child: its only logical and visual child.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Child;
+
+const TREES: [TreeKind; 2] = [TreeKind::Logical, TreeKind::Visual];
+
+fn check_both(tree: &UiTree, parent: NodeId, index: Option<usize>, child: NodeId) -> Result<(), LinkError> {
+  TREES.iter().try_for_each(|kind| tree.check_link(*kind, parent, index, child))
+}
+
+fn current(tree: &UiTree, parent: NodeId) -> Option<NodeId> {
+  TREES.iter().find_map(|kind| tree.children(*kind, parent).next())
+}
+
+fn check_is_child(tree: &UiTree, parent: NodeId, child: NodeId) -> Result<(), LinkError> {
+  TREES
+    .iter()
+    .try_for_each(|kind| match tree.parent(*kind, child) == Some(parent) {
+      true => Ok(()),
+      false => Err(LinkError::NotAChild {
+        tree: *kind,
+        parent,
+        child,
+      }),
+    })
+}
+
+impl Children {
+  /// Makes `child` the last child of `parent` in both trees, moving it from any parent it had.
+  ///
+  /// # Panics
+  ///
+  /// When either tree refuses the link: a node not in the tree, or a cycle.
+  pub fn add(tree: &mut UiTree, parent: NodeId, child: NodeId) {
+    if let Err(error) = check_both(tree, parent, None, child) {
+      panic!("{error}");
+    }
+    for kind in TREES {
+      tree.add_child(kind, parent, child);
+    }
+  }
+
+  /// Makes `child` the child of `parent` at `index` in both trees.
+  ///
+  /// # Panics
+  ///
+  /// When either tree refuses the link, `index` out of range in either included.
+  pub fn insert(tree: &mut UiTree, parent: NodeId, index: usize, child: NodeId) {
+    if let Err(error) = check_both(tree, parent, Some(index), child) {
+      panic!("{error}");
+    }
+    for kind in TREES {
+      tree.insert_child(kind, parent, index, child);
+    }
+  }
+
+  /// Detaches `child` from `parent` in both trees; the node stays allocated.
+  ///
+  /// # Panics
+  ///
+  /// When `child` isn't `parent`'s child in both trees.
+  pub fn remove(tree: &mut UiTree, parent: NodeId, child: NodeId) {
+    if let Err(error) = check_is_child(tree, parent, child) {
+      panic!("{error}");
+    }
+    for kind in TREES {
+      tree.detach(kind, child);
+    }
+  }
+}
+
+impl XamlCollection for Children {
+  fn push_child(
+    tree: &mut UiTree,
+    owner: NodeId,
+    child: NodeId,
+    field: for<'a> fn(&'a mut UiTree, NodeId) -> Option<&'a mut Self>,
+  ) -> Result<(), ValueError> {
+    field(tree, owner).ok_or(ValueError::WrongNode)?;
+    check_both(tree, owner, None, child).map_err(ValueError::InvalidChild)?;
+    Children::add(tree, owner, child);
+    Ok(())
+  }
+}
+
+impl Child {
+  /// The child of `parent`, if it has one.
+  #[must_use]
+  pub fn get(tree: &UiTree, parent: NodeId) -> Option<NodeId> {
+    tree.children(TreeKind::Visual, parent).next()
+  }
+
+  /// Replaces the child: checks that the current child, if any, is `parent`'s child in both trees
+  /// and that `child` can be linked in both, then detaches the old child and links `child`.
+  ///
+  /// # Panics
+  ///
+  /// When a check fails; nothing has changed then.
+  pub fn set(tree: &mut UiTree, parent: NodeId, child: Option<NodeId>) {
+    let old = current(tree, parent);
+    let checked = old
+      .map_or(Ok(()), |old| check_is_child(tree, parent, old))
+      .and_then(|()| child.map_or(Ok(()), |child| check_both(tree, parent, None, child)));
+    if let Err(error) = checked {
+      panic!("{error}");
+    }
+    if let Some(old) = old {
+      for kind in TREES {
+        tree.detach(kind, old);
+      }
+    }
+    if let Some(child) = child {
+      for kind in TREES {
+        tree.add_child(kind, parent, child);
+      }
+    }
+  }
+}
+
+impl XamlCollection for Child {
+  fn push_child(
+    tree: &mut UiTree,
+    owner: NodeId,
+    child: NodeId,
+    field: for<'a> fn(&'a mut UiTree, NodeId) -> Option<&'a mut Self>,
+  ) -> Result<(), ValueError> {
+    field(tree, owner).ok_or(ValueError::WrongNode)?;
+    if current(tree, owner).is_some() {
+      return Err(ValueError::OneChildOnly);
+    }
+    check_both(tree, owner, None, child).map_err(ValueError::InvalidChild)?;
+    Child::set(tree, owner, Some(child));
+    Ok(())
+  }
+}
