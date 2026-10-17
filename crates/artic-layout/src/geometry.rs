@@ -114,8 +114,8 @@ impl Rect {
   #[must_use]
   pub fn snap(self, scale: f32) -> Rect {
     let edge = |value: f32| {
-      let scaled = value * scale;
-      if scaled.is_finite() { scaled.round() / scale } else { value }
+      let snapped = (value * scale).round() / scale;
+      if snapped.is_finite() { snapped } else { value }
     };
     let (left, top) = (edge(self.x), edge(self.y));
     let (right, bottom) = (edge(finite::add(self.x, self.width)), edge(finite::add(self.y, self.height)));

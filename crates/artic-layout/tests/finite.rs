@@ -83,3 +83,12 @@ fn huge_edges_snap_in_place() {
   assert_eq!(rect.x, f32::MIN);
   assert!(rect.width.is_finite());
 }
+
+// Below a scale of 1, an edge that scales down fine could still overflow on the way back up, so it
+// stays where it is too.
+#[test]
+fn edges_below_scale_one_stay_finite() {
+  let rect = Rect::new(f32::MAX, 0.0, 0.0, 10.0).snap(0.01);
+
+  assert!(rect.x.is_finite() && rect.width.is_finite(), "{rect:?}");
+}
