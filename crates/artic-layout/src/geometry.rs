@@ -333,8 +333,10 @@ impl RoundedRect {
     )
   }
 
-  /// The [`fitted`](RoundedRect::fitted) outline as a closed path, with the same curves
-  /// [`ring`](RoundedRect::ring) draws, so a fill of it meets the ring exactly.
+  /// The [`fitted`](RoundedRect::fitted) outline as a closed path, built with the same curves as
+  /// [`ring`](RoundedRect::ring)'s outer figure. The ring's outline is
+  /// [`fitted_for_border`](RoundedRect::fitted_for_border), so a fill of
+  /// `shape.fitted_for_border(thickness).path()` meets `shape.ring(thickness)` exactly.
   #[must_use]
   pub fn path(self) -> Path {
     outline(self.fitted()).build()
@@ -682,19 +684,24 @@ mod tests {
     assert_eq!(thickness.usable(), Thickness::new(0.0, 0.0, 0.0, 3.0));
   }
 
-  // The outline path is the ring's outer figure, curve for curve, so a background filled with it
-  // meets the ring exactly.
+  // The border-fitted outline path is the ring's outer figure, curve for curve, so a background
+  // filled with it meets the ring exactly, even where the border cuts a radius: 10 on a 20 box with
+  // sides of 15 becomes 5.
   #[test]
   fn path_is_the_ring_outline() {
-    let shape = box_with(10.0);
-    let ring = shape.ring(Thickness::uniform(2.0));
+    let shape = RoundedRect::new(Rect::new(0.0, 0.0, 20.0, 20.0), CornerRadius::uniform(10.0));
+    let thickness = Thickness::new(15.0, 0.0, 0.0, 0.0);
+    let ring = shape.ring(thickness);
     let close = ring
       .elements()
       .iter()
       .position(|element| *element == PathElement::Close)
       .expect("closes");
+    let outline = shape.fitted_for_border(thickness);
 
-    assert_eq!(shape.path().elements(), &ring.elements()[..=close]);
+    assert_eq!(outline.radius.top_right, 5.0);
+    assert_eq!(outline.path().elements(), &ring.elements()[..=close]);
+    assert_ne!(shape.path().elements(), &ring.elements()[..=close]);
   }
 
   // Radii far larger than the box are fitted to it before anything else.
