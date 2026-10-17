@@ -1,0 +1,329 @@
+//! Shaped text: lines and positioned glyphs, and the fonts they're drawn from.
+
+use crate::geometry::Size;
+use std::fmt::{self, Debug, Formatter};
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Text shaped and broken into lines: its size, its lines and its glyph runs.
+///
+/// A [`TextEngine`](super::TextEngine) builds it, layout keeps it, and a renderer draws its runs.
+/// It's cheap to clone: its lines and runs are shared. Positions are in logical pixels, relative to
+/// the paragraph's top-left corner, and aren't snapped to device pixels. Two paragraphs are equal
+/// when their content is, with fonts compared by [`FontData`]'s identity.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Paragraph {
+  size: Size,
+  lines: Arc<[Line]>,
+  runs: Arc<[GlyphRun]>,
+}
+
+impl Paragraph {
+  /// A paragraph of `size`, with `lines` from top to bottom and the glyph `runs` that draw it.
+  #[must_use]
+  pub fn new(size: Size, lines: impl Into<Arc<[Line]>>, runs: impl Into<Arc<[GlyphRun]>>) -> Paragraph {
+    Paragraph {
+      size,
+      lines: lines.into(),
+      runs: runs.into(),
+    }
+  }
+
+  /// The widest line's width by the sum of the lines' heights.
+  #[must_use]
+  pub fn size(&self) -> Size {
+    self.size
+  }
+
+  /// The lines, from top to bottom.
+  #[must_use]
+  pub fn lines(&self) -> &[Line] {
+    &self.lines
+  }
+
+  /// The glyph runs, in drawing order.
+  #[must_use]
+  pub fn runs(&self) -> &[GlyphRun] {
+    &self.runs
+  }
+
+  /// Whether it draws nothing: it has no glyph runs.
+  #[must_use]
+  pub fn is_empty(&self) -> bool {
+    self.runs.is_empty()
+  }
+}
+
+/// One line of a [`Paragraph`], in the paragraph's coordinates.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Line {
+  /// The line's top edge.
+  pub top: f32,
+  /// The distance from the line's top to the next line's.
+  pub height: f32,
+  /// The baseline's distance from the paragraph's top.
+  pub baseline: f32,
+  /// The width of the line's glyphs, without trailing whitespace.
+  pub width: f32,
+}
+
+/// Glyphs drawn from one font face, at one size, with one set of variations.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GlyphRun {
+  font: FontData,
+  size: f32,
+  coords: Arc<[i16]>,
+  synthesis: Synthesis,
+  glyphs: Arc<[Glyph]>,
+}
+
+impl GlyphRun {
+  /// `glyphs` drawn from `font` at `size`, at the variable-font axis positions `coords`, with what
+  /// `synthesis` says the renderer fakes.
+  #[must_use]
+  pub fn new(
+    font: FontData,
+    size: f32,
+    coords: impl Into<Arc<[i16]>>,
+    synthesis: Synthesis,
+    glyphs: impl Into<Arc<[Glyph]>>,
+  ) -> GlyphRun {
+    GlyphRun {
+      font,
+      size,
+      coords: coords.into(),
+      synthesis,
+      glyphs: glyphs.into(),
+    }
+  }
+
+  /// The face the glyphs come from.
+  #[must_use]
+  pub fn font(&self) -> &FontData {
+    &self.font
+  }
+
+  /// The font size, in logical pixels.
+  #[must_use]
+  pub fn size(&self) -> f32 {
+    self.size
+  }
+
+  /// The variable-font axis positions, normalized to -1 to 1 in `F2Dot14` form, in the face's axis
+  /// order. Empty for a face without axes or at its defaults.
+  #[must_use]
+  pub fn coords(&self) -> &[i16] {
+    &self.coords
+  }
+
+  /// What the face lacks and the renderer fakes.
+  #[must_use]
+  pub fn synthesis(&self) -> Synthesis {
+    self.synthesis
+  }
+
+  /// The glyphs, in drawing order.
+  #[must_use]
+  pub fn glyphs(&self) -> &[Glyph] {
+    &self.glyphs
+  }
+}
+
+/// What a face lacks and the renderer fakes: a bolder or a slanted look.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Synthesis {
+  /// Whether to thicken the strokes, when a bold weight was asked of a family without a bold face.
+  pub embolden: bool,
+  /// The slant, in degrees, when italic was asked of a family without an italic face; 0 for none.
+  pub skew: f32,
+}
+
+/// One glyph, placed.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Glyph {
+  /// The glyph's id in its face.
+  pub id: u32,
+  /// The glyph's origin, from the paragraph's left edge.
+  pub x: f32,
+  /// The glyph's baseline, from the paragraph's top edge.
+  pub y: f32,
+}
+
+/// The next id [`FontData::new`] hands out.
+static NEXT_FONT_ID: AtomicU64 = AtomicU64::new(1);
+
+/// A font file's bytes and the face in it that a glyph run draws from.
+///
+/// Each one gets an id when it's created, unique in the process and kept for as long as the bytes
+/// live. Two are equal when their id and index are; the bytes are never compared. A renderer may
+/// cache what it derives from a font, such as outlines or a typeface, keyed by id and index.
+#[derive(Clone)]
+pub struct FontData {
+  bytes: Arc<dyn AsRef<[u8]> + Send + Sync>,
+  index: u32,
+  id: u64,
+}
+
+impl FontData {
+  /// The face at `index` in the font file `bytes`, with a new id. A file with one face has only
+  /// index 0; a collection (`.ttc`) has one index per face.
+  #[must_use]
+  pub fn new(bytes: Arc<dyn AsRef<[u8]> + Send + Sync>, index: u32) -> FontData {
+    FontData {
+      bytes,
+      index,
+      id: NEXT_FONT_ID.fetch_add(1, Ordering::Relaxed),
+    }
+  }
+
+  /// The font file's bytes.
+  #[must_use]
+  pub fn bytes(&self) -> &Arc<dyn AsRef<[u8]> + Send + Sync> {
+    &self.bytes
+  }
+
+  /// The face's index in the font file.
+  #[must_use]
+  pub fn index(&self) -> u32 {
+    self.index
+  }
+
+  /// The id this font data got when it was created.
+  #[must_use]
+  pub fn id(&self) -> u64 {
+    self.id
+  }
+}
+
+impl PartialEq for FontData {
+  fn eq(&self, other: &FontData) -> bool {
+    (self.id, self.index) == (other.id, other.index)
+  }
+}
+
+impl Eq for FontData {}
+
+impl Hash for FontData {
+  fn hash<H: Hasher>(&self, state: &mut H) {
+    (self.id, self.index).hash(state);
+  }
+}
+
+impl Debug for FontData {
+  /// Shows the id, the index and the length of the bytes, which have no `Debug` of their own.
+  fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+    formatter
+      .debug_struct("FontData")
+      .field("id", &self.id)
+      .field("index", &self.index)
+      .field("len", &(*self.bytes).as_ref().len())
+      .finish()
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use pretty_assertions::assert_eq;
+  use std::collections::HashSet;
+  use std::thread;
+
+  fn font() -> FontData {
+    FontData::new(Arc::new(vec![0_u8; 16]), 2)
+  }
+
+  fn run(font: &FontData) -> GlyphRun {
+    let glyphs = [Glyph { id: 7, x: 0.0, y: 12.0 }, Glyph { id: 9, x: 6.5, y: 12.0 }];
+    GlyphRun::new(font.clone(), 16.0, [100_i16], Synthesis::default(), glyphs)
+  }
+
+  fn paragraph(font: &FontData) -> Paragraph {
+    let line = Line {
+      top: 0.0,
+      height: 20.0,
+      baseline: 12.0,
+      width: 13.0,
+    };
+    Paragraph::new(Size::new(13.0, 20.0), [line], [run(font)])
+  }
+
+  // Each new font data gets its own id, even from the same bytes, and a clone keeps it.
+  #[test]
+  fn font_data_compares_by_id() {
+    let bytes: Arc<dyn AsRef<[u8]> + Send + Sync> = Arc::new(vec![1_u8, 2, 3]);
+    let first = FontData::new(Arc::clone(&bytes), 0);
+    let second = FontData::new(bytes, 0);
+
+    assert_ne!(first.id(), second.id());
+    assert_ne!(first, second);
+    assert_eq!(first.clone(), first);
+    assert_eq!(first.clone().id(), first.id());
+  }
+
+  // Font data created on several threads at once never shares an id.
+  #[test]
+  fn font_data_ids_are_unique_across_threads() {
+    let workers: Vec<_> = (0..4)
+      .map(|_| thread::spawn(|| (0..100).map(|_| font().id()).collect::<Vec<u64>>()))
+      .collect();
+    let ids: HashSet<u64> = workers.into_iter().flat_map(|worker| worker.join().unwrap()).collect();
+
+    assert_eq!(ids.len(), 400);
+  }
+
+  // `Debug` shows the id, the index and the bytes' length, not the bytes.
+  #[test]
+  fn font_data_debug_shows_id_index_and_length() {
+    let font = font();
+
+    assert_eq!(
+      format!("{font:?}"),
+      format!("FontData {{ id: {}, index: 2, len: 16 }}", font.id())
+    );
+  }
+
+  // A run hands back what it was built with.
+  #[test]
+  fn glyph_run_keeps_what_it_was_built_with() {
+    let font = font();
+    let run = run(&font);
+
+    assert_eq!(run.font(), &font);
+    assert_eq!(run.size(), 16.0);
+    assert_eq!(run.coords(), [100]);
+    assert_eq!(run.synthesis(), Synthesis::default());
+    assert_eq!(run.glyphs().len(), 2);
+  }
+
+  // Paragraphs built from the same content and font data are equal; the same bytes under another
+  // font data aren't.
+  #[test]
+  fn paragraphs_with_the_same_content_compare_equal() {
+    let font = font();
+
+    assert_eq!(paragraph(&font), paragraph(&font));
+    assert_ne!(paragraph(&font), paragraph(&FontData::new(Arc::clone(font.bytes()), 2)));
+  }
+
+  // A clone shares its lines and runs instead of copying them.
+  #[test]
+  fn paragraph_clones_share_lines_and_runs() {
+    let original = paragraph(&font());
+    let copy = original.clone();
+
+    assert!(std::ptr::eq(original.lines(), copy.lines()));
+    assert!(std::ptr::eq(original.runs(), copy.runs()));
+  }
+
+  // The default paragraph is empty, of size 0, and a paragraph with a run isn't empty.
+  #[test]
+  fn default_paragraph_is_empty() {
+    let empty = Paragraph::default();
+
+    assert!(empty.is_empty());
+    assert_eq!(empty.size(), Size::ZERO);
+    assert!(empty.lines().is_empty());
+    assert!(!paragraph(&font()).is_empty());
+  }
+}
