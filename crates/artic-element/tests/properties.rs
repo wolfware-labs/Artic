@@ -4,10 +4,7 @@
 use artic_core::Object;
 use artic_core::property::{Affects, AnyProperty};
 use artic_core::tree::{NodeId, TreeKind, UiTree};
-use artic_element::{
-  AccessCx, AppearanceProperties, Classes, HitTestCx, HitTestResult, IdentityProperties, InteractionProperties,
-  LayoutProperties, Visibility,
-};
+use artic_element::{AccessCx, Appearance, Classes, HitTestCx, HitTestResult, Identity, Interaction, Layout, Visibility};
 use artic_layout::geometry::{Point, Rect, Size, Thickness, Transform};
 use artic_layout::{ArrangeCx, HorizontalAlignment, LayoutManager, LayoutNodes, Layoutable, MeasureCx, VerticalAlignment};
 use artic_macros::XamlType;
@@ -21,13 +18,13 @@ use std::cell::Cell;
 #[xaml(namespace = "https://artic.rs/test")]
 struct Probe {
   #[xaml(flatten)]
-  layout: LayoutProperties,
+  layout: Layout,
   #[xaml(flatten)]
-  appearance: AppearanceProperties,
+  appearance: Appearance,
   #[xaml(flatten)]
-  interaction: InteractionProperties,
+  interaction: Interaction,
   #[xaml(flatten)]
-  identity: IdentityProperties,
+  identity: Identity,
 }
 
 /// A second control type, to check inheritance across types.
@@ -35,7 +32,7 @@ struct Probe {
 #[xaml(namespace = "https://artic.rs/test")]
 struct Other {
   #[xaml(flatten)]
-  interaction: InteractionProperties,
+  interaction: Interaction,
 }
 
 /// The markup name of each property, and the field of the group that holds it.
@@ -83,13 +80,13 @@ fn groups_registered() {
 // Defaults: no explicit size, unbounded maximum, enabled, opaque, hit-testable, no classes.
 #[test]
 fn group_defaults() {
-  let layout = LayoutProperties::default();
-  let interaction = InteractionProperties::default();
+  let layout = Layout::default();
+  let interaction = Interaction::default();
 
   assert_eq!((layout.width.get(), layout.max_width.get()), (None, f32::INFINITY));
   assert!(interaction.is_enabled.get() && interaction.is_hit_test_visible.get());
-  assert_eq!(AppearanceProperties::default().opacity.get(), 1.0);
-  assert_eq!(IdentityProperties::default().classes.get(), Classes::default());
+  assert_eq!(Appearance::default().opacity.get(), 1.0);
+  assert_eq!(Identity::default().classes.get(), Classes::default());
 }
 
 // Classes parse from space-separated names.
@@ -104,8 +101,8 @@ fn classes_parse_from_names() {
 /// children and counts its own measures.
 #[derive(Debug)]
 struct Boxed {
-  layout: LayoutProperties,
-  appearance: AppearanceProperties,
+  layout: Layout,
+  appearance: Appearance,
   content: Size,
   measured: Cell<u32>,
 }
@@ -114,8 +111,8 @@ impl Boxed {
   /// A box whose content is `width` × `height`.
   fn new(width: f32, height: f32) -> Self {
     Self {
-      layout: LayoutProperties::default(),
-      appearance: AppearanceProperties::default(),
+      layout: Layout::default(),
+      appearance: Appearance::default(),
       content: Size::new(width, height),
       measured: Cell::new(0),
     }
@@ -274,7 +271,7 @@ fn hit_test_misses_hidden_and_click_through() {
   let node = tree.alloc(Box::new(Probe::default()));
   let cx = HitTestCx::new(&tree, node, Size::new(10.0, 10.0));
   let inside = Point::new(5.0, 5.0);
-  let interaction = InteractionProperties::default();
+  let interaction = Interaction::default();
 
   assert_eq!(interaction.hit_test(&cx, Visibility::Visible, inside), HitTestResult::Hit);
   assert_eq!(
@@ -308,7 +305,7 @@ fn accessibility_node_has_bounds() {
   let node = tree.alloc(Box::new(Probe::default()));
   let cx = AccessCx::new(&tree, node, Rect::new(10.0, 20.0, 30.0, 40.0));
 
-  let built = InteractionProperties::default().accessibility(&cx);
+  let built = Interaction::default().accessibility(&cx);
 
   assert_eq!(built.role(), accesskit::Role::GenericContainer);
   assert_eq!(built.bounds(), Some(accesskit::Rect::new(10.0, 20.0, 40.0, 60.0)));
@@ -319,7 +316,7 @@ fn accessibility_node_has_bounds() {
 fn layers_carry_the_clip() {
   let clip = Some(Shape::Rect(Rect::new(0.0, 0.0, 5.0, 5.0)));
 
-  let layers = AppearanceProperties::default().layers(Size::new(10.0, 10.0), clip.clone());
+  let layers = Appearance::default().layers(Size::new(10.0, 10.0), clip.clone());
 
   assert_eq!(
     layers,
@@ -333,7 +330,7 @@ fn layers_carry_the_clip() {
 // Opacity outside 0–1 is clamped, and NaN counts as opaque; the property keeps what was set.
 #[test]
 fn layers_clamp_opacity() {
-  let appearance = AppearanceProperties::default();
+  let appearance = Appearance::default();
   let opacity = |value: f32| {
     appearance.opacity.set(value);
     appearance.layers(Size::new(10.0, 10.0), None).opacity
@@ -349,7 +346,7 @@ fn layers_clamp_opacity() {
 // A rotation pivots on the element's centre, which stays where it was.
 #[test]
 fn transform_pivots_on_the_centre() {
-  let appearance = AppearanceProperties::default();
+  let appearance = Appearance::default();
   appearance
     .render_transform
     .set(Some(Transform::rotate(std::f32::consts::FRAC_PI_2)));
@@ -366,7 +363,7 @@ fn transform_pivots_on_the_centre() {
 // A scale grows the element away from its centre, so its top-left corner moves up and left.
 #[test]
 fn scale_grows_from_the_centre() {
-  let appearance = AppearanceProperties::default();
+  let appearance = Appearance::default();
   appearance.render_transform.set(Some(Transform::scale(2.0, 2.0)));
 
   let transform = appearance
@@ -380,7 +377,7 @@ fn scale_grows_from_the_centre() {
 // Hidden and collapsed elements aren't visible in composition, and ZIndex reaches the layers.
 #[test]
 fn layers_carry_visibility_and_z_index() {
-  let appearance = AppearanceProperties::default();
+  let appearance = Appearance::default();
   appearance.z_index.set(3);
   let visible = |visibility| {
     appearance.visibility.set(visibility);
@@ -404,7 +401,7 @@ fn accessibility_node_is_disabled_with_the_element() {
   let mut tree = UiTree::new();
   let node = tree.alloc(Box::new(Probe::default()));
   let cx = AccessCx::new(&tree, node, Rect::new(0.0, 0.0, 1.0, 1.0));
-  let interaction = InteractionProperties::default();
+  let interaction = Interaction::default();
 
   assert!(!interaction.accessibility(&cx).is_disabled());
   interaction.is_enabled.set(false);

@@ -1,0 +1,5 @@
+error: unknown `xaml` key `content`; expected `namespace`, `whitespace`, `crate`, `attached`, `markup_extension` or `override_defaults`
+ --> tests/ui/struct_level_content.rs:5:45
+  |
+5 | #[xaml(namespace = "https://artic.rs/test", content = text)]
+  |                                             ^^^^^^^

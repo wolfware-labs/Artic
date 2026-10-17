@@ -71,7 +71,7 @@ Each layer builds on the ones below it. The exact dependency edges and the rules
 | `artic-xaml-compiler` | Infoset → Rust source (`build.rs` API and `cargo artic` CLI) | `compile_dir()`, `CompileOptions` |
 | `artic-xaml-runtime` | Infoset → live object tree using the registry; file watcher and hot-swap | `XamlLoader`, `HotReload` |
 | `artic-layout` | Measure/arrange protocol, panels, invalidation | `Layoutable`, `MeasureCx`, `ArrangeCx`, `LayoutManager`, `Size`, `Rect`, `Thickness` |
-| `artic-element` | The `Element` trait and its render, hit-test, event and accessibility contexts; the property groups every control has; gesture recognizers. Shared by controls and the platform host (D25) | `Element`, `LayoutProperties`, `RenderCx`, `EventCx`, `AccessCx` |
+| `artic-element` | The `Element` trait and its render, hit-test, event and accessibility contexts; the property groups every control has; gesture recognizers. Shared by controls and the platform host (D25) | `Element`, `Layout`, `RenderCx`, `EventCx`, `AccessCx` |
 | `artic-controls` | Templated controls, primitives, default `ControlTemplate`s | `Button`, `TextBox`, `ItemsControl`, … |
 | `artic-style` | Selector parser and matcher, `Style`, `Setter`, pseudo-classes, resource dictionaries, theme switching | `Selector`, `Style`, `ResourceDictionary` |
 | `artic-render` | `Renderer` trait, scene graph (display list), `Target`; text shaping via `parley`. No backend dependencies | `Renderer`, `Scene`, `Target`, `DrawingContext` |
@@ -112,9 +112,9 @@ XAML needs to name types and properties by string; Rust does not. The registry e
 ```rust
 #[element]                                       // adds the four property groups, flattened, and derive(XamlType)
 #[derive(Debug)]
-#[xaml(namespace = "https://artic.rs/ui", content = child)]
+#[xaml(namespace = "https://artic.rs/ui")]
 pub struct Border {
-    #[xaml] pub child: Property<Option<NodeId>>,
+    #[xaml(content)] pub child: Property<Option<NodeId>>,
     #[xaml(default = Thickness::ZERO, affects = layout)] pub padding: Property<Thickness>,
     #[xaml(affects = render)] pub background: Property<Option<Brush>>,
     #[xaml(affects = render)] pub corner_radius: Property<CornerRadius>,
@@ -122,7 +122,7 @@ pub struct Border {
 }
 ```
 
-The derive emits a `TypeInfo` static and registers it with `linkme` (distributed slice) so the registry is assembled at link time. It also writes the type's `Default` (each property created with its key and default) and `Object` impls, so the struct derives `Debug` but not `Default`. Field types decide everything: a `Property<T>` is a settable XAML property if `T: FromStr` or `T: XamlType` (looking through `Option`, and `NodeId` marks a child slot); an `Event<A>` is a XAML event; a `#[xaml(flatten)]` field is a property group (`#[derive(XamlProperties)]`, such as `LayoutProperties`) whose properties are listed as the type's; any other `#[xaml]` field must implement `XamlCollection` and accepts child elements.
+The derive emits a `TypeInfo` static and registers it with `linkme` (distributed slice) so the registry is assembled at link time. It also writes the type's `Default` (each property created with its key and default) and `Object` impls, so the struct derives `Debug` but not `Default`. Field types decide everything: a `Property<T>` is a settable XAML property if `T: FromStr` or `T: XamlType` (looking through `Option`, and `NodeId` marks a child slot); an `Event<A>` is a XAML event; a `#[xaml(flatten)]` field is a property group (`#[derive(XamlProperties)]`, such as `Layout`) whose properties are listed as the type's; any other `#[xaml]` field must implement `XamlCollection` and accepts child elements. `#[xaml(content)]` marks the one property or collection field that receives content written inside the element (a flattened group may mark one of its properties instead), and `#[xaml(override_defaults)]` on the struct makes `Default` call the type's `OverrideDefaults` impl after building the fields.
 
 Each property gets its own `PropertyKey` unless `#[xaml(key = FONT_SIZE)]` names a shared one; properties that inherit across types share their key. `affects = layout | render` and `inherits` set the metadata of a generated key.
 
@@ -130,7 +130,7 @@ Each property gets its own `PropertyKey` unless `#[xaml(key = FONT_SIZE)]` names
 
 | Item | Fields | Consumer |
 | --- | --- | --- |
-| `TypeInfo` | XAML name, namespace, Rust path, `new: fn(&mut UiTree) -> NodeId`, content field, `is_collection`, properties, events, attached properties, `markup_extension: Option<&MarkupExtensionInfo>`, whitespace, `kind` (node or value, from the value objects design), `groups` (flattened property groups such as `LayoutProperties`) | compiler, loader |
+| `TypeInfo` | XAML name, namespace, Rust path, `new: fn(&mut UiTree) -> NodeId`, content (`ContentInfo`: a property or a collection field), `is_collection`, properties, events, attached properties, `markup_extension: Option<&MarkupExtensionInfo>`, whitespace, `kind` (node or value, from the value objects design), `groups` (flattened property groups such as `Layout`) | compiler, loader |
 | `PropertyInfo` | name, Rust field path, value type path, `affects: Layout \| Render`, `inherits`, `access: &PropertyAccess` (typed thunks, see below) | compiler emits `node.field.set(v)` directly; loader calls the `access` thunks |
 | `AttachedPropertyInfo` | owner, name, value type, target (`AttachedTarget::ChildrenOfOwner` for `Grid.Row`, `Any` for `Accessibility.Name`) | both |
 | `EventInfo` | name, args type path, `subscribe: fn(&mut UiTree, NodeId, HandlerId)` | both |
@@ -396,7 +396,6 @@ pub trait Element: Object + Layoutable {          // Layoutable (§7 Layout prot
     fn layers(&self, size: Size) -> Layers { Layers::default() }   // transform, clip, opacity, visibility, z-index
 }
 pub trait ElementImpl {                           // what a control writes; #[element] calls it
-    fn defaults(&self) {}                         // e.g. self.interaction.focusable.set_default(true)
     fn measure_override(&self, cx: &mut MeasureCx, available: Size) -> Size { Size::ZERO }
     fn arrange_override(&self, cx: &mut ArrangeCx, size: Size) {}
     fn render(&self, cx: &mut RenderCx, scene: &mut SceneBuilder) {}
@@ -423,7 +422,7 @@ pub struct Button {
 impl ElementImpl for Button { /* measure_override, render, on_event, … */ }
 ```
 
-- Four property groups hold the universal state, each in a field `#[element]` adds: `layout` (`Width/Height/Min*/Max*`, `Margin`, `HorizontalAlignment/VerticalAlignment`), `appearance` (`Visibility`: `Visible`, `Hidden` keeps its space, `Collapsed` takes none, and there is no `IsVisible`, see [the elements design](../design/element.md#visibility); `Opacity`, `ZIndex`, `RenderTransform` as CSS transform functions: `translate(10, 0) rotate(45)`), `interaction` (`IsEnabled`, `IsHitTestVisible`, `Focusable`, `Cursor`, `ToolTip`, v1: text) and `identity` (`Name`, `Classes`). `DataContext` joins them with data binding. A control changes a default in `ElementImpl::defaults` with `Property::set_default`.
+- Four property groups hold the universal state, each in a field `#[element]` adds: `layout` (`Width/Height/Min*/Max*`, `Margin`, `HorizontalAlignment/VerticalAlignment`), `appearance` (`Visibility`: `Visible`, `Hidden` keeps its space, `Collapsed` takes none, and there is no `IsVisible`, see [the elements design](../design/element.md#visibility); `Opacity`, `ZIndex`, `RenderTransform` as CSS transform functions: `translate(10, 0) rotate(45)`), `interaction` (`IsEnabled`, `IsHitTestVisible`, `Focusable`, `Cursor`, `ToolTip`, v1: text) and `identity` (`Name`, `Classes`). `DataContext` joins them with data binding. A control changes a group's default with `#[xaml(override_defaults)]` and an `OverrideDefaults` impl that calls `Property::set_default`.
 - Reusable state structs (`ContentState`, `TemplateState`, `SelectionState`, `RangeState`) replace the WPF base classes `ContentControl`, `TemplatedControl`, `SelectingItemsControl`, `RangeBase`. For each `#[element(state)]` field of type `S`, `#[element]` implements `HasState<S>` for the struct, and each trait is implemented for every `HasState` of its state by a blanket impl. See [the elements design](../design/element.md).
 - Style selectors match on the Rust type name; "derived type" matching (`Button` matching a `ToggleButton`) does not exist. A style meant for several controls lists them or uses a class.
 - App-defined controls use the same `#[element]` on the same traits; nothing in the framework is special-cased.
@@ -434,7 +433,7 @@ impl ElementImpl for Button { /* measure_override, render, on_event, … */ }
 WPF two-pass measure/arrange with these rules:
 
 1. `measure(available)` returns the desired size, already including `Margin`. Results are cached per `available`; a node re-measures only when it or a descendant is `InvalidateMeasure`d, or `available` changes.
-2. `arrange(rect)` positions children; alignment and `Margin` are applied by `LayoutProperties` before the element's own `arrange_override`, so control authors only place children.
+2. `arrange(rect)` positions children; alignment and `Margin` are applied by `Layout` before the element's own `arrange_override`, so control authors only place children.
 3. Infinite constraints are legal (`ScrollViewer`, `StackPanel` on its axis). An element that returns an infinite desired size is a bug and panics in debug.
 4. Layout runs top-down from the highest dirty node; a dirty leaf whose desired size does not change stops propagation (`MeasureCx::desired_size_changed`).
 5. Units are logical pixels (`f32`); the platform layer supplies the scale factor; rounding to device pixels happens in `arrange` (`SnapToPixels` on by default), edge by edge so neighbors never leave a pixel's gap. Measure never sees the scale: `MeasureCx` has none, so a desired size can be known before a surface exists, and a scale change arranges again without measuring ([surface design](../design/surface.md)).

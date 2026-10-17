@@ -1,0 +1,18 @@
+error[E0080]: evaluation panicked: a type has at most one `#[xaml(content)]` member, counting the groups it flattens
+  --> tests/ui/two_content_fields_across_type_and_group.rs:10:17
+   |
+10 | #[derive(Debug, XamlType)]
+   |                 ^^^^^^^^ evaluation of `_::__TYPE_INFO` failed inside this call
+   |
+note: inside `artic_registry::__private::one_content`
+  --> $RUST/core/src/panic.rs
+   |
+   = note: the failure occurred here
+   |
+  ::: $WORKSPACE/crates/artic-registry/src/__private.rs
+   |
+   | /       assert!(
+   | |         found.is_none(),
+   | |         "a type has at most one `#[xaml(content)]` member, counting the groups it flattens"
+   | |       );
+   | |_______- in this macro invocation

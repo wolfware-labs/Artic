@@ -1,4 +1,4 @@
-error: `#[element]` writes `Default`; remove it, and change defaults in `ElementImpl::defaults`
+error: `#[element]`'s derive writes `Default`; remove it, and change defaults with `#[xaml(override_defaults)]`
  --> tests/ui/element_derives_default.rs:4:17
   |
 4 | #[derive(Debug, Default)]

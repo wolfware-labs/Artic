@@ -14,7 +14,8 @@ use syn::{DeriveInput, parse_macro_input};
 /// # Struct attributes
 ///
 /// - `namespace = "..."` (required): the XML namespace the type's name belongs to.
-/// - `content = field`: the `#[xaml]` field that receives content written inside the element.
+/// - `override_defaults`: `Default` calls `OverrideDefaults::override_defaults` once after building
+///   the fields, to change defaults the type doesn't declare, such as a flattened group's.
 /// - `whitespace = "significant"`: keep whitespace in text content (the default collapses it).
 /// - `crate = "path"`: where generated code finds artic, if neither `artic` nor `artic-registry`
 ///   is a direct dependency under its usual name.
@@ -47,6 +48,9 @@ use syn::{DeriveInput, parse_macro_input};
 ///   listed and visited as the type's own. It takes no other settings.
 /// - Any other `#[xaml]` field is a collection of child elements and must implement
 ///   `XamlCollection`.
+/// - `#[xaml(content)]` on one `Property` or collection field: it receives content written inside
+///   the element. A flattened group may mark one of its properties instead; a type has at most one
+///   content member, counting its groups.
 ///
 /// Unmarked fields are created with their own `Default`.
 ///
@@ -76,10 +80,11 @@ pub fn derive_xaml_type(input: TokenStream) -> TokenStream {
 }
 
 /// Makes a struct a property group: a set of properties several XAML types share by embedding it
-/// in a field marked `#[xaml(flatten)]`, as controls embed `LayoutProperties`.
+/// in a field marked `#[xaml(flatten)]`, as controls embed `Layout`.
 ///
 /// Fields follow `XamlType`'s rules for `Property` fields; a group holds no events or
-/// collections, and takes no attributes on the struct. The derive implements `Default` and
+/// collections, and takes no attributes on the struct. One property may be marked
+/// `#[xaml(content)]`, which makes it the content of every type that flattens the group. The derive implements `Default` and
 /// `PropertyGroup`. A group's keys are its own, so every type that flattens it shares them, and
 /// an inheriting property inherits across those types.
 #[proc_macro_derive(XamlProperties, attributes(xaml))]
@@ -111,9 +116,9 @@ pub fn derive_xaml_enum(input: TokenStream) -> TokenStream {
 /// ```ignore
 /// #[element]
 /// #[derive(Debug)]
-/// #[xaml(namespace = "https://artic.rs/ui", content = child)]
+/// #[xaml(namespace = "https://artic.rs/ui")]
 /// pub struct Border {
-///   #[xaml] pub child: Property<Option<NodeId>>,
+///   #[xaml(content)] pub child: Property<Option<NodeId>>,
 /// }
 ///
 /// impl ElementImpl for Border { /* measure_override, render, … */ }
@@ -121,14 +126,15 @@ pub fn derive_xaml_enum(input: TokenStream) -> TokenStream {
 ///
 /// `#[element]` goes first, above the struct's `#[derive(...)]` and `#[xaml(...)]` attributes,
 /// and takes no settings. It adds four fields before the struct's own, each flattened into the
-/// struct's properties: `layout: LayoutProperties`, `appearance: AppearanceProperties`,
-/// `interaction: InteractionProperties` and `identity: IdentityProperties`. A field of the
+/// struct's properties: `layout: Layout`, `appearance: Appearance`,
+/// `interaction: Interaction` and `identity: Identity`. A field of the
 /// struct with one of those names is an error, as are `XamlType` and `Default` in its derives,
-/// since `#[element]` writes both. A unit struct gets the four fields; a tuple struct or a generic
+/// since `#[element]` adds a derive that writes both. A unit struct gets the four fields; a tuple struct or a generic
 /// one is an error.
 ///
-/// The struct's `Default` calls `ElementImpl::defaults` once, after building the fields, so a
-/// control can change its defaults there with `Property::set_default`.
+/// `#[element]` adds `#[derive(XamlType)]`, so the struct's `#[xaml(...)]` settings are the
+/// derive's: a control changes a group's default with `#[xaml(override_defaults)]` and an
+/// `OverrideDefaults` impl that calls `Property::set_default`.
 ///
 /// Each `Element` method does the groups' shared work, then calls the matching `ElementImpl`
 /// hook:

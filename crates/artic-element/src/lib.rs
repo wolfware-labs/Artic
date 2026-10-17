@@ -7,8 +7,8 @@
 //! - [`HasState`] gives a control's state structs to the traits built on them.
 //! - [`ElementTypes`] finds a node's `Element` from its `Box<dyn Object>`; each element type adds
 //!   itself with [`element_type!`].
-//! - [`LayoutProperties`], [`AppearanceProperties`], [`InteractionProperties`] and
-//!   [`IdentityProperties`] hold the properties every control has; a control flattens each into
+//! - [`Layout`], [`Appearance`], [`Interaction`] and
+//!   [`Identity`] hold the properties every control has; a control flattens each into
 //!   its own properties. [`Visibility`], [`Cursor`] and [`Classes`] are the value types of some of
 //!   them.
 //! - [`Application`] and its [`Surface`]s are the roots a host presents; [`Desktop`] holds the
@@ -26,10 +26,11 @@ mod surface;
 mod types;
 mod visibility;
 
+pub use artic_registry::OverrideDefaults;
 pub use classes::Classes;
 pub use context::{AccessCx, EventCx, Handled, HitTestCx, HitTestResult, RenderCx};
 pub use element::{Element, ElementImpl, HasState};
-pub use properties::{AppearanceProperties, IdentityProperties, InteractionProperties, LayoutProperties};
+pub use properties::{Appearance, Identity, Interaction, Layout};
 pub use surface::{Application, Chrome, Desktop, SizeToContent, Surface};
 pub use types::{ELEMENT_TYPES, ElementType, ElementTypes};
 pub use visibility::{Cursor, Visibility};
@@ -39,13 +40,14 @@ pub use visibility::{Cursor, Visibility};
 #[doc(hidden)]
 pub mod __private {
   pub use crate::{
-    AccessCx, AppearanceProperties, ELEMENT_TYPES, Element, ElementImpl, ElementType, EventCx, Handled, HasState, HitTestCx,
-    HitTestResult, IdentityProperties, InteractionProperties, LayoutProperties, RenderCx, element_type,
+    AccessCx, Appearance, ELEMENT_TYPES, Element, ElementImpl, ElementType, EventCx, Handled, HasState, HitTestCx,
+    HitTestResult, Identity, Interaction, Layout, RenderCx, element_type,
   };
   pub use accesskit;
   pub use artic_core::input::InputEvent;
   pub use artic_layout::geometry::{Point, Rect, Size};
   pub use artic_layout::{ArrangeCx, Layoutable, MeasureCx};
+  pub use artic_macros::XamlType;
   pub use artic_registry::__private::*;
   pub use artic_render::{Layers, SceneBuilder};
   pub use linkme;

@@ -1,5 +1,0 @@
-error: `content` names `childs`, which is not a `#[xaml]` field of this struct
- --> tests/ui/content_missing_field.rs:6:53
-  |
-6 | #[xaml(namespace = "https://artic.rs/ui", content = childs)]
-  |                                                     ^^^^^^
