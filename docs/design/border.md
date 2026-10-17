@@ -39,7 +39,7 @@ impl RoundedRect {
 }
 ```
 
-The outer shape is `self.fitted()`, which already scales radii that don't fit, as CSS does, and the inner radii start from those fitted radii, as CSS's used values. The inner shape is the rectangle deflated by `thickness`, with each corner's radius reduced per axis by the widths of its two sides, stopping at 0: the top-left corner becomes `(radius − left, radius − top)`, the top-right `(radius − right, radius − top)`, the bottom-right `(radius − right, radius − bottom)` and the bottom-left `(radius − left, radius − bottom)`. Those can still be too large for the smaller inner box (a 9 and a 1 radius on a top side 5 wide inside), so the inner radii are then scaled down by one factor, per axis, until each side's two radii fit it, the same rule `fitted` applies to the outer box. When the sides differ, the inner corners are elliptical, which keeps the ring an even width along each side; reusing the outer radius inside makes the corners look lumpy.
+The outer shape is `self.fitted()`, which already scales radii that don't fit, as CSS does, and the inner radii start from those fitted radii, as CSS's used values. The inner shape is the rectangle deflated by `thickness`, with each corner's radius reduced per axis by the widths of its two sides, stopping at 0: the top-left corner becomes `(radius − left, radius − top)`, the top-right `(radius − right, radius − top)`, the bottom-right `(radius − right, radius − bottom)` and the bottom-left `(radius − left, radius − bottom)`. Those can still be too large for the smaller inner box (a 9 and a 1 radius on a top side 5 wide inside), so all eight inner radii are then scaled by one common factor, the smallest ratio of an inner side's length to the sum of its two radii along it (when below 1), the same rule `fitted` applies to the outer box and CSS applies to overlapping corners. When the sides differ, the inner corners are elliptical, which keeps the ring an even width along each side; reusing the outer radius inside makes the corners look lumpy.
 
 Each quarter of an ellipse is one cubic Bézier with control points at 0.5523 of the radius from the ends, within about 0.03% of the radius from the true curve. The outer corners come from the same function with equal radii, so the two outlines of the ring are built the same way; `Border` fills its background with that outer path too, so the background and the ring share an edge exactly. With zero thickness, `inner` is that same outline. When the deflated rectangle is empty on an axis, `inner` is a path of a single point (`Path::builder(origin).build()`, since a `Path` always starts with a point), which as a clip hides everything, and `ring` is the whole outer shape: the border fills the box. The arithmetic goes through `finite::add`, as the rest of layout's geometry does. A side that isn't a finite number of 0 or more counts as 0, here and in `Border`'s layout, so a negative side can't turn the ring inside out.
 
@@ -49,7 +49,7 @@ One even-odd fill of `ring` draws any border, whether its sides are equal or not
 
 `BoxShadow` exists in `artic-render` (#36), and vello already draws it outside its caster only, so it never shows through a semi-transparent background (#283). Markup needs it from text, so `impl FromStr for BoxShadow` goes in `shadow.rs`.
 
-The grammar is CSS's and Avalonia's: `offset-x offset-y [blur [spread]] color`, separated by whitespace. Every token but the last is a finite number, two to four of them; the last is the color, parsed by `Color::from_str`. Blur and spread default to 0. Blur can't be negative; spread can, and shrinks the shadow. `"0 2 8 #40000000"`, `"4 4 Black"` and `"0 0 12 -2 #80000000"` are valid. One value is one shadow, and `inset` (#275) is refused.
+The grammar is CSS's and Avalonia's: `offset-x offset-y [blur [spread]] color`, separated by whitespace. Every token but the last is a finite number, two to four of them; the last is the color, parsed by `Color::from_str`. Blur and spread default to 0. Blur can't be negative; spread can, and shrinks the shadow. `"0 2 8 #40000000"`, `"4 4 Black"` and `"0 0 12 -2 #80000000"` are valid. One value is one shadow. `inset` (#275) is refused: a token equal to `inset`, ignoring case, anywhere in the value is checked for before the numbers are read, so it reports `Inset` rather than `NotANumber`.
 
 The color is required: CSS defaults it to the text color, which artic doesn't have, and a required part can later get a default without breaking anything.
 
@@ -74,7 +74,7 @@ pub enum ShadowProblem {
 }
 ```
 
-The message quotes the text and shows the form: `'4 4' is not a valid BoxShadow: it needs a color last; write it like '0 2 8 #40000000'`. A last token that parses as a number is `MissingColor`; any other last token is the color, so a mistyped color such as `#4000000` reports `Color`, worded as "its color '#4000000' …" with the color error's own reason, not a number problem.
+`artic-render` re-exports `ParseBoxShadowError` and `ShadowProblem` from its root, beside `BoxShadow`, as it does `ParseColorError` beside `Color`. The message quotes the text and shows the form: `'4 4' is not a valid BoxShadow: it needs a color last; write it like '0 2 8 #40000000'`. A last token that parses as a number is `MissingColor`; any other last token is the color, so a mistyped color such as `#4000000` reports `Color`, worded as "its color '#4000000' …" with the color error's own reason, not a number problem.
 
 ## 4. `Border`
 
@@ -87,7 +87,7 @@ In `artic-controls`:
 pub struct Border {
   #[xaml(content)] pub child: Child,
   #[xaml(affects = layout)] pub padding: Property<Thickness>,
-  #[xaml(affects = layout)] pub border_thickness: Property<Thickness>,
+  #[xaml(affects = layout | render)] pub border_thickness: Property<Thickness>,
   #[xaml(affects = render)] pub background: Property<Option<Brush>>,
   #[xaml(affects = render)] pub border_brush: Property<Option<Brush>>,
   #[xaml(affects = render)] pub corner_radius: Property<CornerRadius>,
@@ -99,6 +99,7 @@ pub struct Border {
 
 | Step | Rule |
 | --- | --- |
+| Properties | `border_thickness` affects layout and render, since the outline and the clip use it even when the arranged size doesn't change; `padding` affects layout only |
 | Measure | the child is offered the available size less `border_thickness` and `padding`, stopping at 0 and saturating; `Border` asks for the child's desired size plus both. Without a child, it asks for the thickness plus the padding. A side of either that isn't a finite number of 0 or more counts as 0 |
 | Arrange | the child gets the box deflated by `border_thickness`, then by `padding`, with its origin kept inside the box when the two are larger than it, so the child's rectangle never lies outside its parent |
 | Render | with `outer` the box with `corner_radius`, fitted: the shadow, if set; the background filling `outer`'s path, if set; and `outer.ring(border_thickness)` filled with `border_brush`, if it's set and at least one side isn't zero. The background reaches under the outline, as CSS's default `background-clip: border-box` does |
@@ -113,7 +114,7 @@ Layout snaps the child's edges to the device-pixel grid, while the ring and the 
 | --- | --- |
 | `docs/design/element.md` | `ElementImpl::clip` clips descendants only; the layers order in its `layers` row and in the composition paragraph |
 | `docs/design/shapes.md` | the clip layer's description and order; "Border insets its rectangle by half the thickness" becomes the ring fill; the `BoxShadow` text format lives on `artic-render`'s `BoxShadow` itself, not a separate XAML value type |
-| `artic-render` docs | `Layers` and `Layers.clip`, and `Compositor::compose`'s "transform, then clip, then opacity" |
+| `artic-render` docs | `Layers` and `Layers.clip`, and `Compositor::compose`'s order, which becomes: transform and opacity, the node's fragment, then the clip around its children |
 | Spec §7 | the `clip` hook comment ("clips the element's descendants") and the `layers` comment's order; the `Border` row gains padding |
 | Spec §3 | the `Border` example lists the properties of section 4 |
 
@@ -132,8 +133,8 @@ Layout snaps the child's edges to the device-pixel grid, while the ring and the 
 
 | Crate | Tests |
 | --- | --- |
-| `artic-render` | `clip_applies_to_children_not_the_node`, `no_clip_without_children`, `no_clip_when_no_child_is_drawn` (a collapsed child), and `composition_applies_transform_clip_opacity` rewritten for the new order; `BoxShadow` parsing: `two_numbers_and_a_color`, `three_numbers_add_blur`, `four_numbers_add_spread`, `negative_spread_is_allowed`, and one test per `ShadowProblem`, each checking the message quotes the text |
-| `artic-layout` | `inner_radii_shrink_per_axis`, `zero_thickness_inner_is_the_outline`, `inner_radius_stops_at_zero`, `inner_radii_fit_the_inner_box`, `negative_sides_count_as_zero`, `thick_border_leaves_no_hole`, `ring_fills_even_odd`, `ring_bounds_match_the_outer_shape` |
+| `artic-render` | `clip_applies_to_children_not_the_node`, `no_clip_without_children`, `no_clip_when_no_child_is_drawn` (a collapsed child), and `composition_applies_transform_clip_opacity` rewritten for the new order; `BoxShadow` parsing: `two_numbers_and_a_color`, `three_numbers_add_blur`, `four_numbers_add_spread`, `negative_spread_is_allowed`, `inset_is_reported_as_inset`, and one test per `ShadowProblem`, each checking the message quotes the text |
+| `artic-layout` | `inner_radii_shrink_per_axis`, `zero_thickness_inner_is_the_outline`, `inner_radius_stops_at_zero`, `inner_radii_fit_the_inner_box` (one common factor), `negative_sides_count_as_zero`, `thick_border_leaves_no_hole`, `ring_fills_even_odd`, `ring_bounds_match_the_outer_shape` |
 | `artic-controls` | `border_measure_includes_padding_and_thickness`, `border_arranges_child_inside_padding`, `border_without_a_child_is_its_chrome`, `thick_border_and_padding_stay_non_negative`, `border_clips_to_the_inner_shape`, `border_child_is_xaml_content`, `border_accesskit_node`, and the property test `border_invariants_hold` over random thickness and padding, with containment on |
 | `artic-vello` | `transform_and_clip_place_the_child` in `pixels.rs` rewritten so the clip is on a parent; goldens `border_background`, `border_uneven_thickness`, `border_corner_radius`, `border_box_shadow`, `border_clips_child` (a square child whose corners would show past rounded corners) |
 
