@@ -310,31 +310,34 @@ pub enum WeightProblem {
 impl FromStr for FontWeight {
   type Err = ParseFontWeightError;
 
-  /// Parses a whole number from 1 to 1000 or a name [`FontWeight`] lists, ignoring case and the
-  /// whitespace around it.
+  /// Parses a whole number from 1 to 1000, written in decimal with an optional sign and a
+  /// fraction of zeros, or a name [`FontWeight`] lists, ignoring case and the whitespace around it.
   fn from_str(text: &str) -> Result<FontWeight, ParseFontWeightError> {
-    let trimmed = text.trim();
-    let weight = match trimmed.parse::<f32>() {
-      Ok(number) => whole_weight(number).ok_or(WeightProblem::OutOfRange),
-      Err(_) => WEIGHT_NAMES
-        .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case(trimmed))
-        .map(|&(_, weight)| weight)
-        .ok_or(WeightProblem::UnknownName),
-    };
-    weight.map_err(|problem| ParseFontWeightError {
+    parse_weight(text.trim()).map_err(|problem| ParseFontWeightError {
       text: text.to_owned(),
       problem,
     })
   }
 }
 
-fn whole_weight(number: f32) -> Option<FontWeight> {
-  if number.fract() == 0.0 && (1.0..=1000.0).contains(&number) {
-    FontWeight::new(number as u16)
-  } else {
-    None
+fn parse_weight(text: &str) -> Result<FontWeight, WeightProblem> {
+  if let Some(&(_, weight)) = WEIGHT_NAMES.iter().find(|(name, _)| name.eq_ignore_ascii_case(text)) {
+    return Ok(weight);
   }
+  let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
+  let (whole, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+  let digits = |part: &str| part.bytes().all(|byte| byte.is_ascii_digit());
+  if whole.is_empty() || !digits(whole) || !digits(fraction) {
+    return Err(WeightProblem::UnknownName);
+  }
+  if text.starts_with('-') || fraction.bytes().any(|byte| byte != b'0') {
+    return Err(WeightProblem::OutOfRange);
+  }
+  whole
+    .parse::<u16>()
+    .ok()
+    .and_then(FontWeight::new)
+    .ok_or(WeightProblem::OutOfRange)
 }
 
 /// Whether a font's glyphs are upright or slanted.
@@ -402,6 +405,8 @@ mod tests {
       ("1000", 1000),
       ("+700", 700),
       ("700.0", 700),
+      ("700.", 700),
+      ("0700", 700),
     ];
     for (text, value) in cases {
       assert_eq!(weight(text), Ok(value), "{text}");
@@ -423,7 +428,7 @@ mod tests {
   // Text that is neither a number nor a weight's name is `UnknownName`, and the message quotes it.
   #[test]
   fn unknown_weight_name() {
-    for text in ["Bolder", "", "semi bold"] {
+    for text in ["Bolder", "", "semi bold", "NaN", "inf", "7e2", ".5"] {
       assert_eq!(weight(text), Err(WeightProblem::UnknownName), "{text}");
     }
     assert_eq!(
@@ -435,7 +440,17 @@ mod tests {
   // A number outside 1 to 1000, or one that isn't whole, is `OutOfRange`, and the message quotes it.
   #[test]
   fn weight_out_of_range() {
-    for text in ["0", "1001", "-1", "700.5", "NaN", "inf"] {
+    for text in [
+      "0",
+      "1001",
+      "-1",
+      "-0",
+      "700.5",
+      "0.99999999",
+      "700.00001",
+      "999.99999",
+      "99999999",
+    ] {
       assert_eq!(weight(text), Err(WeightProblem::OutOfRange), "{text}");
     }
     assert_eq!(

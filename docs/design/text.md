@@ -75,13 +75,13 @@ Errors follow `ParseBoxShadowError`: the text and a problem enum.
 
 ```rust
 pub struct ParseFontFamilyError { pub text: String, pub problem: FamilyProblem }
-pub enum FamilyProblem { Empty, EmptyName, UnclosedQuote }
+pub enum FamilyProblem { Empty, EmptyName, UnclosedQuote, PartlyQuoted(String) }
 
 pub struct ParseFontWeightError { pub text: String, pub problem: WeightProblem }
 pub enum WeightProblem { UnknownName, OutOfRange }
 ```
 
-`"Inter,,Arial"` is `EmptyName`, and `"'Segoe UI"` is `UnclosedQuote`. Messages quote the text and show the forms: `invalid FontFamily '': it's empty; expected forms like 'Inter, sans-serif' or 'system-ui'`.
+`"Inter,,Arial"` is `EmptyName`, `"'Segoe UI"` is `UnclosedQuote`, and `"'Segoe' UI"` is `PartlyQuoted`: a name is quoted whole or not at all. Messages quote the text and show the forms: `invalid FontFamily '': it's empty; expected forms like 'Inter, sans-serif' or 'system-ui'`.
 
 ## 3. The `TextEngine` trait
 
@@ -163,8 +163,8 @@ impl TextEngine for Engine { /* … */ }
 `paragraph`:
 
 1. builds a `parley` layout at display scale 1, without quantizing, so its numbers are logical units. The family list, followed by the engine's default family, becomes a `parley` font stack; size, weight and style carry over; `line_height: None` is the font's metrics (`MetricsRelative(1.0)`);
-2. breaks it with `break_all_lines(max_width)`, then calls `align` with start alignment, which `parley` needs to place the lines, against the widest kept line so the glyphs stay inside the paragraph's size. `parley` reorders mixed-direction runs. The alignment field in `TextStyle` that selects other modes comes with #46;
-3. keeps the first `max_lines` lines. The size is the widest kept line by the sum of the kept lines' heights;
+2. breaks it with `break_all_lines(max_width)` and keeps the first `max_lines` lines. The size is the widest kept line by the sum of the kept lines' heights;
+3. aligns the kept lines against that width with `align`, in start alignment, which `parley` needs to place the lines, so the glyphs stay inside the paragraph's size. `parley` reorders mixed-direction runs. The alignment field in `TextStyle` that selects other modes comes with #46;
 4. turns each `parley` glyph run into a `GlyphRun`, with its synthesis, looking its face up in the engine's font table by the blob's id and the face's index, so one face always has one `FontData` and one `id` for the engine's life. The table holds only the faces of the engine's own collection. Faces of a collection file (`.ttc`) share a blob and differ by index.
 
 It never panics and never fails:
