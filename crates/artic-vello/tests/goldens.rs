@@ -4,8 +4,12 @@
 
 mod common;
 
-use artic_render::Scene;
-use artic_test::golden::render;
+use artic_controls::StackPanel;
+use artic_core::tree::UiTree;
+use artic_element::{Children, ElementTypes};
+use artic_layout::HorizontalAlignment;
+use artic_render::{Color, Scene};
+use artic_test::golden::{render, render_tree};
 use artic_test::{golden, scenes};
 use common::{is_warp, with_renderer};
 use vello::wgpu::{Backend, DeviceType};
@@ -83,4 +87,33 @@ fn path_clip() {
 #[test]
 fn nested_opacity() {
   check("nested_opacity", scenes::nested_opacity);
+}
+
+// A vertical stack panel with a light background and three fixed-size children, each a stack panel
+// with its own color, 4 apart.
+#[test]
+fn stack_panel_background() {
+  with_renderer(|renderer| {
+    let mut tree = UiTree::new();
+    let root = tree.alloc(Box::new(StackPanel::default()));
+    let stack = tree.get_as::<StackPanel>(root).expect("a stack panel");
+    stack.panel.background.set(Some(Color::rgb(240, 240, 240).into()));
+    stack.spacing.set(4.0);
+    let bars = [
+      (40.0, Color::rgb(220, 60, 60)),
+      (24.0, Color::rgb(60, 160, 60)),
+      (56.0, Color::rgb(60, 90, 220)),
+    ];
+    for (width, color) in bars {
+      let child = tree.alloc(Box::new(StackPanel::default()));
+      let bar = tree.get_as::<StackPanel>(child).expect("a stack panel");
+      bar.layout.width.set(Some(width));
+      bar.layout.height.set(Some(12.0));
+      bar.layout.horizontal_alignment.set(HorizontalAlignment::Left);
+      bar.panel.background.set(Some(color.into()));
+      Children::add(&mut tree, root, child);
+    }
+    let image = render_tree(renderer, &mut tree, root, &ElementTypes::from_link_time(), scenes::SIZE, 1.0).expect("renders");
+    golden!("stack_panel_background").assert(&image);
+  });
 }

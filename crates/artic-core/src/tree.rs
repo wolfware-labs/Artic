@@ -420,15 +420,15 @@ impl UiTree {
   /// use artic_core::tree::{TreeKind, UiTree};
   ///
   /// #[derive(Debug)]
-  /// struct Panel;
-  /// impl Object for Panel {
+  /// struct Stack;
+  /// impl Object for Stack {
   ///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
   /// }
   ///
   /// let mut tree = UiTree::new();
-  /// let panel = tree.alloc(Box::new(Panel));
-  /// let first = tree.alloc(Box::new(Panel));
-  /// let second = tree.alloc(Box::new(Panel));
+  /// let panel = tree.alloc(Box::new(Stack));
+  /// let first = tree.alloc(Box::new(Stack));
+  /// let second = tree.alloc(Box::new(Stack));
   ///
   /// tree.add_child(TreeKind::Logical, panel, first);
   /// tree.add_child(TreeKind::Logical, panel, second);
@@ -532,13 +532,13 @@ impl UiTree {
   /// use artic_core::tree::{TreeKind, UiTree};
   ///
   /// #[derive(Debug)]
-  /// struct Panel;
-  /// impl Object for Panel {
+  /// struct Stack;
+  /// impl Object for Stack {
   ///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
   /// }
   ///
   /// let mut tree = UiTree::new();
-  /// let [root, a, a1, b] = [(); 4].map(|_| tree.alloc(Box::new(Panel)));
+  /// let [root, a, a1, b] = [(); 4].map(|_| tree.alloc(Box::new(Stack)));
   /// tree.add_child(TreeKind::Visual, root, a);
   /// tree.add_child(TreeKind::Visual, a, a1);
   /// tree.add_child(TreeKind::Visual, root, b);

@@ -24,7 +24,9 @@ pub trait Layoutable {
   fn arrange(&self, cx: &mut ArrangeCx<'_>, rect: Rect);
 
   /// Whether the node takes no part in layout: its parent doesn't see it among its children, and
-  /// it isn't measured or arranged, with its subtree. By default, false.
+  /// it isn't measured or arranged, with its subtree. By default, false. A layoutable whose answer
+  /// changes marks itself with [`LayoutManager::invalidate_measure`], as `#[element]` does through
+  /// `Visibility`, which affects layout.
   fn collapsed(&self) -> bool {
     false
   }

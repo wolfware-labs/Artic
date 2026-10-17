@@ -22,17 +22,17 @@ static TURN: PropertyKey<bool> = PropertyKey::new("Turn", Affects::RENDER, Inher
 
 /// Stacks its children from top to bottom, each as wide as itself; draws nothing.
 #[derive(Debug)]
-pub struct Panel {
+pub struct Column {
   visible: Property<bool>,
 }
 
-impl Object for Panel {
+impl Object for Column {
   fn visit_properties(&self, visit: &mut dyn FnMut(&dyn AnyProperty)) {
     visit(&self.visible);
   }
 }
 
-impl Layoutable for Panel {
+impl Layoutable for Column {
   fn measure(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size {
     let children: Vec<NodeId> = cx.children().collect();
     children.iter().fold(Size::ZERO, |total, child| {
@@ -52,7 +52,7 @@ impl Layoutable for Panel {
   }
 }
 
-impl Element for Panel {
+impl Element for Column {
   fn render(&self, _cx: &mut RenderCx<'_>, _scene: &mut SceneBuilder) {}
 
   fn accessibility(&self, _cx: &AccessCx<'_>) -> accesskit::Node {
@@ -67,7 +67,7 @@ impl Element for Panel {
   }
 }
 
-artic_element::element_type!(Panel);
+artic_element::element_type!(Column);
 
 /// A block `height` tall that fills its box with `color`, turned by a scale of 2 when `turn` is set.
 #[derive(Debug)]
@@ -159,9 +159,9 @@ pub struct LeafHandles {
 }
 
 /// Allocates a visible panel holding `children`, and returns it with its visibility.
-pub fn panel(tree: &mut UiTree, children: &[NodeId]) -> (NodeId, Property<bool>) {
+pub fn column(tree: &mut UiTree, children: &[NodeId]) -> (NodeId, Property<bool>) {
   let visible = Property::new(&VISIBLE, true);
-  let id = tree.alloc(Box::new(Panel { visible }));
+  let id = tree.alloc(Box::new(Column { visible }));
   for child in children {
     tree.add_child(TreeKind::Visual, id, *child);
   }
