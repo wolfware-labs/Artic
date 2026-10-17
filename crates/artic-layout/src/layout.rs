@@ -22,6 +22,12 @@ pub trait Layoutable {
   /// Places the element in `rect`, in its parent's coordinates, and its children through
   /// [`ArrangeCx::arrange`], in the element's own coordinates: `(0, 0)` is its top-left corner.
   fn arrange(&self, cx: &mut ArrangeCx<'_>, rect: Rect);
+
+  /// Whether the node takes no part in layout: its parent doesn't see it among its children, and
+  /// it isn't measured or arranged, with its subtree. By default, false.
+  fn collapsed(&self) -> bool {
+    false
+  }
 }
 
 /// Finds the [`Layoutable`] of a node, for layout to measure and arrange it.
@@ -83,7 +89,8 @@ impl LayoutManager {
   ///
   /// With `snap`, every arranged rectangle has its edges on the device-pixel grid. The root's
   /// rectangle is `available` where it's finite, and its desired size where it isn't. Results of
-  /// nodes no longer in the subtree are dropped. Returns what it measured, arranged and resized.
+  /// nodes no longer in the subtree are dropped, and a collapsed root lays out nothing. Returns
+  /// what it measured, arranged and resized.
   pub fn run(
     &mut self,
     tree: &mut UiTree,
@@ -99,6 +106,9 @@ impl LayoutManager {
       }
     }
     let (cx, depths, desired) = self.measure_pass(tree, nodes, root, available);
+    if cx.pass.collapsed(root) {
+      return cx.pass.stats;
+    }
     let mut cx = ArrangeCx {
       pass: cx.pass,
       scale,
@@ -138,7 +148,7 @@ impl LayoutManager {
 
   /// Measures `root`'s visual subtree in `available`, as a [`run`](LayoutManager::run) does first,
   /// without arranging it, and returns the size it wants. A later `run` in the same `available`
-  /// answers every measure from the cache.
+  /// answers every measure from the cache. A collapsed root measures nothing and returns zero.
   pub fn measure(&mut self, tree: &mut UiTree, nodes: &impl LayoutNodes, root: NodeId, available: Size) -> Size {
     self.measure_pass(tree, nodes, root, available).2
   }
@@ -165,6 +175,10 @@ impl LayoutManager {
     }
     self.slots.retain(|node, _| depths.contains_key(node));
     self.sizes.retain(|node, _| depths.contains_key(node));
+    if collapsed(nodes, tree, root) {
+      self.slots.clear();
+      dirty.clear();
+    }
 
     let mut nested = HashSet::new();
     let mut between = Vec::new();
@@ -208,10 +222,11 @@ impl LayoutManager {
           continue;
         }
         let slot = cx.pass.slots.get(&node).copied().unwrap_or_default();
-        let changed = match slot.available {
-          Some(available) => cx.measure(node, available) != slot.desired,
-          None => true,
-        };
+        let changed = cx.pass.collapsed(node)
+          || match slot.available {
+            Some(available) => cx.measure(node, available) != slot.desired,
+            None => true,
+          };
         if changed
           && let Some(parent) = cx.pass.tree.parent(TreeKind::Visual, node)
           && cx.dirty.insert(parent)
@@ -269,8 +284,14 @@ impl<'a> Pass<'a> {
   }
 
   fn children(&self) -> impl Iterator<Item = NodeId> + use<'a> {
-    let (tree, node) = (self.tree, self.node());
-    tree.children(TreeKind::Visual, node)
+    let (tree, nodes, node) = (self.tree, self.nodes, self.node());
+    tree
+      .children(TreeKind::Visual, node)
+      .filter(move |child| !collapsed(nodes, tree, *child))
+  }
+
+  fn collapsed(&self, node: NodeId) -> bool {
+    collapsed(self.nodes, self.tree, node)
   }
 
   fn describe_parent(&self) -> String {
@@ -339,13 +360,14 @@ impl<'a> MeasureCx<'a> {
     self.pass.tree
   }
 
-  /// The visual children of the node being measured, in order.
+  /// The visual children of the node being measured, in order, leaving out collapsed ones.
   pub fn children(&self) -> impl Iterator<Item = NodeId> + use<'a> {
     self.pass.children()
   }
 
   /// Measures `child` in `available` and returns the size it wants, its margin included. A child
-  /// that isn't marked and was last measured in the same `available` answers from its cache.
+  /// that isn't marked and was last measured in the same `available` answers from its cache. A
+  /// collapsed child isn't measured: it returns zero and keeps no results.
   ///
   /// # Panics
   ///
@@ -361,6 +383,9 @@ impl<'a> MeasureCx<'a> {
       "{} measured node {child:?}, which isn't a visual child of it; measure only visual children",
       self.pass.describe_parent(),
     );
+    if self.pass.collapsed(child) {
+      return Size::ZERO;
+    }
     let available = self.checked_available(child, available);
     if let Some(siblings) = self.measured.last_mut() {
       siblings.insert(child);
@@ -485,7 +510,7 @@ impl<'a> ArrangeCx<'a> {
     self.pass.tree
   }
 
-  /// The visual children of the node being arranged, in order.
+  /// The visual children of the node being arranged, in order, leaving out collapsed ones.
   pub fn children(&self) -> impl Iterator<Item = NodeId> + use<'a> {
     self.pass.children()
   }
@@ -509,12 +534,16 @@ impl<'a> ArrangeCx<'a> {
   }
 
   /// Arranges `child` in `rect`, in the coordinates of the node being arranged, snapped to the
-  /// device-pixel grid. A child already offered that rectangle, with nothing changed, is skipped.
+  /// device-pixel grid. A child already offered that rectangle, with nothing changed, is skipped,
+  /// and a collapsed child isn't arranged.
   ///
   /// # Panics
   ///
   /// In debug builds, panics if `rect` isn't finite; release builds treat such a field as zero.
   pub fn arrange(&mut self, child: NodeId, rect: Rect) {
+    if self.pass.collapsed(child) {
+      return;
+    }
     let rect = self.snap(self.checked_rect(child, rect));
     let slot = self.pass.slots.entry(child).or_default();
     if slot.offered == Some(rect) && !slot.arrange_dirty {
@@ -580,6 +609,11 @@ impl std::fmt::Debug for ArrangeCx<'_> {
       .field("snap", &self.snap)
       .finish_non_exhaustive()
   }
+}
+
+/// Whether `node`'s layoutable says it's collapsed; a node with none isn't.
+fn collapsed(nodes: &dyn LayoutNodes, tree: &UiTree, node: NodeId) -> bool {
+  nodes.layoutable(tree, node).is_some_and(|layoutable| layoutable.collapsed())
 }
 
 /// `desired`, checked to be finite and not negative.

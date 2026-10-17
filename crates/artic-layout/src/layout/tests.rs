@@ -675,3 +675,309 @@ mod overlay {
     }
   }
 }
+
+mod collapsed {
+  use crate::geometry::{Rect, Size};
+  use crate::{ArrangeCx, LayoutManager, LayoutNodes, Layoutable, MeasureCx};
+  use artic_core::Object;
+  use artic_core::property::AnyProperty;
+  use artic_core::tree::{NodeId, TreeKind, UiTree};
+  use pretty_assertions::assert_eq;
+  use std::cell::Cell;
+
+  /// A leaf of a fixed size that can be collapsed; counts its measures.
+  #[derive(Debug)]
+  struct Item {
+    size: Size,
+    collapsed: Cell<bool>,
+    measured: Cell<u32>,
+  }
+
+  /// Stacks its children top to bottom with 5 between each pair, as a panel with spacing does.
+  #[derive(Debug, Default)]
+  struct Column {
+    collapsed: Cell<bool>,
+    measured: Cell<u32>,
+  }
+
+  impl Object for Item {
+    fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  }
+
+  impl Object for Column {
+    fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  }
+
+  impl Layoutable for Item {
+    fn measure(&self, _cx: &mut MeasureCx<'_>, _available: Size) -> Size {
+      self.measured.set(self.measured.get() + 1);
+      self.size
+    }
+
+    fn arrange(&self, _cx: &mut ArrangeCx<'_>, _rect: Rect) {}
+
+    fn collapsed(&self) -> bool {
+      self.collapsed.get()
+    }
+  }
+
+  impl Layoutable for Column {
+    fn measure(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size {
+      self.measured.set(self.measured.get() + 1);
+      let children: Vec<NodeId> = cx.children().collect();
+      let gaps = children.len().saturating_sub(1) as f32 * 5.0;
+      let mut total = Size::new(0.0, gaps);
+      for child in children {
+        let desired = cx.measure(child, Size::new(available.width, f32::INFINITY));
+        total = Size::new(total.width.max(desired.width), total.height + desired.height);
+      }
+      total
+    }
+
+    fn arrange(&self, cx: &mut ArrangeCx<'_>, rect: Rect) {
+      let mut top = 0.0;
+      let children: Vec<NodeId> = cx.children().collect();
+      for child in children {
+        let height = cx.desired(child).height;
+        cx.arrange(child, Rect::new(0.0, top, rect.width, height));
+        top += height + 5.0;
+      }
+    }
+
+    fn collapsed(&self) -> bool {
+      self.collapsed.get()
+    }
+  }
+
+  struct Nodes;
+
+  impl LayoutNodes for Nodes {
+    fn layoutable<'a>(&self, tree: &'a UiTree, node: NodeId) -> Option<&'a dyn Layoutable> {
+      tree
+        .get_as::<Item>(node)
+        .map(|item| item as &dyn Layoutable)
+        .or_else(|| tree.get_as::<Column>(node).map(|column| column as &dyn Layoutable))
+    }
+  }
+
+  const WINDOW: Size = Size::new(100.0, 300.0);
+
+  fn item(tree: &mut UiTree, height: f32) -> NodeId {
+    tree.alloc(Box::new(Item {
+      size: Size::new(10.0, height),
+      collapsed: Cell::new(false),
+      measured: Cell::new(0),
+    }))
+  }
+
+  fn column(tree: &mut UiTree, children: &[NodeId]) -> NodeId {
+    let node = tree.alloc(Box::new(Column::default()));
+    for child in children {
+      tree.add_child(TreeKind::Visual, node, *child);
+    }
+    node
+  }
+
+  fn run(layout: &mut LayoutManager, tree: &mut UiTree, root: NodeId) {
+    layout.run(tree, &Nodes, root, WINDOW, 1.0, false);
+  }
+
+  fn collapse(tree: &mut UiTree, node: NodeId, collapsed: bool) {
+    if let Some(item) = tree.get_as::<Item>(node) {
+      item.collapsed.set(collapsed);
+    }
+    if let Some(column) = tree.get_as::<Column>(node) {
+      column.collapsed.set(collapsed);
+    }
+    LayoutManager::invalidate_measure(tree, node);
+  }
+
+  // A collapsed child isn't among its parent's children: it gets no spacing, no size and no rect.
+  #[test]
+  fn collapsed_children_are_left_out() {
+    let mut tree = UiTree::new();
+    let (a, b, c) = (item(&mut tree, 20.0), item(&mut tree, 30.0), item(&mut tree, 40.0));
+    tree.get_as::<Item>(b).unwrap().collapsed.set(true);
+    let root = column(&mut tree, &[a, b, c]);
+    let mut layout = LayoutManager::default();
+
+    run(&mut layout, &mut tree, root);
+
+    assert_eq!(layout.desired(root), Some(Size::new(10.0, 65.0)));
+    assert_eq!((layout.desired(b), layout.rect(b)), (None, None));
+    assert_eq!(tree.get_as::<Item>(b).unwrap().measured.get(), 0);
+    assert_eq!(layout.rect(c), Some(Rect::new(0.0, 25.0, 100.0, 40.0)));
+  }
+
+  // A visible child that is empty is still a child, and still gets its spacing.
+  #[test]
+  fn empty_visible_child_is_still_a_child() {
+    let mut tree = UiTree::new();
+    let (a, b) = (item(&mut tree, 20.0), item(&mut tree, 0.0));
+    let root = column(&mut tree, &[a, b]);
+    let mut layout = LayoutManager::default();
+
+    run(&mut layout, &mut tree, root);
+
+    assert_eq!(layout.desired(root), Some(Size::new(10.0, 25.0)));
+    assert!(layout.rect(b).is_some());
+  }
+
+  // Collapsing a child measures its parent again, without it.
+  #[test]
+  fn collapsing_a_child_remeasures_the_parent() {
+    let mut tree = UiTree::new();
+    let (a, b) = (item(&mut tree, 20.0), item(&mut tree, 30.0));
+    let root = column(&mut tree, &[a, b]);
+    let mut layout = LayoutManager::default();
+    run(&mut layout, &mut tree, root);
+
+    collapse(&mut tree, b, true);
+    run(&mut layout, &mut tree, root);
+
+    assert_eq!(layout.desired(root), Some(Size::new(10.0, 20.0)));
+    assert_eq!(layout.rect(b), None);
+  }
+
+  // Collapsing a child whose size was already zero still measures the parent again: the change
+  // is in who the children are, not in a size.
+  #[test]
+  fn collapsing_an_empty_child_remeasures_the_parent() {
+    let mut tree = UiTree::new();
+    let (a, b) = (item(&mut tree, 20.0), item(&mut tree, 0.0));
+    let root = column(&mut tree, &[a, b]);
+    let mut layout = LayoutManager::default();
+    run(&mut layout, &mut tree, root);
+
+    collapse(&mut tree, b, true);
+    run(&mut layout, &mut tree, root);
+
+    assert_eq!(layout.desired(root), Some(Size::new(10.0, 20.0)));
+  }
+
+  // Showing a collapsed child again measures it and gives it its place back.
+  #[test]
+  fn showing_a_child_again_measures_it() {
+    let mut tree = UiTree::new();
+    let (a, b) = (item(&mut tree, 20.0), item(&mut tree, 30.0));
+    tree.get_as::<Item>(b).unwrap().collapsed.set(true);
+    let root = column(&mut tree, &[a, b]);
+    let mut layout = LayoutManager::default();
+    run(&mut layout, &mut tree, root);
+
+    collapse(&mut tree, b, false);
+    run(&mut layout, &mut tree, root);
+
+    assert_eq!(tree.get_as::<Item>(b).unwrap().measured.get(), 1);
+    assert_eq!(layout.rect(b), Some(Rect::new(0.0, 25.0, 100.0, 30.0)));
+  }
+
+  // A child under a collapsed child isn't measured even when it is invalidated on its own.
+  #[test]
+  fn dirty_descendant_of_a_collapsed_child_isnt_measured() {
+    let mut tree = UiTree::new();
+    let leaf = item(&mut tree, 20.0);
+    let inner = column(&mut tree, &[leaf]);
+    let root = column(&mut tree, &[inner]);
+    let mut layout = LayoutManager::default();
+    run(&mut layout, &mut tree, root);
+    collapse(&mut tree, inner, true);
+    run(&mut layout, &mut tree, root);
+
+    LayoutManager::invalidate_measure(&mut tree, leaf);
+    run(&mut layout, &mut tree, root);
+
+    assert_eq!(tree.get_as::<Item>(leaf).unwrap().measured.get(), 1);
+    assert_eq!(layout.desired(leaf), None);
+  }
+
+  /// Measures and arranges its first child by id, whatever `children()` says.
+  #[derive(Debug, Default)]
+  struct Direct;
+
+  impl Object for Direct {
+    fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
+  }
+
+  impl Layoutable for Direct {
+    fn measure(&self, cx: &mut MeasureCx<'_>, available: Size) -> Size {
+      let child = cx.tree().children(TreeKind::Visual, cx.node()).next().expect("a child");
+      cx.measure(child, available)
+    }
+
+    fn arrange(&self, cx: &mut ArrangeCx<'_>, rect: Rect) {
+      let child = cx.tree().children(TreeKind::Visual, cx.node()).next().expect("a child");
+      cx.arrange(child, rect);
+    }
+  }
+
+  struct WithDirect;
+
+  impl LayoutNodes for WithDirect {
+    fn layoutable<'a>(&self, tree: &'a UiTree, node: NodeId) -> Option<&'a dyn Layoutable> {
+      Nodes
+        .layoutable(tree, node)
+        .or_else(|| tree.get_as::<Direct>(node).map(|direct| direct as &dyn Layoutable))
+    }
+  }
+
+  // A parent that names a collapsed child directly gets nothing back: no size, no rect.
+  #[test]
+  fn measuring_a_collapsed_child_directly_does_nothing() {
+    let mut tree = UiTree::new();
+    let child = item(&mut tree, 20.0);
+    tree.get_as::<Item>(child).unwrap().collapsed.set(true);
+    let root = tree.alloc(Box::new(Direct));
+    tree.add_child(TreeKind::Visual, root, child);
+    let mut layout = LayoutManager::default();
+
+    layout.run(&mut tree, &WithDirect, root, WINDOW, 1.0, false);
+
+    assert_eq!(layout.desired(root), Some(Size::ZERO));
+    assert_eq!((layout.desired(child), layout.rect(child)), (None, None));
+    assert_eq!(tree.get_as::<Item>(child).unwrap().measured.get(), 0);
+  }
+
+  // A collapsed root lays out nothing, in `run` and in `measure`.
+  #[test]
+  fn collapsed_root_lays_out_nothing() {
+    let mut tree = UiTree::new();
+    let a = item(&mut tree, 20.0);
+    let root = column(&mut tree, &[a]);
+    tree.get_as::<Column>(root).unwrap().collapsed.set(true);
+    let mut layout = LayoutManager::default();
+
+    run(&mut layout, &mut tree, root);
+
+    assert_eq!((layout.desired(root), layout.rect(root), layout.rect(a)), (None, None, None));
+  }
+
+  // `measure` on a collapsed root reports nothing either.
+  #[test]
+  fn measure_of_a_collapsed_root_is_none() {
+    let mut tree = UiTree::new();
+    let root = column(&mut tree, &[]);
+    tree.get_as::<Column>(root).unwrap().collapsed.set(true);
+    let mut layout = LayoutManager::default();
+
+    let size = layout.measure(&mut tree, &Nodes, root, WINDOW);
+
+    assert_eq!((size, layout.desired(root)), (Size::ZERO, None));
+  }
+
+  // A root shown again after being collapsed lays out as usual.
+  #[test]
+  fn collapsed_root_comes_back() {
+    let mut tree = UiTree::new();
+    let a = item(&mut tree, 20.0);
+    let root = column(&mut tree, &[a]);
+    let mut layout = LayoutManager::default();
+    collapse(&mut tree, root, true);
+    run(&mut layout, &mut tree, root);
+
+    collapse(&mut tree, root, false);
+    run(&mut layout, &mut tree, root);
+
+    assert_eq!(layout.rect(a), Some(Rect::new(0.0, 0.0, 100.0, 20.0)));
+  }
+}
