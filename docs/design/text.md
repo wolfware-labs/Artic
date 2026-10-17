@@ -123,7 +123,7 @@ Measure's cache is untouched: `Slot.available` and `desired` still say what the 
 
 A result that is set or dropped changes what the node draws, so `LayoutManager` collects those nodes, in `run` and in `measure` alike, and the next `run` hands them over in `LayoutStats::results`. The pipeline adds them to the nodes the compositor records again, as it does for `resized`. A result set by a `measure` call outside `run`, such as the runner's measure of a content-sized window, is reported by the following `run`, so a new paragraph is never drawn with an old fragment. A node that only moved sets nothing and stays as recorded.
 
-Arrange receives a snapped rectangle, so a width can lose up to a device pixel to snapping. `TextBlock` shapes again only when it got less than the paragraph's width by more than one device pixel (`1.0 / cx.scale()`), so width lost to snapping alone never makes text wrap; the overhang of up to one device pixel isn't clipped. Alignment in a box wider than the paragraph needs no shaping: `TextBlock` moves each line by its `width`. `RenderCx` doesn't have the engine: render draws what layout kept.
+Arrange receives a snapped rectangle, so a width can lose up to a device pixel to snapping. `TextBlock` shapes again only when it got less than the paragraph's width by more than one device pixel (`1.0 / cx.scale()`), so width lost to snapping alone never makes text wrap; the overhang of up to one device pixel isn't clipped. Alignment is an input to shaping: the engine aligns each line against the paragraph's widest line, so a box wider than the paragraph needs no shaping and `TextBlock` places the whole paragraph in it. Lines centered among themselves and a paragraph centered in its box put every line in the center of the box; the same holds for the end, and right-to-left lines come out of the engine already placed. `RenderCx` doesn't have the engine: render draws what layout kept.
 
 ### Reaching the engine
 
@@ -163,7 +163,7 @@ impl TextEngine for Engine { /* … */ }
 `paragraph`:
 
 1. builds a `parley` layout at display scale 1, without quantizing, so its numbers are logical units. The family list, followed by the engine's default family, becomes a `parley` font stack; size, weight and style carry over; `line_height: None` is the font's metrics (`MetricsRelative(1.0)`);
-2. breaks it with `break_all_lines(max_width)`, then calls `align` with start alignment, which `parley` needs to place the lines. `parley` reorders mixed-direction runs; alignment modes belong to #46;
+2. breaks it with `break_all_lines(max_width)`, then calls `align` with start alignment, which `parley` needs to place the lines, against the widest kept line so the glyphs stay inside the paragraph's size. `parley` reorders mixed-direction runs. The alignment field in `TextStyle` that selects other modes comes with #46;
 3. keeps the first `max_lines` lines. The size is the widest kept line by the sum of the kept lines' heights;
 4. turns each `parley` glyph run into a `GlyphRun`, with its synthesis, looking its face up in the engine's font table by the blob's id and the face's index, so one face always has one `FontData` and one `id` for the engine's life. The table holds only the faces of the engine's own collection. Faces of a collection file (`.ttc`) share a blob and differ by index.
 
@@ -244,7 +244,7 @@ The test font is a font under the SIL Open Font License, picked in the plan by s
 
 | Feature | How it fits | Tracked in |
 | --- | --- | --- |
-| Wrapping and trimming modes, alignment, the inherited font and foreground properties | `TextBlock` declares them and fills `TextStyle` and `TextLimits` | #46 |
+| Wrapping and trimming modes, alignment, the inherited font and foreground properties | `TextBlock` declares them and fills `TextStyle` and `TextLimits`; alignment is a `TextStyle` field the engine applies | #46 |
 | Inline runs with their own brush, weight and style | spans in `paragraph`, and a brush per run in `Command::Text` | #47 |
 | Color emoji | vello's `COLRv1` glyphs | #175 |
 | App fonts from resources | `Engine` registers them beside the system's | a later issue |
