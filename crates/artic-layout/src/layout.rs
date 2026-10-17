@@ -222,11 +222,14 @@ impl LayoutManager {
           continue;
         }
         let slot = cx.pass.slots.get(&node).copied().unwrap_or_default();
-        let changed = cx.pass.collapsed(node)
-          || match slot.available {
+        let changed = if cx.pass.collapsed(node) {
+          slot.available.is_some()
+        } else {
+          match slot.available {
             Some(available) => cx.measure(node, available) != slot.desired,
             None => true,
-          };
+          }
+        };
         if changed
           && let Some(parent) = cx.pass.tree.parent(TreeKind::Visual, node)
           && cx.dirty.insert(parent)

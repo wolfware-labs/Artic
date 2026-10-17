@@ -891,6 +891,30 @@ mod collapsed {
     assert_eq!(layout.desired(leaf), None);
   }
 
+  // Changes under a collapsed node stop at it once it's left out: invalidating a descendant
+  // again and again doesn't measure the collapsed node's parent again.
+  #[test]
+  fn changes_under_a_collapsed_node_stop_there() {
+    let mut tree = UiTree::new();
+    let leaf = item(&mut tree, 20.0);
+    let inner = column(&mut tree, &[leaf]);
+    let middle = column(&mut tree, &[inner]);
+    let root = column(&mut tree, &[middle]);
+    let mut layout = LayoutManager::default();
+    run(&mut layout, &mut tree, root);
+    collapse(&mut tree, inner, true);
+    run(&mut layout, &mut tree, root);
+    let before = tree.get_as::<Column>(middle).unwrap().measured.get();
+
+    for _ in 0..3 {
+      LayoutManager::invalidate_measure(&mut tree, leaf);
+      LayoutManager::invalidate_measure(&mut tree, inner);
+      run(&mut layout, &mut tree, root);
+    }
+
+    assert_eq!(tree.get_as::<Column>(middle).unwrap().measured.get(), before);
+  }
+
   /// Measures and arranges its first child by id, whatever `children()` says.
   #[derive(Debug, Default)]
   struct Direct;
