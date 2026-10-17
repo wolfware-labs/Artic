@@ -1,9 +1,9 @@
 use artic_core::property::Property;
-use artic_element::{Child, ElementImpl};
-use artic_layout::geometry::{CornerRadius, Rect, Size, Thickness};
+use artic_element::{Child, ElementImpl, RenderCx};
+use artic_layout::geometry::{CornerRadius, Rect, RoundedRect, Size, Thickness};
 use artic_layout::{ArrangeCx, MeasureCx};
 use artic_macros::element;
-use artic_render::{BoxShadow, Brush};
+use artic_render::{BoxShadow, Brush, SceneBuilder, Shape};
 
 /// Draws a box around one child: a shadow, a background, an outline whose sides can differ in
 /// width, rounded corners, and padding between the outline and the child, which it clips to the
@@ -41,6 +41,11 @@ impl Border {
   fn chrome(&self) -> (Thickness, Thickness) {
     (self.border_thickness.get().usable(), self.padding.get().usable())
   }
+
+  fn outline(&self, size: Size) -> RoundedRect {
+    let (thickness, _) = self.chrome();
+    RoundedRect::new(Rect::new(0.0, 0.0, size.width, size.height), self.corner_radius.get()).fitted_for_border(thickness)
+  }
 }
 
 impl ElementImpl for Border {
@@ -60,5 +65,26 @@ impl ElementImpl for Border {
       let origin = (inside.x.min(size.width), inside.y.min(size.height));
       cx.arrange(child, Rect::new(origin.0, origin.1, inside.width, inside.height));
     }
+  }
+
+  fn render(&self, cx: &mut RenderCx<'_>, scene: &mut SceneBuilder) {
+    let (thickness, _) = self.chrome();
+    let outline = self.outline(cx.size());
+    if let Some(shadow) = self.box_shadow.get() {
+      scene.box_shadow(outline, shadow);
+    }
+    if let Some(brush) = self.background.get() {
+      scene.fill(outline.path(), brush);
+    }
+    if let Some(brush) = self.border_brush.get()
+      && thickness != Thickness::ZERO
+    {
+      scene.fill(outline.ring(thickness), brush);
+    }
+  }
+
+  fn clip(&self, size: Size) -> Option<Shape> {
+    let (thickness, _) = self.chrome();
+    Some(Shape::Path(self.outline(size).inner(thickness)))
   }
 }
