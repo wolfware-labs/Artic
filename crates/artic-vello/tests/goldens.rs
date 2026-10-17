@@ -4,11 +4,12 @@
 
 mod common;
 
-use artic_controls::StackPanel;
+use artic_controls::{Border, StackPanel};
 use artic_core::tree::UiTree;
-use artic_element::{Children, ElementTypes};
+use artic_element::{Child, Children, ElementTypes};
 use artic_layout::HorizontalAlignment;
-use artic_render::{Color, Scene};
+use artic_layout::geometry::{CornerRadius, Point, Thickness};
+use artic_render::{BoxShadow, Color, Scene};
 use artic_test::golden::{render, render_tree};
 use artic_test::{golden, scenes};
 use common::{is_warp, with_renderer};
@@ -116,4 +117,99 @@ fn stack_panel_background() {
     let image = render_tree(renderer, &mut tree, root, &ElementTypes::from_link_time(), scenes::SIZE, 1.0).expect("renders");
     golden!("stack_panel_background").assert(&image);
   });
+}
+
+fn border_golden(name: &str, configure: impl FnOnce(&Border), child: Option<Color>) {
+  with_renderer(|renderer| {
+    let mut tree = UiTree::new();
+    let root = tree.alloc(Box::new(Border::default()));
+    let border = tree.get_as::<Border>(root).expect("a border");
+    border.layout.margin.set(Thickness::uniform(12.0));
+    configure(border);
+    if let Some(color) = child {
+      let leaf = tree.alloc(Box::new(StackPanel::default()));
+      tree
+        .get_as::<StackPanel>(leaf)
+        .expect("a stack panel")
+        .panel
+        .background
+        .set(Some(color.into()));
+      Child::set(&mut tree, root, Some(leaf));
+    }
+    let image = render_tree(renderer, &mut tree, root, &ElementTypes::from_link_time(), scenes::SIZE, 1.0).expect("renders");
+    golden!(name).assert(&image);
+  });
+}
+
+// A 40 by 40 box filled light gray with an even 2-wide dark outline.
+#[test]
+fn border_background() {
+  border_golden(
+    "border_background",
+    |border| {
+      border.background.set(Some(Color::rgb(230, 230, 230).into()));
+      border.border_brush.set(Some(Color::rgb(40, 40, 40).into()));
+      border.border_thickness.set(Thickness::uniform(2.0));
+    },
+    None,
+  );
+}
+
+// Sides of 1, 4, 8 and 2 around a white box.
+#[test]
+fn border_uneven_thickness() {
+  border_golden(
+    "border_uneven_thickness",
+    |border| {
+      border.background.set(Some(Color::rgb(255, 255, 255).into()));
+      border.border_brush.set(Some(Color::rgb(60, 90, 220).into()));
+      border.border_thickness.set(Thickness::new(1.0, 4.0, 8.0, 2.0));
+    },
+    None,
+  );
+}
+
+// Four different corner radii with a 3-wide outline whose inner corners follow them.
+#[test]
+fn border_corner_radius() {
+  border_golden(
+    "border_corner_radius",
+    |border| {
+      border.background.set(Some(Color::rgb(250, 240, 200).into()));
+      border.border_brush.set(Some(Color::rgb(200, 120, 0).into()));
+      border.border_thickness.set(Thickness::uniform(3.0));
+      border.corner_radius.set(CornerRadius::new(16.0, 4.0, 10.0, 0.0));
+    },
+    None,
+  );
+}
+
+// A rounded white card with a soft shadow below it.
+#[test]
+fn border_box_shadow() {
+  border_golden(
+    "border_box_shadow",
+    |border| {
+      border.background.set(Some(Color::rgb(255, 255, 255).into()));
+      border.corner_radius.set(CornerRadius::uniform(8.0));
+      border
+        .box_shadow
+        .set(Some(BoxShadow::new(Point::new(0.0, 2.0), 8.0, Color::rgba(0, 0, 0, 96))));
+    },
+    None,
+  );
+}
+
+// A red child filling the inside: its corners are cut by the rounded outline.
+#[test]
+fn border_clips_child() {
+  border_golden(
+    "border_clips_child",
+    |border| {
+      border.border_brush.set(Some(Color::rgb(40, 40, 40).into()));
+      border.border_thickness.set(Thickness::uniform(2.0));
+      border.corner_radius.set(CornerRadius::uniform(14.0));
+    },
+    Some(Color::rgb(220, 60, 60)),
+  );
 }
