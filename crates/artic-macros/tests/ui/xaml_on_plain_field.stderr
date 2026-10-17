@@ -6,11 +6,6 @@ error[E0277]: `String` can't hold child elements
   |
   = help: the trait `XamlCollection` is not implemented for `String`
   = note: to make this field a XAML property, declare it as `Property<String>`
-help: the trait `XamlCollection` is implemented for `Vec<artic_registry::__private::NodeId>`
- --> $WORKSPACE/crates/artic-registry/src/collection.rs
-  |
-  | impl XamlCollection for Vec<NodeId> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 note: required by a bound in `artic_registry::__private::assert_collection`
  --> $WORKSPACE/crates/artic-registry/src/__private.rs
   |
