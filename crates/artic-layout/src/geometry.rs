@@ -175,6 +175,14 @@ impl Thickness {
   pub const fn vertical(self) -> f32 {
     finite::add(self.top, self.bottom)
   }
+
+  /// The same thickness with every side that isn't a finite number of 0 or more set to 0, the
+  /// rule borders and padding follow.
+  #[must_use]
+  pub fn usable(self) -> Thickness {
+    let side = |side: f32| if side.is_finite() && side > 0.0 { side } else { 0.0 };
+    Thickness::new(side(self.left), side(self.top), side(self.right), side(self.bottom))
+  }
 }
 
 impl Add<Thickness> for Size {
@@ -300,7 +308,7 @@ impl RoundedRect {
   #[must_use]
   pub fn fitted_for_border(self, thickness: Thickness) -> RoundedRect {
     let fitted = self.fitted();
-    let thickness = drawable_thickness(thickness);
+    let thickness = thickness.usable();
     let (width, height) = (fitted.rect.width.max(0.0), fitted.rect.height.max(0.0));
     let reach = |radius: f32, across: f32, down: f32| {
       radius
@@ -325,6 +333,15 @@ impl RoundedRect {
     )
   }
 
+  /// The [`fitted`](RoundedRect::fitted) outline as a closed path, built with the same curves as
+  /// [`ring`](RoundedRect::ring)'s outer figure. The ring's outline is
+  /// [`fitted_for_border`](RoundedRect::fitted_for_border), so a fill of
+  /// `shape.fitted_for_border(thickness).path()` meets `shape.ring(thickness)` exactly.
+  #[must_use]
+  pub fn path(self) -> Path {
+    outline(self.fitted()).build()
+  }
+
   /// The shape inside a border of `thickness`, as CSS defines its inner border edge: the
   /// [`fitted_for_border`](RoundedRect::fitted_for_border) rectangle deflated by the thickness,
   /// each corner's radius reduced per axis by its two sides' widths, stopping at 0. Each inner
@@ -333,7 +350,7 @@ impl RoundedRect {
   /// point, which as a clip hides everything.
   #[must_use]
   pub fn inner(self, thickness: Thickness) -> Path {
-    let thickness = drawable_thickness(thickness);
+    let thickness = thickness.usable();
     let outer = self.fitted_for_border(thickness);
     let rect = outer.rect.deflate(thickness);
     if rect.width <= 0.0 || rect.height <= 0.0 {
@@ -361,20 +378,7 @@ impl RoundedRect {
   /// no room is left inside, the whole outline.
   #[must_use]
   pub fn ring(self, thickness: Thickness) -> Path {
-    let outer = self.fitted_for_border(thickness);
-    let CornerRadius {
-      top_left,
-      top_right,
-      bottom_right,
-      bottom_left,
-    } = outer.radius;
-    let radii = [
-      (top_left, top_left),
-      (top_right, top_right),
-      (bottom_right, bottom_right),
-      (bottom_left, bottom_left),
-    ];
-    let mut builder = contour(Path::builder(start(outer.rect, &radii)), outer.rect, &radii);
+    let mut builder = outline(self.fitted_for_border(thickness));
     let inner = self.inner(thickness);
     if inner.elements().len() > 1 {
       for element in inner.elements() {
@@ -391,14 +395,20 @@ impl RoundedRect {
   }
 }
 
-fn drawable_thickness(thickness: Thickness) -> Thickness {
-  let side = |side: f32| if side.is_finite() && side > 0.0 { side } else { 0.0 };
-  Thickness::new(
-    side(thickness.left),
-    side(thickness.top),
-    side(thickness.right),
-    side(thickness.bottom),
-  )
+fn outline(shape: RoundedRect) -> PathBuilder {
+  let CornerRadius {
+    top_left,
+    top_right,
+    bottom_right,
+    bottom_left,
+  } = shape.radius;
+  let radii = [
+    (top_left, top_left),
+    (top_right, top_right),
+    (bottom_right, bottom_right),
+    (bottom_left, bottom_left),
+  ];
+  contour(Path::builder(start(shape.rect, &radii)), shape.rect, &radii)
 }
 
 fn start(rect: Rect, radii: &[(f32, f32); 4]) -> Point {
@@ -664,6 +674,34 @@ mod tests {
     let outer = RoundedRect::new(Rect::new(0.0, 0.0, 20.0, 40.0), CornerRadius::new(19.0, 1.0, 30.0, 0.0));
 
     assert_eq!(outer.fitted_for_border(Thickness::ZERO), outer.fitted());
+  }
+
+  // A side that isn't a finite number of 0 or more becomes 0; the others stay.
+  #[test]
+  fn usable_thickness_zeroes_invalid_sides() {
+    let thickness = Thickness::new(-1.0, f32::NAN, f32::INFINITY, 3.0);
+
+    assert_eq!(thickness.usable(), Thickness::new(0.0, 0.0, 0.0, 3.0));
+  }
+
+  // The border-fitted outline path is the ring's outer figure, curve for curve, so a background
+  // filled with it meets the ring exactly, even where the border cuts a radius: 10 on a 20 box with
+  // sides of 15 becomes 5.
+  #[test]
+  fn path_is_the_ring_outline() {
+    let shape = RoundedRect::new(Rect::new(0.0, 0.0, 20.0, 20.0), CornerRadius::uniform(10.0));
+    let thickness = Thickness::new(15.0, 0.0, 0.0, 0.0);
+    let ring = shape.ring(thickness);
+    let close = ring
+      .elements()
+      .iter()
+      .position(|element| *element == PathElement::Close)
+      .expect("closes");
+    let outline = shape.fitted_for_border(thickness);
+
+    assert_eq!(outline.radius.top_right, 5.0);
+    assert_eq!(outline.path().elements(), &ring.elements()[..=close]);
+    assert_ne!(shape.path().elements(), &ring.elements()[..=close]);
   }
 
   // Radii far larger than the box are fitted to it before anything else.

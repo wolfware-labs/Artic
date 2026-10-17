@@ -115,10 +115,12 @@ XAML needs to name types and properties by string; Rust does not. The registry e
 #[xaml(namespace = "https://artic.rs/ui")]
 pub struct Border {
     #[xaml(content)] pub child: Child,                 // the tree holds the child; the field marks it
-    #[xaml(default = Thickness::ZERO, affects = layout)] pub padding: Property<Thickness>,
+    #[xaml(affects = layout)] pub padding: Property<Thickness>,
+    #[xaml(affects = layout | render)] pub border_thickness: Property<Thickness>,
     #[xaml(affects = render)] pub background: Property<Option<Brush>>,
+    #[xaml(affects = render)] pub border_brush: Property<Option<Brush>>,
     #[xaml(affects = render)] pub corner_radius: Property<CornerRadius>,
-    #[xaml] pub pointer_pressed: Event<PointerEvent>,
+    #[xaml(affects = render)] pub box_shadow: Property<Option<BoxShadow>>,
 }
 ```
 
@@ -459,7 +461,7 @@ WPF two-pass measure/arrange with these rules:
 | --- | --- | --- | --- |
 | `TextBlock` | groups | — | `Text`, `Inlines` (Run, Bold, Italic), wrapping, trimming |
 | `Image` | groups | — | `Source` (path/bytes), `Stretch` |
-| `Border` | groups | — | child, background, border brush/thickness, corner radius, `BoxShadow` |
+| `Border` | groups | — | child, padding, background, border brush/thickness, corner radius, `BoxShadow` |
 | `ContentPresenter` | groups + content | — | resolves `Content` to text, node, or `DataTemplate` |
 | `Button` | groups + content + template | `PART_ContentPresenter` | `Click`, `Command`, `CommandParameter`, `IsDefault`, `IsCancel` |
 | `ToggleButton` | Button's parts + `ToggleState` | same | `IsChecked: Option<bool>` |
