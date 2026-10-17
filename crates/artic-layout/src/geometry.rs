@@ -553,16 +553,20 @@ mod tests {
     let ring = outer.ring(thickness);
     let inner = outer.inner(thickness);
 
-    let corner = |path: &Path| {
-      path
-        .elements()
+    let close = ring
+      .elements()
+      .iter()
+      .position(|element| *element == PathElement::Close)
+      .expect("the outline closes");
+    let top_left = |elements: &[PathElement]| {
+      elements
         .iter()
         .rev()
         .find(|element| matches!(element, PathElement::CubicTo(..)))
         .copied()
     };
     assert_eq!(ring.elements()[0], PathElement::MoveTo(Point::new(10.0, 0.0)));
-    assert_eq!(corner(&inner), corner(&ring));
+    assert_eq!(top_left(inner.elements()), top_left(&ring.elements()[..close]));
   }
 
   // Over a grid of radii and uneven sides, every point on the inner edge lies inside the outline,
