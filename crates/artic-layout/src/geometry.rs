@@ -5,6 +5,7 @@ mod path;
 mod relative;
 mod transform;
 
+use crate::finite;
 pub use parse::{GeometryProblem, ParseGeometryError};
 pub use path::{FillRule, Path, PathBuilder, PathElement};
 pub use relative::{RelativePoint, RelativeScalar, Scaling};
@@ -97,10 +98,10 @@ impl Rect {
   #[must_use]
   pub fn deflate(self, thickness: Thickness) -> Rect {
     Rect::new(
-      self.x + thickness.left,
-      self.y + thickness.top,
-      (self.width - thickness.horizontal()).max(0.0),
-      (self.height - thickness.vertical()).max(0.0),
+      finite::add(self.x, thickness.left),
+      finite::add(self.y, thickness.top),
+      finite::add(self.width, -thickness.horizontal()).max(0.0),
+      finite::add(self.height, -thickness.vertical()).max(0.0),
     )
   }
 
@@ -112,9 +113,13 @@ impl Rect {
   /// without a gap.
   #[must_use]
   pub fn snap(self, scale: f32) -> Rect {
-    let edge = |value: f32| (value * scale).round() / scale;
+    let edge = |value: f32| {
+      let snapped = (value * scale).round() / scale;
+      if snapped.is_finite() { snapped } else { value }
+    };
     let (left, top) = (edge(self.x), edge(self.y));
-    Rect::new(left, top, edge(self.x + self.width) - left, edge(self.y + self.height) - top)
+    let (right, bottom) = (edge(finite::add(self.x, self.width)), edge(finite::add(self.y, self.height)));
+    Rect::new(left, top, finite::add(right, -left), finite::add(bottom, -top))
   }
 }
 
@@ -162,13 +167,13 @@ impl Thickness {
   /// The total width it adds across: left plus right.
   #[must_use]
   pub const fn horizontal(self) -> f32 {
-    self.left + self.right
+    finite::add(self.left, self.right)
   }
 
   /// The total height it adds: top plus bottom.
   #[must_use]
   pub const fn vertical(self) -> f32 {
-    self.top + self.bottom
+    finite::add(self.top, self.bottom)
   }
 }
 
@@ -177,7 +182,10 @@ impl Add<Thickness> for Size {
 
   /// Grows the size by the thickness on each side, as a margin does to a desired size.
   fn add(self, thickness: Thickness) -> Size {
-    Size::new(self.width + thickness.horizontal(), self.height + thickness.vertical())
+    Size::new(
+      finite::add(self.width, thickness.horizontal()),
+      finite::add(self.height, thickness.vertical()),
+    )
   }
 }
 
@@ -188,8 +196,8 @@ impl Sub<Thickness> for Size {
   /// left for content.
   fn sub(self, thickness: Thickness) -> Size {
     Size::new(
-      (self.width - thickness.horizontal()).max(0.0),
-      (self.height - thickness.vertical()).max(0.0),
+      finite::add(self.width, -thickness.horizontal()).max(0.0),
+      finite::add(self.height, -thickness.vertical()).max(0.0),
     )
   }
 }

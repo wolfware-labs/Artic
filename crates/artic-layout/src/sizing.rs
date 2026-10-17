@@ -1,9 +1,9 @@
+use crate::finite;
 use crate::geometry::{Rect, Size, Thickness};
-use artic_core::property::ParseEnumError;
-use std::str::FromStr;
+use artic_macros::XamlEnum;
 
 /// Where an element sits across its slot when it's narrower than the slot.
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, XamlEnum)]
 pub enum HorizontalAlignment {
   /// Against the slot's left edge.
   Left,
@@ -17,7 +17,7 @@ pub enum HorizontalAlignment {
 }
 
 /// Where an element sits along its slot's height when it's shorter than the slot.
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, XamlEnum)]
 pub enum VerticalAlignment {
   /// Against the slot's top edge.
   Top,
@@ -30,44 +30,14 @@ pub enum VerticalAlignment {
   Stretch,
 }
 
-/// `HorizontalAlignment`'s names, in declaration order.
-const HORIZONTAL: [&str; 4] = ["Left", "Center", "Right", "Stretch"];
-
-/// `VerticalAlignment`'s names, in declaration order.
-const VERTICAL: [&str; 4] = ["Top", "Center", "Bottom", "Stretch"];
-
-impl FromStr for HorizontalAlignment {
-  type Err = ParseEnumError;
-
-  /// Parses `Left`, `Center`, `Right` or `Stretch`, ignoring ASCII case, as
-  /// `#[derive(XamlEnum)]` parses.
-  fn from_str(text: &str) -> Result<Self, Self::Err> {
-    let index = position(text, "HorizontalAlignment", &HORIZONTAL)?;
-    Ok([Self::Left, Self::Center, Self::Right, Self::Stretch][index])
-  }
-}
-
-impl FromStr for VerticalAlignment {
-  type Err = ParseEnumError;
-
-  /// Parses `Top`, `Center`, `Bottom` or `Stretch`, ignoring ASCII case, as
-  /// `#[derive(XamlEnum)]` parses.
-  fn from_str(text: &str) -> Result<Self, Self::Err> {
-    let index = position(text, "VerticalAlignment", &VERTICAL)?;
-    Ok([Self::Top, Self::Center, Self::Bottom, Self::Stretch][index])
-  }
-}
-
-/// The position of the name `text` matches in `names`, ignoring ASCII case.
-fn position(text: &str, type_name: &'static str, names: &'static [&'static str]) -> Result<usize, ParseEnumError> {
-  names
-    .iter()
-    .position(|name| name.eq_ignore_ascii_case(text))
-    .ok_or_else(|| ParseEnumError {
-      value: text.to_owned(),
-      type_name,
-      expected: names,
-    })
+/// The axis a panel stacks or wraps its children along.
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, XamlEnum)]
+pub enum Orientation {
+  /// Left to right.
+  Horizontal,
+  /// Top to bottom.
+  #[default]
+  Vertical,
 }
 
 /// Everything about an element's size and position that isn't its own measuring and arranging:
@@ -147,16 +117,19 @@ pub fn measure_with(sizing: &Sizing, available: Size, inner: impl FnOnce(Size) -
   let (min, max) = sizing.limits();
   let margin = sizing.margin;
   let offered = Size::new(
-    (available.width - margin.horizontal()).max(0.0).min(max.width).max(min.width),
-    (available.height - margin.vertical())
+    finite::add(available.width, -margin.horizontal())
+      .max(0.0)
+      .min(max.width)
+      .max(min.width),
+    finite::add(available.height, -margin.vertical())
       .max(0.0)
       .min(max.height)
       .max(min.height),
   );
   let desired = inner(offered);
   Size::new(
-    desired.width.max(min.width).min(max.width) + margin.horizontal(),
-    desired.height.max(min.height).min(max.height) + margin.vertical(),
+    finite::add(desired.width.max(min.width).min(max.width), margin.horizontal()),
+    finite::add(desired.height.max(min.height).min(max.height), margin.vertical()),
   )
 }
 
@@ -198,13 +171,13 @@ pub fn arrange_with(sizing: &Sizing, slot: Rect, desired: Size) -> Rect {
     .min(max.height);
   let x = match sizing.horizontal {
     HorizontalAlignment::Left => space.x,
-    HorizontalAlignment::Right => space.x + space.width - width,
-    HorizontalAlignment::Center | HorizontalAlignment::Stretch => space.x + (space.width - width) / 2.0,
+    HorizontalAlignment::Right => finite::add(finite::add(space.x, space.width), -width),
+    HorizontalAlignment::Center | HorizontalAlignment::Stretch => finite::add(space.x, finite::add(space.width, -width) / 2.0),
   };
   let y = match sizing.vertical {
     VerticalAlignment::Top => space.y,
-    VerticalAlignment::Bottom => space.y + space.height - height,
-    VerticalAlignment::Center | VerticalAlignment::Stretch => space.y + (space.height - height) / 2.0,
+    VerticalAlignment::Bottom => finite::add(finite::add(space.y, space.height), -height),
+    VerticalAlignment::Center | VerticalAlignment::Stretch => finite::add(space.y, finite::add(space.height, -height) / 2.0),
   };
   Rect::new(x, y, width, height)
 }
@@ -220,6 +193,24 @@ mod tests {
   use std::cell::Cell;
 
   const SLOT: Rect = Rect::new(0.0, 0.0, 400.0, 300.0);
+
+  // The alignments parse through `XamlEnum`, ignoring case, with an error that lists the names.
+  #[test]
+  fn alignments_parse_with_the_derive() {
+    assert_eq!("left".parse::<HorizontalAlignment>(), Ok(HorizontalAlignment::Left));
+    assert_eq!("BOTTOM".parse::<VerticalAlignment>(), Ok(VerticalAlignment::Bottom));
+    let error = "middle".parse::<HorizontalAlignment>().expect_err("not a name");
+    assert_eq!(error.expected, ["Left", "Center", "Right", "Stretch"]);
+    assert_eq!(error.type_name, "HorizontalAlignment");
+  }
+
+  // `Orientation` parses ignoring case and is vertical by default.
+  #[test]
+  fn orientation_parses_ignoring_case() {
+    assert_eq!("horizontal".parse::<Orientation>(), Ok(Orientation::Horizontal));
+    assert_eq!("Vertical".parse::<Orientation>(), Ok(Orientation::Vertical));
+    assert_eq!(Orientation::default(), Orientation::Vertical);
+  }
 
   // Alignments parse from their names in any case, and an unknown name lists the valid ones.
   #[test]

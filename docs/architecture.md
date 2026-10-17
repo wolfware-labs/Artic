@@ -58,6 +58,7 @@ flowchart TD
 
   registry --> core[artic-core]
   layout --> core
+  layout --> macros
   i18n[artic-i18n] --> core
 ```
 
@@ -66,10 +67,10 @@ The graph omits edges that a lower edge already implies (for example `artic-cont
 | Crate | Depends on |
 | --- | --- |
 | `artic-core` | none |
-| `artic-macros` | none (proc-macro; generated code names `artic::__private` or `artic_registry::__private`, whichever the calling crate depends on) |
+| `artic-macros` | none (proc-macro; generated code names `artic::__private`, `artic_registry::__private` or, for `XamlEnum`, `artic_core::__private`, whichever the calling crate depends on) |
 | `artic-xaml` | none |
 | `artic-registry` | `artic-core` |
-| `artic-layout` | `artic-core` |
+| `artic-layout` | `artic-core`, `artic-macros` |
 | `artic-i18n` | `artic-core` |
 | `artic-render` | `artic-core`, `artic-layout` |
 | `artic-style` | `artic-core`, `artic-registry`, `artic-xaml` (for `Span`/`Diagnostic` in selector errors) |
@@ -97,7 +98,7 @@ The graph omits edges that a lower edge already implies (for example `artic-cont
 - Code that needs concrete controls but serves the runtime or tooling (hot-reload overlay and state restore, debug overlay) lives in the facade.
 - Dev-dependencies may point from any crate to `artic-test`, as long as `artic-test` does not depend back on that crate. Control, theme and language-server tests use `TestHost` this way.
 - The crates under `crates/artic-registry/fixtures/` are test-only (`publish = false`) and sit outside the layers. Two register one XAML type each; `artic-registry-linking` holds the tests that check which of them reach the registry.
-- `artic-macros`' own tests dev-depend on `artic-core` and `artic-registry`, the crates its generated code names. Nothing in those crates depends on `artic-macros` at build time, so this makes no cycle.
+- `artic-macros`' own tests dev-depend on crates that use the macros, such as `artic-core`, `artic-registry` and `artic-element`. Cargo allows these dev-only loops: `artic-macros` itself depends on no artic crate, so its build has no cycle.
 - `artic-xaml` does not depend on the registry. Type references stay unresolved in the infoset, so parser tests need no registry.
 - Release builds link `artic-xaml-runtime` only when the app enables `runtime-xaml`. Compiled views never touch the loader.
 - App-facing crates stay free of native-only dependencies, so a web target can be added later without app changes (D24 in the spec).

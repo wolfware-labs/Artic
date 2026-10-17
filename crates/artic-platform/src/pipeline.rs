@@ -189,7 +189,12 @@ struct ElementNodes<'a> {
 
 impl Nodes for ElementNodes<'_> {
   fn layers(&self, tree: &UiTree, node: NodeId) -> Layers {
-    let rect = self.layout.rect(node).unwrap_or(Rect::ZERO);
+    let Some(rect) = self.layout.rect(node) else {
+      return Layers {
+        visible: false,
+        ..Layers::default()
+      };
+    };
     let mut layers = tree
       .get(node)
       .and_then(|object| self.types.element(object))

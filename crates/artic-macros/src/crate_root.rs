@@ -7,6 +7,15 @@ use syn::{Error, Ident, Path};
 pub const REGISTRY: &[(&str, &str)] = &[("artic", "artic"), ("artic-registry", "artic_registry")];
 
 /// The crates `#[element]` reaches artic through: (package, library).
+/// The crates `#[derive(XamlEnum)]` reaches artic through: (package, library). Its output names
+/// only `ParseEnumError`, which lives in `artic-core`.
+pub const ENUM: &[(&str, &str)] = &[
+  ("artic", "artic"),
+  ("artic-registry", "artic_registry"),
+  ("artic-core", "artic_core"),
+];
+
+/// The crates `#[element]` reaches artic through: (package, library).
 pub const ELEMENT: &[(&str, &str)] = &[("artic", "artic"), ("artic-element", "artic_element")];
 
 /// The path generated code uses to reach artic: `override_path` if given, or the first of

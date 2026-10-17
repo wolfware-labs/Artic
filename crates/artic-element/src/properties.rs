@@ -112,36 +112,22 @@ impl Layout {
     }
   }
 
-  /// Measures the element: zero when `visibility` is `Collapsed`, without calling `content`;
-  /// otherwise `content` measures within `available` less the margin and held within the limits,
-  /// and its result, held within the limits, gets the margin back.
+  /// Measures the element: `content` measures within `available` less the margin and held within
+  /// the limits, and its result, held within the limits, gets the margin back. A collapsed
+  /// element never gets here: the layout manager leaves it out.
   pub fn measure(
     &self,
     cx: &mut MeasureCx<'_>,
-    visibility: Visibility,
     available: Size,
     content: impl FnOnce(&mut MeasureCx<'_>, Size) -> Size,
   ) -> Size {
-    if visibility == Visibility::Collapsed {
-      return Size::ZERO;
-    }
     measure_with(&self.sizing(), available, |inner| content(cx, inner))
   }
 
   /// Arranges the element in `slot`: its bounds are the slot less the margin, sized and aligned,
-  /// and `content` arranges the children within their size. When `visibility` is `Collapsed`, the
-  /// element gets empty bounds at the slot's corner, and `content` isn't called.
-  pub fn arrange(
-    &self,
-    cx: &mut ArrangeCx<'_>,
-    visibility: Visibility,
-    slot: Rect,
-    content: impl FnOnce(&mut ArrangeCx<'_>, Size),
-  ) {
-    if visibility == Visibility::Collapsed {
-      cx.set_bounds(Rect::new(slot.x, slot.y, 0.0, 0.0));
-      return;
-    }
+  /// and `content` arranges the children within their size. A collapsed element never gets
+  /// here: the layout manager leaves it out.
+  pub fn arrange(&self, cx: &mut ArrangeCx<'_>, slot: Rect, content: impl FnOnce(&mut ArrangeCx<'_>, Size)) {
     let desired = cx.desired(cx.node());
     let bounds = cx.set_bounds(arrange_with(&self.sizing(), slot, desired));
     content(cx, bounds.size());

@@ -41,7 +41,7 @@ pub use visibility::{Cursor, Visibility};
 pub mod __private {
   pub use crate::{
     AccessCx, Appearance, ELEMENT_TYPES, Element, ElementImpl, ElementType, EventCx, Handled, HasState, HitTestCx,
-    HitTestResult, Identity, Interaction, Layout, RenderCx, element_type,
+    HitTestResult, Identity, Interaction, Layout, RenderCx, Visibility, element_type,
   };
   pub use accesskit;
   pub use artic_core::input::InputEvent;

@@ -2,7 +2,7 @@
 
 mod common;
 
-use artic_core::tree::UiTree;
+use artic_core::tree::{TreeKind, UiTree};
 use artic_element::{ElementTypes, SizeToContent};
 use artic_layout::geometry::{Size, Transform};
 use artic_platform::{Axes, Frame, FrameStats, Pipeline};
@@ -183,4 +183,31 @@ fn axes_from_size_to_content() {
   );
   assert_eq!(Axes::from(SizeToContent::WidthAndHeight), Axes::BOTH);
   assert_eq!(Axes::from(SizeToContent::Manual), Axes::NONE);
+}
+
+// A node layout left out isn't drawn, and neither is its subtree.
+#[test]
+fn nodes_not_laid_out_are_not_drawn() {
+  let mut tree = UiTree::new();
+  let shown = leaf(&mut tree, 20.0);
+  let hidden = leaf(&mut tree, 20.0);
+  let under = leaf(&mut tree, 20.0);
+  tree.add_child(TreeKind::Visual, hidden.id, under.id);
+  tree.get_as::<common::Leaf>(hidden.id).unwrap().collapsed.set(true);
+  let (root, _) = panel(&mut tree, &[shown.id, hidden.id]);
+
+  Pipeline::new().prepare(
+    &mut tree,
+    root,
+    SURFACE,
+    &info(64, 64, 1.0),
+    &ElementTypes::from_link_time(),
+    Axes::NONE,
+  );
+
+  let seen = |id| tree.get_as::<common::Leaf>(id).unwrap().seen.get();
+  assert_eq!(
+    (seen(shown.id), seen(hidden.id), seen(under.id)),
+    (Some(Size::new(64.0, 20.0)), None, None)
+  );
 }
