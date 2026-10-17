@@ -298,7 +298,9 @@ dependencies = [
 name = "artic-vello"
 version = "0.1.0"
 dependencies = [
+ "artic-controls",
  "artic-core",
+ "artic-element",
  "artic-layout",
  "artic-render",
  "artic-test",
