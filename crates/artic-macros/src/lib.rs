@@ -99,7 +99,9 @@ pub fn derive_xaml_properties(input: TokenStream) -> TokenStream {
 /// text: `Orientation="horizontal"` becomes `Orientation::Horizontal`.
 ///
 /// It implements `FromStr` with `Err = ParseEnumError`, whose message lists every valid name. Every
-/// variant must be a unit variant, and no two names may differ only in case.
+/// variant must be a unit variant, and no two names may differ only in case. The generated code
+/// reaches `ParseEnumError` through `artic`, `artic-registry` or `artic-core`, whichever the
+/// calling crate depends on first, so a crate that has only `artic-core` can derive it.
 #[proc_macro_derive(XamlEnum)]
 pub fn derive_xaml_enum(input: TokenStream) -> TokenStream {
   let input = parse_macro_input!(input as DeriveInput);

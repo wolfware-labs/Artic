@@ -10,6 +10,7 @@ repository.workspace = true
 
 [dependencies]
 artic-core.workspace = true
+artic-macros.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
