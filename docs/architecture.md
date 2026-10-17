@@ -9,8 +9,8 @@ A crate depends only on crates in lower layers. Crates in the same layer never d
 | Layer | Crates | Role |
 | --- | --- | --- |
 | 0 | `artic-core`, `artic-macros`, `artic-xaml` | Foundations with no artic dependencies: the reactive core and tree, the proc macros, and the XAML parser |
-| 1 | `artic-registry`, `artic-layout`, `artic-i18n` | Type metadata, geometry and layout, localization |
-| 2 | `artic-render`, `artic-style`, `artic-xaml-compiler`, `artic-xaml-runtime` | The `Renderer` seam, scene and text shaping; styling; the two XAML back ends |
+| 1 | `artic-registry`, `artic-layout`, `artic-i18n` | Type metadata, geometry, layout and text values, localization |
+| 2 | `artic-render`, `artic-text`, `artic-style`, `artic-xaml-compiler`, `artic-xaml-runtime` | The `Renderer` seam and scene; text shaping and fonts; styling; the two XAML back ends |
 | 3 | `artic-element`, `artic-lsp` | The `Element` trait, its contexts and the property groups every control has; the language server |
 | 4 | `artic-controls`, `artic-platform`, `artic-cli` | Controls, the `Host` seam and frame pipeline, and the CLI |
 | 5 | `artic-theme`, `artic-test`, `artic-winit`, `artic-vello` | The default theme, test utilities, and the default backend adapters |
@@ -25,6 +25,7 @@ flowchart TD
   artic --> theme[artic-theme]
   artic --> controls[artic-controls]
   artic --> platform[artic-platform]
+  artic --> text[artic-text]
   artic -. hot-reload / runtime-xaml .-> runtime[artic-xaml-runtime]
 
   theme --> controls
@@ -41,6 +42,7 @@ flowchart TD
 
   test[artic-test] --> platform
   test --> style
+  test --> text
 
   winit[artic-winit] --> platform
   vello[artic-vello] --> render
@@ -49,6 +51,7 @@ flowchart TD
   lsp --> compiler[artic-xaml-compiler]
 
   render --> layout[artic-layout]
+  text --> layout
   style --> registry
   style --> xaml
   compiler --> registry
@@ -73,6 +76,7 @@ The graph omits edges that a lower edge already implies (for example `artic-cont
 | `artic-layout` | `artic-core`, `artic-macros` |
 | `artic-i18n` | `artic-core` |
 | `artic-render` | `artic-core`, `artic-layout` |
+| `artic-text` | `artic-core`, `artic-layout` |
 | `artic-style` | `artic-core`, `artic-registry`, `artic-xaml` (for `Span`/`Diagnostic` in selector errors) |
 | `artic-xaml-compiler` | `artic-xaml`, `artic-registry` |
 | `artic-xaml-runtime` | `artic-xaml`, `artic-registry`, `artic-core` |
@@ -82,7 +86,7 @@ The graph omits edges that a lower edge already implies (for example `artic-cont
 | `artic-cli` | `artic-xaml`, `artic-xaml-compiler`, `artic-lsp` (shared source index for `check` and `lsp`) |
 | `artic-lsp` | `artic-xaml`, `artic-xaml-compiler` |
 | `artic-theme` | `artic-controls`, `artic-style` |
-| `artic-test` | `artic-core`, `artic-registry`, `artic-layout`, `artic-render`, `artic-element`, `artic-style`, `artic-platform` |
+| `artic-test` | `artic-core`, `artic-registry`, `artic-layout`, `artic-render`, `artic-text`, `artic-element`, `artic-style`, `artic-platform` |
 | `artic-winit` | `artic-core`, `artic-render`, `artic-platform` |
 | `artic-vello` | `artic-layout`, `artic-render` |
 | `artic` | every app-facing crate; `artic-xaml-runtime` only with the `hot-reload` or `runtime-xaml` feature |
@@ -91,7 +95,7 @@ The graph omits edges that a lower edge already implies (for example `artic-cont
 
 - `artic-controls` does not depend on `artic-platform`. Input event types live in `artic-core`, and the facade connects the platform host to the tree. Controls stay testable without a window and portable to future targets.
 - The `Element` trait and its contexts (`RenderCx`, `HitTestCx`, `EventCx`, `AccessCx`) live in `artic-element`, together with gesture recognizers. `Application` and `Surface`, the roots the host presents, live there too, with the `Desktop` attached properties, so `artic-platform` reads them directly ([surface design](design/surface.md)). Controls implement `Element`; the platform host drives any `dyn Element` without knowing the concrete controls. The property groups every control has (`Layout`, `Appearance`, `Interaction`, `Identity`) live there too, so a control library outside artic doesn't need `artic-controls` and its built-in controls; `#[element]` stays with the macros.
-- `artic-layout` defines `Layoutable`, `MeasureCx`, `ArrangeCx` and `LayoutManager` over `Layoutable`; `Element` extends `Layoutable`, so layout never names `Element`. Text measurement reaches layout through a small trait defined in `artic-layout` and implemented by `artic-render`'s text shaping (`parley`), the same for every renderer.
+- `artic-layout` defines `Layoutable`, `MeasureCx`, `ArrangeCx` and `LayoutManager` over `Layoutable`; `Element` extends `Layoutable`, so layout never names `Element`. Text measurement reaches layout through `TextEngine`, a trait defined in `artic-layout` and implemented by `artic-text` with `parley`, the same for every renderer. The shaped `Paragraph` is an `artic-layout` type too, so the scene carries it and renderers draw it without depending on `artic-text` ([text design](design/text.md)).
 - `artic-platform` owns the frame pipeline (dispatcher, style pass, layout, scene build, render, accesskit). Stages that need crates the platform cannot see, such as the style pass or OS theme → root pseudo-classes, are registered as hooks by the facade. The platform never depends on `artic-style`, `artic-controls` or `artic-theme`.
 - Tree behaviours that call `Element` (routed-event dispatch, hit testing, focus navigation) live in `artic-element`; `artic-core` keeps only the data types they use.
 - OS services that controls use (clipboard, IME requests, cursor) are traits in `artic-core`. Hosts provide them as capabilities on `HostContext` ([host design](design/host.md)), the facade registers them, and controls reach them through their context or app services, never through the `Host`.

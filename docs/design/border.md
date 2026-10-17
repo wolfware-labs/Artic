@@ -128,7 +128,7 @@ Layout snaps the child's edges to the device-pixel grid, while the ring and the 
 | Border styles and theme resources | setters on these plain properties | #109, #116 |
 | Hit testing through the clip | the walk skips a node's children outside its clip | #74 |
 | Accesskit child order | the tree walk | #54 |
-| Snapping the outline and clip to device pixels | the scale in `RenderCx`, so chrome can round its thickness as layout does | a new issue |
+| Snapping the outline and clip to device pixels | the scale in `RenderCx`, so chrome can round its thickness as layout does | #295 |
 | `Image` clipping to rounded corners | the same `clip` hook and `inner` shape | #71 |
 
 ## 7. Testing
