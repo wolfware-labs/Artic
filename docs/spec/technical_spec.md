@@ -70,9 +70,9 @@ Each layer builds on the ones below it. The exact dependency edges and the rules
 | `artic-xaml` | Parser: XML → XAML Infoset (MS-XAML §5), markup-extension grammar, diagnostics with spans | `XamlDocument`, `XamlNode`, `MarkupExtensionAst`, `Diagnostic` |
 | `artic-xaml-compiler` | Infoset → Rust source (`build.rs` API and `cargo artic` CLI) | `compile_dir()`, `CompileOptions` |
 | `artic-xaml-runtime` | Infoset → live object tree using the registry; file watcher and hot-swap | `XamlLoader`, `HotReload` |
-| `artic-layout` | Measure/arrange protocol, panels, invalidation | `Layoutable`, `MeasureCx`, `ArrangeCx`, `LayoutManager`, `Size`, `Rect`, `Thickness` |
+| `artic-layout` | Measure/arrange protocol, invalidation | `Layoutable`, `MeasureCx`, `ArrangeCx`, `LayoutManager`, `Size`, `Rect`, `Thickness` |
 | `artic-element` | The `Element` trait and its render, hit-test, event and accessibility contexts; the property groups every control has; gesture recognizers. Shared by controls and the platform host (D25) | `Element`, `Layout`, `RenderCx`, `EventCx`, `AccessCx` |
-| `artic-controls` | Templated controls, primitives, default `ControlTemplate`s | `Button`, `TextBox`, `ItemsControl`, … |
+| `artic-controls` | Templated controls, primitives, panels, default `ControlTemplate`s | `Button`, `TextBox`, `ItemsControl`, … |
 | `artic-style` | Selector parser and matcher, `Style`, `Setter`, pseudo-classes, resource dictionaries, theme switching | `Selector`, `Style`, `ResourceDictionary` |
 | `artic-render` | `Renderer` trait, scene graph (display list), `Target`; text shaping via `parley`. No backend dependencies | `Renderer`, `Scene`, `Target`, `DrawingContext` |
 | `artic-platform` | `Host`, `AppHandler` and `HostContext` with its capabilities, `artic::run`, frame pipeline (with facade-registered hooks). No backend dependencies | `Host`, `AppHandler`, `HostContext`, `SurfaceInfo` |
@@ -114,7 +114,7 @@ XAML needs to name types and properties by string; Rust does not. The registry e
 #[derive(Debug)]
 #[xaml(namespace = "https://artic.rs/ui")]
 pub struct Border {
-    #[xaml(content)] pub child: Property<Option<NodeId>>,
+    #[xaml(content)] pub child: Child,                 // the tree holds the child; the field marks it
     #[xaml(default = Thickness::ZERO, affects = layout)] pub padding: Property<Thickness>,
     #[xaml(affects = render)] pub background: Property<Option<Brush>>,
     #[xaml(affects = render)] pub corner_radius: Property<CornerRadius>,
@@ -451,7 +451,7 @@ WPF two-pass measure/arrange with these rules:
 | `WrapPanel` | `Orientation`, `ItemWidth/ItemHeight` |
 | `Canvas` | `Canvas.Left/Top/Right/Bottom` |
 | `UniformGrid` | `Rows`, `Columns` |
-| `Panel` | groups; `Children` collection, `Background` |
+| `Panel` | a property group with `Background`; each panel declares its own `Children` |
 
 ### Control set (v1)
 

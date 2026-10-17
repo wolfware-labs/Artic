@@ -7,7 +7,7 @@ use artic_element::{ElementTypes, SizeToContent};
 use artic_layout::geometry::{Size, Transform};
 use artic_platform::{Axes, Frame, FrameStats, Pipeline};
 use artic_render::{Layer, SceneItem, SurfaceId};
-use common::{Counter, info, leaf, panel, pixels, target};
+use common::{Counter, column, info, leaf, pixels, target};
 use pretty_assertions::assert_eq;
 use static_assertions::assert_impl_all;
 
@@ -21,7 +21,7 @@ fn layout_offset_applies_after_render_transform() {
   let mut tree = UiTree::new();
   let top = leaf(&mut tree, 20.0);
   let turned = leaf(&mut tree, 10.0);
-  let (root, _) = panel(&mut tree, &[top.id, turned.id]);
+  let (root, _) = column(&mut tree, &[top.id, turned.id]);
   turned.turn.set(true);
 
   let frame = Pipeline::new().prepare(
@@ -42,7 +42,7 @@ fn layout_offset_applies_after_render_transform() {
 fn render_cx_has_the_arranged_size() {
   let mut tree = UiTree::new();
   let child = leaf(&mut tree, 20.0);
-  let (root, _) = panel(&mut tree, &[child.id]);
+  let (root, _) = column(&mut tree, &[child.id]);
 
   Pipeline::new().prepare(
     &mut tree,
@@ -62,7 +62,7 @@ fn render_cx_has_the_arranged_size() {
 fn first_frame_does_all_the_work() {
   let mut tree = UiTree::new();
   let child = leaf(&mut tree, 20.0);
-  let (root, _) = panel(&mut tree, &[child.id]);
+  let (root, _) = column(&mut tree, &[child.id]);
   let mut pipeline = Pipeline::new();
   let mut buffer = pixels();
 
@@ -92,7 +92,7 @@ fn first_frame_does_all_the_work() {
 #[test]
 fn redraw_presents_the_last_scene() {
   let mut tree = UiTree::new();
-  let (root, _) = panel(&mut tree, &[]);
+  let (root, _) = column(&mut tree, &[]);
   let mut pipeline = Pipeline::new();
   let mut renderer = Counter::default();
   let mut buffer = pixels();
@@ -130,7 +130,7 @@ fn redraw_presents_the_last_scene() {
 #[test]
 fn failed_present_keeps_no_scene() {
   let mut tree = UiTree::new();
-  let (root, _) = panel(&mut tree, &[]);
+  let (root, _) = column(&mut tree, &[]);
   let mut pipeline = Pipeline::new();
   let mut renderer = Counter::default();
   *renderer.fail.borrow_mut() = Some(artic_render::RenderError::SurfaceLost);
@@ -159,7 +159,7 @@ fn failed_present_keeps_no_scene() {
 fn measure_before_open_serves_the_first_frame() {
   let mut tree = UiTree::new();
   let child = leaf(&mut tree, 20.0);
-  let (root, _) = panel(&mut tree, &[child.id]);
+  let (root, _) = column(&mut tree, &[child.id]);
   let types = ElementTypes::from_link_time();
   let mut pipeline = Pipeline::new();
 
@@ -194,7 +194,7 @@ fn nodes_not_laid_out_are_not_drawn() {
   let under = leaf(&mut tree, 20.0);
   tree.add_child(TreeKind::Visual, hidden.id, under.id);
   tree.get_as::<common::Leaf>(hidden.id).unwrap().collapsed.set(true);
-  let (root, _) = panel(&mut tree, &[shown.id, hidden.id]);
+  let (root, _) = column(&mut tree, &[shown.id, hidden.id]);
 
   Pipeline::new().prepare(
     &mut tree,

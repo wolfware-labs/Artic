@@ -16,7 +16,9 @@ thiserror.workspace = true
 vello.workspace = true
 
 [dev-dependencies]
+artic-controls.workspace = true
 artic-core.workspace = true
+artic-element.workspace = true
 artic-test.workspace = true
 pretty_assertions.workspace = true
 # winit's defaults, except Wayland decorations without title text: drawing it needs ttf-parser,

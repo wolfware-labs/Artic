@@ -10,6 +10,7 @@ mod collection;
 mod defaults;
 mod descriptors;
 mod registry;
+mod value_error;
 
 pub use collection::XamlCollection;
 pub use defaults::OverrideDefaults;
@@ -18,6 +19,7 @@ pub use descriptors::{
   PropertyInfo, PropertyRef, TypeInfo, Whitespace, XamlType,
 };
 pub use registry::{Duplicate, Registry, RegistryError};
+pub use value_error::ValueError;
 
 #[doc(hidden)]
 pub use linkme;

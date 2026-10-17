@@ -102,7 +102,7 @@ The graph omits edges that a lower edge already implies (for example `artic-cont
 - `artic-xaml` does not depend on the registry. Type references stay unresolved in the infoset, so parser tests need no registry.
 - Release builds link `artic-xaml-runtime` only when the app enables `runtime-xaml`. Compiled views never touch the loader.
 - App-facing crates stay free of native-only dependencies, so a web target can be added later without app changes (D24 in the spec).
-- Backend adapters (`artic-winit`, `artic-vello`, and any third-party adapter) depend only on the public API of `artic-render` and `artic-platform`. Nothing in artic depends on an adapter: each target's launcher names its host and renderer ([backend design](design/backends.md)). `artic-render` and `artic-platform` have no backend dependencies (`wgpu`, `vello`, `winit` and the OS crates live in adapters).
+- Backend adapters (`artic-winit`, `artic-vello`, and any third-party adapter) depend only on the public API of `artic-render` and `artic-platform`. Nothing in artic depends on an adapter: each target's launcher names its host and renderer ([backend design](design/backends.md)). `artic-render` and `artic-platform` have no backend dependencies (`wgpu`, `vello`, `winit` and the OS crates live in adapters). An adapter's tests may dev-depend on `artic-controls` for control goldens, since goldens belong to each renderer ([golden images](design/golden-images.md)); its library still depends only on `artic-render` and `artic-platform`.
 
 ## Why this differs from the original §2 diagram
 

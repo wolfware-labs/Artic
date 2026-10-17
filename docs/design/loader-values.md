@@ -87,8 +87,9 @@ pub struct AttachedPropertyInfo {
 
 pub struct TypeInfo {
   // existing fields …
-  /// Appends a child node to the content collection, when `content` names a `XamlCollection` field.
-  pub add_child: Option<fn(&mut UiTree, NodeId, NodeId) -> Result<(), ValueError>>,   // new
+  /// What receives content: a property, or a collection field whose `add_child` appends a child
+  /// node ([panels design](panels.md)).
+  pub content: Option<ContentInfo>,   // replaces `content: Option<&str>` and a separate `add_child`
 }
 
 /// Why a thunk refused a value. Positions are added by the loader.
@@ -101,6 +102,10 @@ pub enum ValueError {
   WrongType { expected: &'static str, found: &'static str },
   /// The target node isn't the property's owner type.
   WrongNode,
+  /// The child can't be linked to its parent.
+  InvalidChild(LinkError),
+  /// A second child for an element that takes one.
+  OneChildOnly,
 }
 ```
 

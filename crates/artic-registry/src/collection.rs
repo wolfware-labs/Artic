@@ -1,47 +1,33 @@
 //! The fields that receive an element's child elements.
 //!
 //! A `#[xaml]` field that is neither a `Property` nor an `Event` is a collection: when markup writes
-//! elements inside the type's element, each child's node is pushed into it, in order, through
+//! elements inside the type's element, each child is added to it, in order, through
 //! [`XamlCollection`].
 
-use artic_core::tree::NodeId;
+use crate::ValueError;
+use artic_core::tree::{NodeId, UiTree};
 
 /// A field that receives the child elements written inside a XAML element, in order.
 ///
-/// A panel's children are the usual example: `<StackPanel><A/><B/></StackPanel>` pushes `A`, then
-/// `B`, into the panel's collection field.
-///
-/// # Examples
-///
-/// ```
-/// use artic_core::Object;
-/// use artic_core::property::AnyProperty;
-/// use artic_core::tree::{NodeId, UiTree};
-/// use artic_registry::XamlCollection;
-///
-/// #[derive(Debug)]
-/// struct Item;
-/// impl Object for Item {
-///   fn visit_properties(&self, _visit: &mut dyn FnMut(&dyn AnyProperty)) {}
-/// }
-///
-/// let mut tree = UiTree::new();
-/// let mut children: Vec<NodeId> = Vec::new();
-/// children.push_child(tree.alloc(Box::new(Item)));
-/// assert_eq!(children.len(), 1);
-/// ```
+/// A panel's children are the usual example: `<StackPanel><A/><B/></StackPanel>` adds `A`, then
+/// `B`. A collection may keep what it receives in the tree, as a panel's children are, or in its
+/// field, as a brush keeps its gradient stops; `field` reaches the field inside the owner node.
 #[diagnostic::on_unimplemented(
   message = "`{Self}` can't hold child elements",
   label = "`#[xaml]` on a field that isn't a `Property` or an `Event` makes it a collection of children",
   note = "to make this field a XAML property, declare it as `Property<{Self}>`"
 )]
-pub trait XamlCollection {
-  /// Adds `child` after the children already in the collection.
-  fn push_child(&mut self, child: NodeId);
-}
-
-impl XamlCollection for Vec<NodeId> {
-  fn push_child(&mut self, child: NodeId) {
-    self.push(child);
-  }
+pub trait XamlCollection: Sized {
+  /// Adds `child` as content of `owner`. An implementation calls `field` first and returns
+  /// [`ValueError::WrongNode`] when it gives `None`, before changing anything.
+  ///
+  /// # Errors
+  ///
+  /// When `owner` isn't the field's owner type, or the collection refuses `child`.
+  fn push_child(
+    tree: &mut UiTree,
+    owner: NodeId,
+    child: NodeId,
+    field: for<'a> fn(&'a mut UiTree, NodeId) -> Option<&'a mut Self>,
+  ) -> Result<(), ValueError>;
 }

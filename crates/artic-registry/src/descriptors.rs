@@ -1,3 +1,4 @@
+use crate::ValueError;
 use artic_core::property::{Affects, AnyProperty};
 use artic_core::tree::{NodeId, UiTree};
 
@@ -133,6 +134,9 @@ pub enum ContentInfo {
   Collection {
     /// The collection field.
     field: &'static str,
+    /// Adds one child element as content, calling the field's `XamlCollection::push_child` with
+    /// an accessor to the field.
+    add_child: fn(&mut UiTree, NodeId, NodeId) -> Result<(), ValueError>,
   },
 }
 

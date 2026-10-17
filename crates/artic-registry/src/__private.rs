@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 pub use crate::{
   ArgInfo, AttachedPropertyInfo, AttachedTarget, ContentInfo, EventInfo, MarkupExtensionInfo, OverrideDefaults, PropertyGroup,
-  PropertyGroupInfo, PropertyInfo, PropertyRef, TypeInfo, Whitespace, XamlCollection, XamlType, register_type,
+  PropertyGroupInfo, PropertyInfo, PropertyRef, TypeInfo, ValueError, Whitespace, XamlCollection, XamlType, register_type,
 };
 pub use artic_core::Object;
 pub use artic_core::event::Event;
@@ -121,6 +121,5 @@ mod tests {
     (&&ValueCheck::<f32>(PhantomData)).value_must_implement_fromstr_or_derive_xamltype();
     (&&ValueCheck::<Gauge>(PhantomData)).value_must_implement_fromstr_or_derive_xamltype();
     (&&ValueCheck::<NodeId>(PhantomData)).value_must_implement_fromstr_or_derive_xamltype();
-    assert_collection::<Vec<NodeId>>();
   }
 }

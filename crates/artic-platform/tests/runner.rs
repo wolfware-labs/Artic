@@ -9,7 +9,7 @@ use artic_element::{Desktop, SizeToContent};
 use artic_layout::geometry::Size;
 use artic_platform::{AppHandler, Axes, Chrome, FrameStats, LogicalSize, Runner, Waker, WindowDesc};
 use artic_render::SurfaceId;
-use common::{Context, Counter, Leaf, LeafHandles, Wrap, application, info, leaf, panel, pixels, surface, target};
+use common::{Context, Counter, Leaf, LeafHandles, Wrap, application, column, info, leaf, pixels, surface, target};
 use pretty_assertions::assert_eq;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -34,7 +34,7 @@ impl Fixture {
     let mut tree = UiTree::new();
     let top = leaf(&mut tree, 20.0);
     let bottom = leaf(&mut tree, 20.0);
-    let (content, _) = panel(&mut tree, &[top.id, bottom.id]);
+    let (content, _) = column(&mut tree, &[top.id, bottom.id]);
     let (application, surfaces) = application(&mut tree, &[("main", content)]);
     let (title, is_open) = (surface(&tree, surfaces[0]).title, surface(&tree, surfaces[0]).is_open);
     let renderer = Counter::default();
@@ -267,8 +267,8 @@ fn windows_keep_their_own_caches() {
   let mut tree = UiTree::new();
   let left = leaf(&mut tree, 20.0);
   let right = leaf(&mut tree, 20.0);
-  let (first_root, _) = panel(&mut tree, &[left.id]);
-  let (second_root, _) = panel(&mut tree, &[right.id]);
+  let (first_root, _) = column(&mut tree, &[left.id]);
+  let (second_root, _) = column(&mut tree, &[right.id]);
   let (application, _) = application(&mut tree, &[("first", first_root), ("second", second_root)]);
   let mut runner = Runner::new(tree, Counter::default(), application);
   let mut cx = Context::default();
@@ -298,8 +298,8 @@ fn windows_keep_their_own_caches() {
 fn node_resized_while_hidden_is_recorded_when_shown() {
   let mut tree = UiTree::new();
   let child = leaf(&mut tree, 20.0);
-  let (inner, inner_visible) = panel(&mut tree, &[child.id]);
-  let (root, _) = panel(&mut tree, &[inner]);
+  let (inner, inner_visible) = column(&mut tree, &[child.id]);
+  let (root, _) = column(&mut tree, &[inner]);
   let (application, _) = application(&mut tree, &[("main", root)]);
   let mut runner = Runner::new(tree, Counter::default(), application);
   let mut cx = Context::default();
@@ -325,7 +325,7 @@ fn node_resized_while_hidden_is_recorded_when_shown() {
 #[test]
 fn frame_before_surface_info_is_ignored() {
   let mut tree = UiTree::new();
-  let (root, _) = panel(&mut tree, &[]);
+  let (root, _) = column(&mut tree, &[]);
   let (application, _) = application(&mut tree, &[("main", root)]);
   let mut runner = Runner::new(tree, Counter::default(), application);
   let mut cx = Context::default();
@@ -342,7 +342,7 @@ fn frame_before_surface_info_is_ignored() {
 fn first_frame_without_a_request_draws() {
   let mut tree = UiTree::new();
   let child = leaf(&mut tree, 20.0);
-  let (root, _) = panel(&mut tree, &[child.id]);
+  let (root, _) = column(&mut tree, &[child.id]);
   let (application, _) = application(&mut tree, &[("main", root)]);
   let mut runner = Runner::new(tree, Counter::default(), application);
   let mut cx = Context::default();
@@ -429,7 +429,7 @@ impl Host for HandlesOnly {
 /// A runner over a one-window tree drawing with `renderer`.
 fn one_window(renderer: Counter) -> Runner<Counter> {
   let mut tree = UiTree::new();
-  let (root, _) = panel(&mut tree, &[]);
+  let (root, _) = column(&mut tree, &[]);
   let (application, _) = application(&mut tree, &[("main", root)]);
   Runner::new(tree, renderer, application)
 }
@@ -474,7 +474,7 @@ fn mismatched_renderer_is_rejected() {
 #[test]
 fn window_that_failed_to_open_exits() {
   let mut tree = UiTree::new();
-  let (root, _) = panel(&mut tree, &[]);
+  let (root, _) = column(&mut tree, &[]);
   let (application, _) = application(&mut tree, &[("main", root)]);
   let mut runner = Runner::new(tree, Counter::default(), application);
   let mut cx = Context::default();
@@ -489,8 +489,8 @@ fn window_that_failed_to_open_exits() {
 #[test]
 fn closing_the_last_open_window_exits_past_a_failed_one() {
   let mut tree = UiTree::new();
-  let (first_root, _) = panel(&mut tree, &[]);
-  let (second_root, _) = panel(&mut tree, &[]);
+  let (first_root, _) = column(&mut tree, &[]);
+  let (second_root, _) = column(&mut tree, &[]);
   let (application, _) = application(&mut tree, &[("first", first_root), ("second", second_root)]);
   let mut runner = Runner::new(tree, Counter::default(), application);
   let mut cx = Context::default();
@@ -761,7 +761,7 @@ fn surface_opens_measured_to_content() {
   let mut tree = UiTree::new();
   let top = leaf(&mut tree, 20.0);
   let bottom = leaf(&mut tree, 30.0);
-  let (content, _) = panel(&mut tree, &[top.id, bottom.id]);
+  let (content, _) = column(&mut tree, &[top.id, bottom.id]);
   let (application, surfaces) = application(&mut tree, &[("main", content)]);
   Desktop::set_size_to_content(&mut tree, surfaces[0], SizeToContent::WidthAndHeight);
 

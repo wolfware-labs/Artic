@@ -5,7 +5,10 @@ use artic_core::event::Event;
 use artic_core::property::{Affects, Inheritance, Precedence, Property, PropertyKey};
 use artic_core::tree::{NodeId, TreeKind, UiTree};
 use artic_macros::{XamlProperties, XamlType};
-use artic_registry::{AttachedTarget, ContentInfo, OverrideDefaults, PropertyRef, Registry, TypeInfo, Whitespace, XamlType};
+use artic_registry::{
+  AttachedTarget, ContentInfo, OverrideDefaults, PropertyRef, Registry, TypeInfo, ValueError, Whitespace, XamlCollection,
+  XamlType,
+};
 use pretty_assertions::assert_eq;
 use std::str::FromStr;
 
@@ -74,11 +77,27 @@ struct Border {
   pointer_pressed: Event<PointerEvent>,
 }
 
+/// A collection that keeps the children pushed into it, as a value collection keeps its values.
+#[derive(Debug, Default)]
+struct Items(Vec<NodeId>);
+
+impl XamlCollection for Items {
+  fn push_child(
+    tree: &mut UiTree,
+    owner: NodeId,
+    child: NodeId,
+    field: for<'a> fn(&'a mut UiTree, NodeId) -> Option<&'a mut Self>,
+  ) -> Result<(), ValueError> {
+    field(tree, owner).ok_or(ValueError::WrongNode)?.0.push(child);
+    Ok(())
+  }
+}
+
 #[derive(Debug, XamlType)]
 #[xaml(namespace = "https://artic.rs/ui")]
 struct StackPanel {
   #[xaml(content)]
-  children: Vec<NodeId>,
+  children: Items,
 }
 
 #[derive(Debug, XamlType)]
@@ -168,7 +187,7 @@ fn collection_field_makes_the_type_a_collection() {
   let panel = lookup("StackPanel");
 
   assert!(panel.is_collection);
-  assert!(StackPanel::default().children.is_empty());
+  assert!(StackPanel::default().children.0.is_empty());
 }
 
 // `whitespace = "significant"` reaches the descriptor.
@@ -424,7 +443,7 @@ fn content_child_on_a_field() {
 fn content_children_on_a_field() {
   assert!(matches!(
     lookup("StackPanel").content,
-    Some(ContentInfo::Collection { field: "children" })
+    Some(ContentInfo::Collection { field: "children", .. })
   ));
 }
 
@@ -448,4 +467,32 @@ fn content_property_in_a_group() {
     <Tag as XamlType>::TYPE_INFO.content,
     Some(ContentInfo::Property(PropertyRef { group: Some("labeled"), info })) if info.name == "Label"
   ));
+}
+
+// The generated `add_child` reaches the content field of the node it's given.
+#[test]
+fn add_child_pushes_into_the_content_field() {
+  let mut tree = UiTree::new();
+  let panel = (lookup("StackPanel").new)(&mut tree);
+  let child = tree.alloc(Box::new(StackPanel::default()));
+  let Some(ContentInfo::Collection { add_child, .. }) = lookup("StackPanel").content else {
+    panic!("a collection");
+  };
+
+  add_child(&mut tree, panel, child).expect("added");
+
+  assert_eq!(tree.get_as::<StackPanel>(panel).unwrap().children.0, [child]);
+}
+
+// Given a node of another type, `add_child` refuses before changing anything.
+#[test]
+fn add_child_refuses_another_type() {
+  let mut tree = UiTree::new();
+  let other = (lookup("Border").new)(&mut tree);
+  let child = tree.alloc(Box::new(StackPanel::default()));
+  let Some(ContentInfo::Collection { add_child, .. }) = lookup("StackPanel").content else {
+    panic!("a collection");
+  };
+
+  assert_eq!(add_child(&mut tree, other, child), Err(ValueError::WrongNode));
 }

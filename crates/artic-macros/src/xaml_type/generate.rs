@@ -78,10 +78,36 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
             group: ::core::option::Option::None,
             info: &__PROPERTIES[#index],
           }))),
-          None => quote!(::core::option::Option::Some(__artic::ContentInfo::Collection { field: #name })),
+          None => quote!(::core::option::Option::Some(__artic::ContentInfo::Collection {
+            field: #name,
+            add_child: __add_child,
+          })),
         }
       },
     );
+  let content_functions = analysis
+    .xaml_fields
+    .iter()
+    .find(|field| field.attributes.content.is_some() && matches!(field.role, Role::Collection))
+    .map(|field| {
+      let (field_ident, ty) = (field.ident, field.ty);
+      quote! {
+        fn __content_field<'a>(
+          tree: &'a mut __artic::UiTree,
+          owner: __artic::NodeId,
+        ) -> ::core::option::Option<&'a mut #ty> {
+          tree.get_as_mut::<#ident>(owner).map(|node| &mut node.#field_ident)
+        }
+
+        fn __add_child(
+          tree: &mut __artic::UiTree,
+          owner: __artic::NodeId,
+          child: __artic::NodeId,
+        ) -> ::core::result::Result<(), __artic::ValueError> {
+          <#ty as __artic::XamlCollection>::push_child(tree, owner, child, __content_field)
+        }
+      }
+    });
   let group_contents = groups.iter().map(|field| {
     let ty = field.ty;
     let field_name = field.ident.to_string();
@@ -148,6 +174,8 @@ pub fn generate(analysis: &Analysis) -> syn::Result<TokenStream> {
       #(#attached_keys)*
 
       #markup_extension
+
+      #content_functions
 
       impl #ident {
         #(#attached_helpers)*
