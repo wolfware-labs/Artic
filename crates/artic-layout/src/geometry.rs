@@ -289,6 +289,162 @@ impl RoundedRect {
   }
 }
 
+const KAPPA: f32 = 0.552_284_8;
+
+impl RoundedRect {
+  /// The [`fitted`](RoundedRect::fitted) shape with radii a border of `thickness` can follow
+  /// inside: each corner's radius is at most the distance from its corner to the inner edge of
+  /// each side opposite it. [`inner`](RoundedRect::inner) and [`ring`](RoundedRect::ring) start
+  /// from this outline, so a background filled with it shares their edge. A side that isn't a
+  /// finite number of 0 or more counts as 0, and without a border the shape is `fitted`.
+  #[must_use]
+  pub fn fitted_for_border(self, thickness: Thickness) -> RoundedRect {
+    let fitted = self.fitted();
+    let thickness = drawable_thickness(thickness);
+    let (width, height) = (fitted.rect.width.max(0.0), fitted.rect.height.max(0.0));
+    let reach = |radius: f32, across: f32, down: f32| {
+      radius
+        .min(finite::add(width, -across))
+        .min(finite::add(height, -down))
+        .max(0.0)
+    };
+    let CornerRadius {
+      top_left,
+      top_right,
+      bottom_right,
+      bottom_left,
+    } = fitted.radius;
+    RoundedRect::new(
+      fitted.rect,
+      CornerRadius::new(
+        reach(top_left, thickness.right, thickness.bottom),
+        reach(top_right, thickness.left, thickness.bottom),
+        reach(bottom_right, thickness.left, thickness.top),
+        reach(bottom_left, thickness.right, thickness.top),
+      ),
+    )
+  }
+
+  /// The shape inside a border of `thickness`, as CSS defines its inner border edge: the
+  /// [`fitted_for_border`](RoundedRect::fitted_for_border) rectangle deflated by the thickness,
+  /// each corner's radius reduced per axis by its two sides' widths, stopping at 0. Each inner
+  /// corner keeps its outer corner's center, so the inner edge stays inside the outline. A side
+  /// that isn't a finite number of 0 or more counts as 0. When no room is left inside, a single
+  /// point, which as a clip hides everything.
+  #[must_use]
+  pub fn inner(self, thickness: Thickness) -> Path {
+    let thickness = drawable_thickness(thickness);
+    let outer = self.fitted_for_border(thickness);
+    let rect = outer.rect.deflate(thickness);
+    if rect.width <= 0.0 || rect.height <= 0.0 {
+      return Path::builder(rect.origin()).build();
+    }
+    let CornerRadius {
+      top_left,
+      top_right,
+      bottom_right,
+      bottom_left,
+    } = outer.radius;
+    let shrink = |radius: f32, side: f32| (radius - side).max(0.0);
+    let radii = [
+      (shrink(top_left, thickness.left), shrink(top_left, thickness.top)),
+      (shrink(top_right, thickness.right), shrink(top_right, thickness.top)),
+      (shrink(bottom_right, thickness.right), shrink(bottom_right, thickness.bottom)),
+      (shrink(bottom_left, thickness.left), shrink(bottom_left, thickness.bottom)),
+    ];
+    contour(Path::builder(start(rect, &radii)), rect, &radii).build()
+  }
+
+  /// The border between this shape's [`fitted_for_border`](RoundedRect::fitted_for_border)
+  /// outline and its [`inner`](RoundedRect::inner) shape, as one even-odd path: the outline and
+  /// the inner edge are two figures, so one fill draws the ring, whatever the sides' widths. When
+  /// no room is left inside, the whole outline.
+  #[must_use]
+  pub fn ring(self, thickness: Thickness) -> Path {
+    let outer = self.fitted_for_border(thickness);
+    let CornerRadius {
+      top_left,
+      top_right,
+      bottom_right,
+      bottom_left,
+    } = outer.radius;
+    let radii = [
+      (top_left, top_left),
+      (top_right, top_right),
+      (bottom_right, bottom_right),
+      (bottom_left, bottom_left),
+    ];
+    let mut builder = contour(Path::builder(start(outer.rect, &radii)), outer.rect, &radii);
+    let inner = self.inner(thickness);
+    if inner.elements().len() > 1 {
+      for element in inner.elements() {
+        builder = match *element {
+          PathElement::MoveTo(point) => builder.move_to(point),
+          PathElement::LineTo(point) => builder.line_to(point),
+          PathElement::QuadTo(control, end) => builder.quad_to(control, end),
+          PathElement::CubicTo(first, second, end) => builder.cubic_to(first, second, end),
+          PathElement::Close => builder.close(),
+        };
+      }
+    }
+    builder.fill_rule(FillRule::EvenOdd).build()
+  }
+}
+
+fn drawable_thickness(thickness: Thickness) -> Thickness {
+  let side = |side: f32| if side.is_finite() && side > 0.0 { side } else { 0.0 };
+  Thickness::new(
+    side(thickness.left),
+    side(thickness.top),
+    side(thickness.right),
+    side(thickness.bottom),
+  )
+}
+
+fn start(rect: Rect, radii: &[(f32, f32); 4]) -> Point {
+  Point::new(finite::add(rect.x, radii[0].0), rect.y)
+}
+
+fn contour(builder: PathBuilder, rect: Rect, radii: &[(f32, f32); 4]) -> PathBuilder {
+  let (left, top) = (rect.x, rect.y);
+  let (right, bottom) = (finite::add(rect.x, rect.width), finite::add(rect.y, rect.height));
+  let [top_left, top_right, bottom_right, bottom_left] = *radii;
+  let corners = [
+    (
+      Point::new(finite::add(right, -top_right.0), top),
+      Point::new(right, top),
+      Point::new(right, finite::add(top, top_right.1)),
+    ),
+    (
+      Point::new(right, finite::add(bottom, -bottom_right.1)),
+      Point::new(right, bottom),
+      Point::new(finite::add(right, -bottom_right.0), bottom),
+    ),
+    (
+      Point::new(finite::add(left, bottom_left.0), bottom),
+      Point::new(left, bottom),
+      Point::new(left, finite::add(bottom, -bottom_left.1)),
+    ),
+    (
+      Point::new(left, finite::add(top, top_left.1)),
+      Point::new(left, top),
+      Point::new(finite::add(left, top_left.0), top),
+    ),
+  ];
+  corners
+    .into_iter()
+    .fold(builder, |builder, (from, at, to)| corner(builder.line_to(from), from, at, to))
+    .close()
+}
+
+fn corner(builder: PathBuilder, from: Point, at: Point, to: Point) -> PathBuilder {
+  if from == at || to == at {
+    return builder.line_to(at).line_to(to);
+  }
+  let toward = |point: Point| Point::new(point.x + (at.x - point.x) * KAPPA, point.y + (at.y - point.y) * KAPPA);
+  builder.cubic_to(toward(from), toward(to), to)
+}
+
 impl From<Rect> for RoundedRect {
   /// The rectangle with square corners.
   fn from(rect: Rect) -> RoundedRect {
@@ -339,6 +495,240 @@ impl Display for CornerRadius {
 mod tests {
   use super::*;
   use pretty_assertions::assert_eq;
+
+  fn box_with(radius: f32) -> RoundedRect {
+    RoundedRect::new(Rect::new(0.0, 0.0, 100.0, 50.0), CornerRadius::uniform(radius))
+  }
+
+  // Each inner corner shrinks by its two sides' widths, per axis: 10 with left 4 and top 2 gives a
+  // top-left corner 6 wide and 8 tall.
+  #[test]
+  fn inner_radii_shrink_per_axis() {
+    let inner = box_with(10.0).inner(Thickness::new(4.0, 2.0, 0.0, 0.0));
+
+    assert_eq!(inner.elements()[0], PathElement::MoveTo(Point::new(10.0, 2.0)));
+    assert!(inner.elements().contains(&PathElement::LineTo(Point::new(4.0, 10.0))));
+  }
+
+  // With no thickness, the inner shape is the outline itself.
+  #[test]
+  fn zero_thickness_inner_is_the_outline() {
+    let inner = box_with(10.0).inner(Thickness::ZERO);
+
+    assert_eq!(inner.elements()[0], PathElement::MoveTo(Point::new(10.0, 0.0)));
+    assert_eq!(inner.bounds(), Rect::new(0.0, 0.0, 100.0, 50.0));
+  }
+
+  // A side wider than the corner's radius leaves a square inner corner.
+  #[test]
+  fn inner_radius_stops_at_zero() {
+    let inner = box_with(2.0).inner(Thickness::uniform(4.0));
+
+    assert!(
+      !inner
+        .elements()
+        .iter()
+        .any(|element| matches!(element, PathElement::CubicTo(..)))
+    );
+  }
+
+  // A corner that would reach past the inner edge of an opposite side shrinks to that edge: 19 on
+  // a box 20 wide with a right side of 10 becomes 10, and the other corners keep theirs.
+  #[test]
+  fn radii_stop_at_the_opposite_inner_edge() {
+    let outer = RoundedRect::new(Rect::new(0.0, 0.0, 20.0, 40.0), CornerRadius::new(19.0, 1.0, 0.0, 0.0));
+
+    let fitted = outer.fitted_for_border(Thickness::new(0.0, 0.0, 10.0, 0.0));
+
+    assert_eq!(fitted.radius, CornerRadius::new(10.0, 1.0, 0.0, 0.0));
+  }
+
+  // Each inner corner keeps its outer corner's center, so the inner edge never crosses the
+  // outline: with no top or left side, the top-left corners of both figures are the same curve.
+  #[test]
+  fn inner_corners_share_the_outer_centers() {
+    let outer = RoundedRect::new(Rect::new(0.0, 0.0, 20.0, 40.0), CornerRadius::new(19.0, 1.0, 0.0, 0.0));
+    let thickness = Thickness::new(0.0, 0.0, 10.0, 0.0);
+
+    let ring = outer.ring(thickness);
+    let inner = outer.inner(thickness);
+
+    let close = ring
+      .elements()
+      .iter()
+      .position(|element| *element == PathElement::Close)
+      .expect("the outline closes");
+    let top_left = |elements: &[PathElement]| {
+      elements
+        .iter()
+        .rev()
+        .find(|element| matches!(element, PathElement::CubicTo(..)))
+        .copied()
+    };
+    assert_eq!(ring.elements()[0], PathElement::MoveTo(Point::new(10.0, 0.0)));
+    assert_eq!(top_left(inner.elements()), top_left(&ring.elements()[..close]));
+  }
+
+  // Over a grid of radii and uneven sides, every point on the inner edge lies inside the outline,
+  // so the even-odd ring never paints outside the box.
+  #[test]
+  fn inner_stays_inside_the_outline() {
+    let inside = |outer: RoundedRect, point: Point| {
+      let Rect { x, y, width, height } = outer.rect;
+      let CornerRadius {
+        top_left,
+        top_right,
+        bottom_right,
+        bottom_left,
+      } = outer.radius;
+      let corners = [
+        (
+          top_left,
+          x + top_left,
+          y + top_left,
+          point.x < x + top_left && point.y < y + top_left,
+        ),
+        (
+          top_right,
+          x + width - top_right,
+          y + top_right,
+          point.x > x + width - top_right && point.y < y + top_right,
+        ),
+        (
+          bottom_right,
+          x + width - bottom_right,
+          y + height - bottom_right,
+          point.x > x + width - bottom_right && point.y > y + height - bottom_right,
+        ),
+        (
+          bottom_left,
+          x + bottom_left,
+          y + height - bottom_left,
+          point.x < x + bottom_left && point.y > y + height - bottom_left,
+        ),
+      ];
+      let slack = 1e-3;
+      point.x >= x - slack
+        && point.y >= y - slack
+        && point.x <= x + width + slack
+        && point.y <= y + height + slack
+        && corners
+          .iter()
+          .all(|&(radius, cx, cy, within)| !within || (point.x - cx).hypot(point.y - cy) <= radius * (1.0 + 3e-4) + slack)
+    };
+    let mid = |from: Point, first: Point, second: Point, to: Point| {
+      Point::new(
+        (from.x + 3.0 * first.x + 3.0 * second.x + to.x) / 8.0,
+        (from.y + 3.0 * first.y + 3.0 * second.y + to.y) / 8.0,
+      )
+    };
+    let rect = Rect::new(0.0, 0.0, 20.0, 40.0);
+    for radii in [
+      [19.0, 1.0, 0.0, 0.0],
+      [10.0; 4],
+      [20.0, 0.0, 20.0, 0.0],
+      [5.0, 15.0, 2.0, 18.0],
+    ] {
+      for sides in [
+        [0.0, 0.0, 10.0, 0.0],
+        [1.0, 2.0, 3.0, 4.0],
+        [8.0, 1.0, 0.0, 12.0],
+        [0.0, 15.0, 9.0, 0.0],
+      ] {
+        let [top_left, top_right, bottom_right, bottom_left] = radii;
+        let [left, top, right, bottom] = sides;
+        let shape = RoundedRect::new(rect, CornerRadius::new(top_left, top_right, bottom_right, bottom_left));
+        let thickness = Thickness::new(left, top, right, bottom);
+        let outer = shape.fitted_for_border(thickness);
+        let mut current = Point::ZERO;
+        for element in shape.inner(thickness).elements() {
+          let point = match *element {
+            PathElement::MoveTo(point) | PathElement::LineTo(point) => point,
+            PathElement::CubicTo(first, second, to) => {
+              assert!(inside(outer, mid(current, first, second, to)), "{radii:?} {sides:?}");
+              to
+            }
+            PathElement::QuadTo(_, to) => to,
+            PathElement::Close => current,
+          };
+          assert!(inside(outer, point), "{radii:?} {sides:?} {point}");
+          current = point;
+        }
+      }
+    }
+  }
+
+  // Without a border, fitting for one changes nothing.
+  #[test]
+  fn fitted_for_no_border_is_fitted() {
+    let outer = RoundedRect::new(Rect::new(0.0, 0.0, 20.0, 40.0), CornerRadius::new(19.0, 1.0, 30.0, 0.0));
+
+    assert_eq!(outer.fitted_for_border(Thickness::ZERO), outer.fitted());
+  }
+
+  // Radii far larger than the box are fitted to it before anything else.
+  #[test]
+  fn huge_radii_are_fitted_first() {
+    let ring = RoundedRect::new(Rect::new(0.0, 0.0, 20.0, 20.0), CornerRadius::uniform(1000.0)).ring(Thickness::uniform(2.0));
+
+    assert_eq!(ring.bounds(), Rect::new(0.0, 0.0, 20.0, 20.0));
+    assert!(ring.is_finite());
+  }
+
+  // A border wider than half the box leaves no hole: the inner shape is a point and the ring is
+  // the whole box.
+  #[test]
+  fn thick_border_leaves_no_hole() {
+    let outer = box_with(10.0);
+
+    let inner = outer.inner(Thickness::uniform(30.0));
+    let ring = outer.ring(Thickness::uniform(30.0));
+
+    assert_eq!(inner.elements().len(), 1);
+    assert_eq!(
+      ring
+        .elements()
+        .iter()
+        .filter(|element| matches!(element, PathElement::MoveTo(_)))
+        .count(),
+      1
+    );
+  }
+
+  // The ring is two figures filled even-odd, so the inside stays empty.
+  #[test]
+  fn ring_fills_even_odd() {
+    let ring = box_with(10.0).ring(Thickness::uniform(2.0));
+
+    assert_eq!(ring.fill_rule(), FillRule::EvenOdd);
+    assert_eq!(
+      ring
+        .elements()
+        .iter()
+        .filter(|element| matches!(element, PathElement::MoveTo(_)))
+        .count(),
+      2
+    );
+  }
+
+  // The ring covers exactly the outer shape's box.
+  #[test]
+  fn ring_bounds_match_the_outer_shape() {
+    assert_eq!(
+      box_with(10.0).ring(Thickness::new(4.0, 2.0, 6.0, 8.0)).bounds(),
+      Rect::new(0.0, 0.0, 100.0, 50.0)
+    );
+  }
+
+  // A negative, NaN or infinite side counts as no side.
+  #[test]
+  fn negative_sides_count_as_zero() {
+    let expected = box_with(10.0).inner(Thickness::ZERO);
+
+    for side in [-5.0, f32::NAN, f32::INFINITY] {
+      assert_eq!(box_with(10.0).inner(Thickness::uniform(side)), expected, "{side}");
+    }
+  }
 
   // Snapped edges land on whole device pixels at any scale, and neighbors still share their edge.
   #[test]

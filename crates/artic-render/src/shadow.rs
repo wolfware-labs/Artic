@@ -1,5 +1,6 @@
-use crate::{Color, Shape};
+use crate::{Color, ParseColorError, Shape};
 use artic_layout::geometry::{CornerRadius, Point, Rect, RoundedRect};
+use std::str::FromStr;
 
 /// A blurred copy of a rounded rectangle, drawn behind it and only outside it: CSS's outer
 /// `box-shadow`.
@@ -7,6 +8,9 @@ use artic_layout::geometry::{CornerRadius, Point, Rect, RoundedRect};
 /// The rectangle is grown by `spread`, moved by `offset` and blurred by `blur`, in `color`. It's
 /// built with [`new`](BoxShadow::new) and the `with_*` methods, so fields added later break no
 /// caller.
+///
+/// It parses from text in CSS's form, `offset-x offset-y [blur [spread]] color`, such as
+/// `0 2 8 #40000000`.
 ///
 /// # Examples
 ///
@@ -97,12 +101,175 @@ impl BoxShadow {
   }
 }
 
+/// The error returned when text isn't a valid box shadow.
+///
+/// The message repeats the text, says what is wrong, and shows the accepted form.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("invalid BoxShadow '{text}': {problem}; expected forms like '0 2 8 #40000000' or '4 4 Black'")]
+pub struct ParseBoxShadowError {
+  /// The text that failed to parse.
+  pub text: String,
+  /// What is wrong with it.
+  pub problem: ShadowProblem,
+}
+
+/// What is wrong with box shadow text.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ShadowProblem {
+  /// The text is empty, or only whitespace.
+  #[error("it is empty")]
+  Empty,
+  /// It asks for an inset shadow, which isn't supported yet.
+  #[error("inset shadows aren't supported yet")]
+  Inset,
+  /// The last part is a number, so there's no color.
+  #[error("it needs a color last")]
+  MissingColor,
+  /// Fewer than two numbers before the color.
+  #[error("it needs at least an x and a y offset")]
+  TooFewNumbers,
+  /// More than four numbers before the color.
+  #[error("it has more than four numbers")]
+  TooManyNumbers,
+  /// A part before the color isn't a number.
+  #[error("'{0}' is not a number")]
+  NotANumber(String),
+  /// A part before the color is NaN or infinite.
+  #[error("'{0}' is not a finite number")]
+  NotFinite(String),
+  /// The blur is negative.
+  #[error("the blur '{0}' is negative")]
+  NegativeBlur(String),
+  /// The color doesn't parse.
+  #[error("its color '{}' is invalid: {}", .0.text, .0.problem)]
+  Color(ParseColorError),
+}
+
+impl FromStr for BoxShadow {
+  type Err = ParseBoxShadowError;
+
+  /// Parses `offset-x offset-y [blur [spread]] color`, as described on [`ShadowProblem`]'s
+  /// variants: whitespace between the parts, the color last.
+  fn from_str(text: &str) -> Result<BoxShadow, ParseBoxShadowError> {
+    parse_shadow(text).map_err(|problem| ParseBoxShadowError {
+      text: text.to_owned(),
+      problem,
+    })
+  }
+}
+
+fn parse_shadow(text: &str) -> Result<BoxShadow, ShadowProblem> {
+  let tokens: Vec<&str> = text.split_whitespace().collect();
+  let Some((color, numbers)) = tokens.split_last() else {
+    return Err(ShadowProblem::Empty);
+  };
+  if tokens.iter().any(|token| token.eq_ignore_ascii_case("inset")) {
+    return Err(ShadowProblem::Inset);
+  }
+  if color.parse::<f32>().is_ok() {
+    return Err(ShadowProblem::MissingColor);
+  }
+  match numbers.len() {
+    0 | 1 => return Err(ShadowProblem::TooFewNumbers),
+    5.. => return Err(ShadowProblem::TooManyNumbers),
+    _ => {}
+  }
+  let values = numbers
+    .iter()
+    .map(|token| match token.parse::<f32>() {
+      Ok(value) if value.is_finite() => Ok(value),
+      Ok(_) => Err(ShadowProblem::NotFinite((*token).to_owned())),
+      Err(_) => Err(ShadowProblem::NotANumber((*token).to_owned())),
+    })
+    .collect::<Result<Vec<f32>, ShadowProblem>>()?;
+  let blur = values.get(2).copied().unwrap_or(0.0);
+  if blur < 0.0 {
+    return Err(ShadowProblem::NegativeBlur(numbers[2].to_owned()));
+  }
+  let color = color.parse::<Color>().map_err(ShadowProblem::Color)?;
+  Ok(BoxShadow::new(Point::new(values[0], values[1]), blur, color).with_spread(values.get(3).copied().unwrap_or(0.0)))
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
   use pretty_assertions::assert_eq;
 
   const BLACK: Color = Color::rgb(0, 0, 0);
+
+  fn parse(text: &str) -> Result<BoxShadow, ShadowProblem> {
+    text.parse::<BoxShadow>().map_err(|error| error.problem)
+  }
+
+  // Two numbers and a color: an offset, no blur, no spread.
+  #[test]
+  fn two_numbers_and_a_color() {
+    assert_eq!(
+      parse("4 4 Black"),
+      Ok(BoxShadow::new(Point::new(4.0, 4.0), 0.0, Color::rgb(0, 0, 0)))
+    );
+  }
+
+  // A third number is the blur.
+  #[test]
+  fn three_numbers_add_blur() {
+    assert_eq!(parse("0 2 8 #40000000").map(|shadow| shadow.blur), Ok(8.0));
+  }
+
+  // A fourth number is the spread.
+  #[test]
+  fn four_numbers_add_spread() {
+    assert_eq!(parse("0 0 12 3 #000").map(|shadow| shadow.spread), Ok(3.0));
+  }
+
+  // A negative spread shrinks the shadow and is allowed.
+  #[test]
+  fn negative_spread_is_allowed() {
+    assert_eq!(parse("0 0 12 -2 #000").map(|shadow| shadow.spread), Ok(-2.0));
+  }
+
+  // Tabs and repeated spaces separate tokens like one space.
+  #[test]
+  fn extra_whitespace_is_ignored() {
+    assert_eq!(parse("  4\t4   Black "), parse("4 4 Black"));
+  }
+
+  // Each problem is reported by name, and the message quotes the text.
+  #[test]
+  fn problems_are_named() {
+    assert_eq!(parse(""), Err(ShadowProblem::Empty));
+    assert_eq!(parse("   "), Err(ShadowProblem::Empty));
+    assert_eq!(parse("4 4"), Err(ShadowProblem::MissingColor));
+    assert_eq!(parse("4 Black"), Err(ShadowProblem::TooFewNumbers));
+    assert_eq!(parse("1 2 3 4 5 Black"), Err(ShadowProblem::TooManyNumbers));
+    assert_eq!(parse("4 x Black"), Err(ShadowProblem::NotANumber("x".to_owned())));
+    assert_eq!(parse("4 NaN Black"), Err(ShadowProblem::NotFinite("NaN".to_owned())));
+    assert_eq!(parse("4 4 -8 Black"), Err(ShadowProblem::NegativeBlur("-8".to_owned())));
+    assert!(matches!(parse("4 4 #4000000"), Err(ShadowProblem::Color(_))));
+    let error = "4 4".parse::<BoxShadow>().expect_err("no color");
+    assert!(error.to_string().contains("'4 4'"), "{error}");
+  }
+
+  // A bad color is reported as the color's problem, quoting the color token.
+  #[test]
+  fn bad_color_message_quotes_the_color() {
+    let error = "4 4 #4000000".parse::<BoxShadow>().expect_err("bad color");
+
+    assert!(error.to_string().contains("its color '#4000000'"), "{error}");
+  }
+
+  // `inset` is refused by name wherever it is, before the numbers are read.
+  #[test]
+  fn inset_is_reported_as_inset() {
+    assert_eq!(parse("inset 0 0 4 Black"), Err(ShadowProblem::Inset));
+    assert_eq!(parse("0 0 4 Black INSET"), Err(ShadowProblem::Inset));
+  }
+
+  // `inf` reads as a number, so a last token of `inf` is a missing color, not a color name.
+  #[test]
+  fn infinity_as_the_last_token_is_missing_color() {
+    assert_eq!(parse("4 4 inf"), Err(ShadowProblem::MissingColor));
+  }
 
   // `new` has no spread, and `with_spread` sets only the spread.
   #[test]
