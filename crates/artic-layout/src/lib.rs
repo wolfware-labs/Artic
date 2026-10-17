@@ -1,5 +1,6 @@
 //! Measure and arrange protocol, geometry types and panels for artic.
 
+mod finite;
 pub mod geometry;
 mod layout;
 mod sizing;

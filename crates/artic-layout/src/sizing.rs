@@ -1,3 +1,4 @@
+use crate::finite;
 use crate::geometry::{Rect, Size, Thickness};
 use artic_macros::XamlEnum;
 
@@ -116,16 +117,19 @@ pub fn measure_with(sizing: &Sizing, available: Size, inner: impl FnOnce(Size) -
   let (min, max) = sizing.limits();
   let margin = sizing.margin;
   let offered = Size::new(
-    (available.width - margin.horizontal()).max(0.0).min(max.width).max(min.width),
-    (available.height - margin.vertical())
+    finite::add(available.width, -margin.horizontal())
+      .max(0.0)
+      .min(max.width)
+      .max(min.width),
+    finite::add(available.height, -margin.vertical())
       .max(0.0)
       .min(max.height)
       .max(min.height),
   );
   let desired = inner(offered);
   Size::new(
-    desired.width.max(min.width).min(max.width) + margin.horizontal(),
-    desired.height.max(min.height).min(max.height) + margin.vertical(),
+    finite::add(desired.width.max(min.width).min(max.width), margin.horizontal()),
+    finite::add(desired.height.max(min.height).min(max.height), margin.vertical()),
   )
 }
 
@@ -167,13 +171,13 @@ pub fn arrange_with(sizing: &Sizing, slot: Rect, desired: Size) -> Rect {
     .min(max.height);
   let x = match sizing.horizontal {
     HorizontalAlignment::Left => space.x,
-    HorizontalAlignment::Right => space.x + space.width - width,
-    HorizontalAlignment::Center | HorizontalAlignment::Stretch => space.x + (space.width - width) / 2.0,
+    HorizontalAlignment::Right => finite::add(finite::add(space.x, space.width), -width),
+    HorizontalAlignment::Center | HorizontalAlignment::Stretch => finite::add(space.x, finite::add(space.width, -width) / 2.0),
   };
   let y = match sizing.vertical {
     VerticalAlignment::Top => space.y,
-    VerticalAlignment::Bottom => space.y + space.height - height,
-    VerticalAlignment::Center | VerticalAlignment::Stretch => space.y + (space.height - height) / 2.0,
+    VerticalAlignment::Bottom => finite::add(finite::add(space.y, space.height), -height),
+    VerticalAlignment::Center | VerticalAlignment::Stretch => finite::add(space.y, finite::add(space.height, -height) / 2.0),
   };
   Rect::new(x, y, width, height)
 }
