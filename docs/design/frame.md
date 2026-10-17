@@ -8,7 +8,7 @@ A **frame** turns changed state into pixels on one surface: posted work runs, th
 
 | Who | Writes | Sees |
 | --- | --- | --- |
-| The facade (#55) | builds the tree from the views, then `Runner::new(tree, renderer, engine, application)` ([surface design](surface.md), [text design](text.md)) and `artic_platform::run(host, runner)` | `Runner`, `run`, `Hooks`, `Error` |
+| The facade (#55) | builds the tree from the views, then `Runner::new(tree, renderer, engine, application)` with the engine it creates, `artic_text::Engine::system()` ([surface design](surface.md), [text design](text.md)) and `artic_platform::run(host, runner)` | `Runner`, `run`, `Hooks`, `Error` |
 | Features that run inside a frame (style pass, size classes, accesskit, transitions) | a closure registered on `Hooks` | `Hooks`, `UiTree`, `SurfaceInfo`, `FrameStats` |
 | Tests and the debug overlay (#165) | | `FrameStats`, per frame and per surface |
 | Host adapters | nothing new | `Runner` is an ordinary `AppHandler` |
@@ -76,7 +76,7 @@ Pending work never keeps the loop awake by itself: the queue is empty after each
 4. If this surface isn't marked, nothing changed for it, but the host still asked for pixels: an OS redraw, such as a window uncovered or restored, reaches `frame` like a requested one, and a host can't always tell them apart (winit can't). The pipeline presents the last `Scene` again, with nothing measured or recorded, then settles and returns; the loop goes back to sleep. A surface with no scene yet goes on to step 5.
 5. Clear the mark and `pipeline.prepare(tree, root, info, &types)`, lending the runner's `ElementTypes`, from which the pipeline builds the `LayoutNodes` and render `Nodes` for this frame:
    - `LayoutManager::run` at `size / scale` in logical units, with pixel snapping and the runner's text engine ([text design](text.md)). It measures only layout-dirty nodes and those whose desired size a change reached, and reports the nodes whose arranged size changed and the nodes whose layout result was set or dropped, including by a `measure` call since the last run.
-   - `Compositor::compose` through the pipeline's render `Nodes` (section 5). It records only render-dirty nodes and the nodes layout resized, and reuses every other fragment.
+   - `Compositor::compose` through the pipeline's render `Nodes` (section 5). It records only render-dirty nodes and the nodes layout resized or changed the layout result of, and reuses every other fragment.
 6. `pipeline.present(renderer, frame, target)` builds the renderer's `SurfaceView` from the frame's id, size and scale and the lent target, and renders; then the `after_present` hooks run and the surface's `FrameStats` are kept.
 7. If any `wants_frame` hook returns true, mark the surface and request its next frame.
 8. Settle (section 3). A write made in steps 5 to 7, such as by an `after_present` hook, sets the pending flag after step 3 read it; settling marks the surfaces and asks for exactly one more frame.
