@@ -63,6 +63,7 @@ The workspace is layered. A crate depends only on crates in lower layers, so the
 | 0 | `artic-core` | Signals, effects, `Property<T>`, the node tree and trees, the UI dispatcher |
 | 0 | `artic-macros` | The derive and attribute macros, such as `#[element]`, `#[derive(XamlType)]` and `#[derive(ViewModel)]` |
 | 0 | `artic-xaml` | XAML parser, markup extension grammar and spanned diagnostics |
+| 0 | `artic-test-fonts` | The font artic's tests shape text with, as byte constants |
 | 1 | `artic-registry` | Type metadata that maps XAML names to Rust types and properties |
 | 1 | `artic-layout` | Measure and arrange protocol, geometry types, panels |
 | 1 | `artic-i18n` | Optional localizer backed by Fluent `.ftl` files |
@@ -83,7 +84,7 @@ The workspace is layered. A crate depends only on crates in lower layers, so the
 
 ```mermaid
 flowchart BT
-  L0["Layer 0: artic-core, artic-macros, artic-xaml"]
+  L0["Layer 0: artic-core, artic-macros, artic-xaml, artic-test-fonts"]
   L1["Layer 1: artic-registry, artic-layout, artic-i18n"]
   L2["Layer 2: artic-render, artic-style, artic-xaml-compiler, artic-xaml-runtime"]
   L3["Layer 3: artic-element, artic-lsp"]

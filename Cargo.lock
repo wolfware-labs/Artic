@@ -287,6 +287,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "artic-test-fonts"
+version = "0.1.0"
+
+[[package]]
 name = "artic-theme"
 version = "0.1.0"
 dependencies = [
