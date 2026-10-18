@@ -347,7 +347,7 @@ fn right_to_left_text_stays_inside_its_size() {
   let width = paragraph.size().width;
 
   assert_eq!(paragraph.lines().len(), 3);
-  assert_close(width, 76.42);
+  assert_close(width, 71.94);
   for line in paragraph.lines() {
     let xs = glyph_xs(&paragraph, line);
 
@@ -369,4 +369,94 @@ fn overflowing_word_stays_inside_its_size() {
         .all(|&x| x >= -0.01 && x <= paragraph.size().width)
     );
   }
+}
+
+fn assert_inside(paragraph: &Paragraph) {
+  let width = paragraph.size().width;
+  for glyph in paragraph.runs().iter().flat_map(|run| run.glyphs()) {
+    assert!(
+      glyph.x >= -0.01 && glyph.x <= width + 0.01,
+      "glyph at {} outside 0..{width}",
+      glyph.x
+    );
+  }
+}
+
+fn glyph_count(paragraph: &Paragraph) -> usize {
+  paragraph.runs().iter().map(|run| run.glyphs().len()).sum()
+}
+
+// A space at the logical start of right-to-left text sits at its right end, and no glyph lands
+// outside the paragraph.
+#[test]
+fn right_to_left_leading_space_stays_inside() {
+  assert_inside(&shape(&mut engine(), " שלום", &style()));
+  assert_inside(&shape(&mut engine(), "  שלום", &style()));
+}
+
+// Latin words wrapped inside right-to-left text keep every glyph inside the paragraph.
+#[test]
+fn latin_wrapped_in_right_to_left_text_stays_inside() {
+  assert_inside(&wrapped(&mut engine(), "שלום Hello world עולם שלום", 60.0));
+}
+
+// Whitespace at the end of a line takes no width and draws no glyphs, in either direction.
+#[test]
+fn trailing_whitespace_is_hung() {
+  let mut engine = engine();
+
+  for (text, trimmed) in [("abc ", "abc"), ("שלום ", "שלום")] {
+    let paragraph = shape(&mut engine, text, &style());
+    let expected = shape(&mut engine, trimmed, &style());
+
+    assert_eq!(paragraph.size(), expected.size(), "{text:?}");
+    assert_eq!(glyph_count(&paragraph), glyph_count(&expected), "{text:?}");
+  }
+}
+
+// Spaces at the start of a left-to-right line keep their width, so indentation stays.
+#[test]
+fn leading_spaces_keep_their_width() {
+  let mut engine = engine();
+  let indented = shape(&mut engine, "  abc", &style());
+  let plain = shape(&mut engine, "abc", &style());
+
+  assert_close(indented.size().width, plain.size().width + 8.96);
+}
+
+// The empty line after a final newline has no width.
+#[test]
+fn empty_last_line_has_no_width() {
+  let paragraph = shape(&mut engine(), "abc\n", &style());
+
+  assert_eq!(paragraph.lines()[1].width, 0.0);
+}
+
+// A line height below the font's own still stacks the lines from 0, each baseline inside its line.
+#[test]
+fn tight_line_height_stacks_lines_from_zero() {
+  let style = TextStyle {
+    line_height: Some(16.0),
+    ..style()
+  };
+  let paragraph = shape(&mut engine(), "a\nb", &style);
+  let lines = paragraph.lines();
+
+  assert_eq!([lines[0].top, lines[1].top], [0.0, 16.0]);
+  for line in lines {
+    assert!(
+      line.baseline > line.top && line.baseline <= line.top + line.height,
+      "{line:?}"
+    );
+  }
+}
+
+// Thai has no spaces between words, so it wraps only where the complex-scripts feature's
+// dictionaries find word boundaries.
+#[cfg(feature = "complex-scripts")]
+#[test]
+fn thai_text_wraps_between_words() {
+  let paragraph = wrapped(&mut engine(), "ภาษาไทยเป็นภาษาที่สวยงาม", 30.0);
+
+  assert!(paragraph.lines().len() > 1);
 }

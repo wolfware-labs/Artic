@@ -19,3 +19,9 @@ pretty_assertions.workspace = true
 
 [lints]
 workspace = true
+
+[features]
+default = ["complex-scripts"]
+# Breaks lines between words in scripts written without spaces, such as Thai, Lao, Khmer and
+# Myanmar, with ICU's dictionaries: about 3.6 MB in a release binary.
+complex-scripts = ["parley/complex-scripts"]

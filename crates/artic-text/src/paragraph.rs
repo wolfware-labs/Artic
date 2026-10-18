@@ -1,65 +1,125 @@
 //! A broken `parley` layout turned into a [`Paragraph`].
 //!
 //! The lines are placed here, not with `parley`'s `align`, which aligns against the break width
-//! rather than the widest kept line. A left-to-right line starts at 0. A right-to-left line ends at
-//! the paragraph's width, so it moves right by the width it lacks, and left by its trailing
-//! whitespace, which `parley` lays at its left end.
+//! rather than the widest kept line and measures trailing whitespace wrongly in right-to-left
+//! runs. A line is the visual span of its clusters, except the whitespace that ends its text: that
+//! whitespace hangs, taking no width and drawing nothing. A left-to-right line's span starts at 0,
+//! and a right-to-left line's ends at the paragraph's width.
 
 use crate::faces::Faces;
 use artic_layout::geometry::Size;
-use artic_layout::text::{Glyph, GlyphRun, Line, Paragraph, Synthesis};
-use parley::{Layout, PositionedLayoutItem};
+use artic_layout::text::{FontData, Glyph, GlyphRun, Line, Paragraph, Synthesis};
+use parley::Layout;
+use std::sync::Arc;
 
-pub(crate) fn paragraph(layout: &Layout<()>, faces: &mut Faces) -> Paragraph {
-  let lines = layout.lines().map(|line| line_of(line.metrics())).collect::<Vec<_>>();
-  let width = lines.iter().map(|line| line.width).fold(0.0, f32::max);
-  let height = lines.iter().map(|line| line.height).sum::<f32>();
+pub(crate) fn paragraph(text: &str, layout: &Layout<()>, faces: &mut Faces) -> Paragraph {
+  let shaped = layout.lines().map(|line| shape_line(text, &line, faces)).collect::<Vec<_>>();
+  let width = shaped.iter().map(ShapedLine::width).fold(0.0, f32::max);
+  let height = shaped.iter().map(|line| line.height).sum::<f32>();
   if height <= 0.0 {
     return Paragraph::default();
   }
+  let factor = if layout.is_rtl() { 1.0 } else { 0.0 };
+  let mut top = 0.0;
+  let mut lines = Vec::with_capacity(shaped.len());
   let mut runs = Vec::new();
-  for (line, placed) in layout.lines().zip(&lines) {
-    let shift = if layout.is_rtl() {
-      width - placed.width - line.metrics().trailing_whitespace
-    } else {
-      0.0
-    };
-    runs.extend(line.items().filter_map(|item| match item {
-      PositionedLayoutItem::GlyphRun(run) => Some(glyph_run(&run, shift, faces)),
-      PositionedLayoutItem::InlineBox(_) => None,
-    }));
+  for line in shaped {
+    let shift = (width - line.width()) * factor - line.start;
+    lines.push(Line {
+      top,
+      height: line.height,
+      baseline: line.baseline,
+      width: line.width(),
+    });
+    top += line.height;
+    runs.extend(line.runs.into_iter().map(|run| run.place(shift)));
   }
   Paragraph::new(Size::new(width, height), lines, runs)
 }
 
-fn line_of(metrics: &parley::LineMetrics) -> Line {
-  Line {
-    top: metrics.block_min_coord,
-    height: metrics.line_height,
-    baseline: metrics.baseline,
-    width: metrics.advance - metrics.trailing_whitespace,
+struct ShapedLine {
+  height: f32,
+  baseline: f32,
+  start: f32,
+  end: f32,
+  runs: Vec<ShapedRun>,
+}
+
+impl ShapedLine {
+  fn width(&self) -> f32 {
+    self.end - self.start
   }
 }
 
-fn glyph_run(run: &parley::GlyphRun<'_, ()>, shift: f32, faces: &mut Faces) -> GlyphRun {
-  let source = run.run();
-  let synthesis = source.synthesis();
-  let glyphs = run
-    .positioned_glyphs()
-    .map(|glyph| Glyph {
-      id: glyph.id,
-      x: glyph.x + shift,
-      y: glyph.y,
-    })
-    .collect::<Vec<_>>();
-  GlyphRun::new(
-    faces.font(source.font()),
-    source.font_size(),
-    source.normalized_coords(),
-    Synthesis {
-      embolden: synthesis.embolden(),
-      skew: synthesis.skew().unwrap_or(0.0),
-    },
-    glyphs,
-  )
+struct ShapedRun {
+  font: FontData,
+  size: f32,
+  coords: Arc<[i16]>,
+  synthesis: Synthesis,
+  glyphs: Vec<Glyph>,
+}
+
+impl ShapedRun {
+  fn place(self, shift: f32) -> GlyphRun {
+    let glyphs = self
+      .glyphs
+      .into_iter()
+      .map(|glyph| Glyph {
+        x: glyph.x + shift,
+        ..glyph
+      })
+      .collect::<Vec<_>>();
+    GlyphRun::new(self.font, self.size, self.coords, self.synthesis, glyphs)
+  }
+}
+
+fn shape_line(text: &str, line: &parley::Line<'_, ()>, faces: &mut Faces) -> ShapedLine {
+  let end = line.text_range().end.min(text.len());
+  let start = line.text_range().start.min(end);
+  let hung = start + text[start..end].trim_end().len();
+  let metrics = line.metrics();
+  let mut pen = 0.0;
+  let mut extent: Option<(f32, f32)> = None;
+  let mut runs = Vec::new();
+  for run in line.runs() {
+    let mut glyphs = Vec::new();
+    for cluster in run.visual_clusters() {
+      let left = pen;
+      let kept = cluster.text_range().start < hung;
+      for glyph in cluster.glyphs() {
+        if kept {
+          glyphs.push(Glyph {
+            id: glyph.id,
+            x: pen + glyph.x,
+            y: metrics.baseline + glyph.y,
+          });
+        }
+        pen += glyph.advance;
+      }
+      if kept {
+        extent = Some(extent.map_or((left, pen), |(start, end)| (start.min(left), end.max(pen))));
+      }
+    }
+    if !glyphs.is_empty() {
+      let synthesis = run.synthesis();
+      runs.push(ShapedRun {
+        font: faces.font(run.font()),
+        size: run.font_size(),
+        coords: run.normalized_coords().into(),
+        synthesis: Synthesis {
+          embolden: synthesis.embolden(),
+          skew: synthesis.skew().unwrap_or(0.0),
+        },
+        glyphs,
+      });
+    }
+  }
+  let (start, end) = extent.unwrap_or((0.0, 0.0));
+  ShapedLine {
+    height: metrics.line_height,
+    baseline: metrics.baseline,
+    start,
+    end,
+    runs,
+  }
 }

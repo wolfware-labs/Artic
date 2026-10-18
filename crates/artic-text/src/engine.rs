@@ -85,7 +85,7 @@ impl TextEngine for Engine {
     properties::push(&mut builder, style, &self.default_family);
     builder.build_into(&mut self.layout, text);
     lines::break_lines(&mut self.layout, limits);
-    paragraph::paragraph(&self.layout, &mut self.faces)
+    paragraph::paragraph(text, &self.layout, &mut self.faces)
   }
 }
 
