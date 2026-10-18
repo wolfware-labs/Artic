@@ -1,7 +1,7 @@
 //! [`Engine`], the [`TextEngine`] artic shapes text with.
 
 use crate::faces::Faces;
-use crate::{paragraph, properties};
+use crate::{lines, paragraph, properties};
 use artic_layout::text::{FamilyName, GenericFamily, Paragraph, TextEngine, TextLimits, TextStyle};
 use fontique::{Blob, Collection, CollectionOptions, SourceCache};
 use parley::{FontContext, Layout, LayoutContext};
@@ -77,14 +77,14 @@ impl Engine {
 }
 
 impl TextEngine for Engine {
-  fn paragraph(&mut self, text: &str, style: &TextStyle, _limits: TextLimits) -> Paragraph {
+  fn paragraph(&mut self, text: &str, style: &TextStyle, limits: TextLimits) -> Paragraph {
     if !(style.size.is_finite() && style.size > 0.0) {
       return Paragraph::default();
     }
     let mut builder = self.layouts.ranged_builder(&mut self.fonts, text, 1.0, false);
     properties::push(&mut builder, style, &self.default_family);
     builder.build_into(&mut self.layout, text);
-    self.layout.break_all_lines(None);
+    lines::break_lines(&mut self.layout, limits);
     paragraph::paragraph(&self.layout, &mut self.faces)
   }
 }

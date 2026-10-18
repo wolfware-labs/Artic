@@ -1,4 +1,9 @@
 //! A broken `parley` layout turned into a [`Paragraph`].
+//!
+//! The lines are placed here, not with `parley`'s `align`, which aligns against the break width
+//! rather than the widest kept line. A left-to-right line starts at 0. A right-to-left line ends at
+//! the paragraph's width, so it moves right by the width it lacks, and left by its trailing
+//! whitespace, which `parley` lays at its left end.
 
 use crate::faces::Faces;
 use artic_layout::geometry::Size;
@@ -12,14 +17,18 @@ pub(crate) fn paragraph(layout: &Layout<()>, faces: &mut Faces) -> Paragraph {
   if height <= 0.0 {
     return Paragraph::default();
   }
-  let runs = layout
-    .lines()
-    .flat_map(|line| line.items())
-    .filter_map(|item| match item {
-      PositionedLayoutItem::GlyphRun(run) => Some(glyph_run(&run, faces)),
+  let mut runs = Vec::new();
+  for (line, placed) in layout.lines().zip(&lines) {
+    let shift = if layout.is_rtl() {
+      width - placed.width - line.metrics().trailing_whitespace
+    } else {
+      0.0
+    };
+    runs.extend(line.items().filter_map(|item| match item {
+      PositionedLayoutItem::GlyphRun(run) => Some(glyph_run(&run, shift, faces)),
       PositionedLayoutItem::InlineBox(_) => None,
-    })
-    .collect::<Vec<_>>();
+    }));
+  }
   Paragraph::new(Size::new(width, height), lines, runs)
 }
 
@@ -32,14 +41,14 @@ fn line_of(metrics: &parley::LineMetrics) -> Line {
   }
 }
 
-fn glyph_run(run: &parley::GlyphRun<'_, ()>, faces: &mut Faces) -> GlyphRun {
+fn glyph_run(run: &parley::GlyphRun<'_, ()>, shift: f32, faces: &mut Faces) -> GlyphRun {
   let source = run.run();
   let synthesis = source.synthesis();
   let glyphs = run
     .positioned_glyphs()
     .map(|glyph| Glyph {
       id: glyph.id,
-      x: glyph.x,
+      x: glyph.x + shift,
       y: glyph.y,
     })
     .collect::<Vec<_>>();

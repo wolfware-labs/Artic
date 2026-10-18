@@ -7,6 +7,7 @@
 
 mod engine;
 mod faces;
+mod lines;
 mod paragraph;
 mod properties;
 

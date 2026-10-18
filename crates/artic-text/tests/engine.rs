@@ -1,7 +1,10 @@
-use artic_layout::text::{FontFamily, FontStyle, FontWeight, GenericFamily, Paragraph, TextEngine, TextLimits, TextStyle};
+use artic_layout::text::{
+  FontFamily, FontStyle, FontWeight, GenericFamily, Line, Paragraph, TextEngine, TextLimits, TextStyle,
+};
 use artic_test_fonts::{BOLD, REGULAR};
 use artic_text::Engine;
 use pretty_assertions::assert_eq;
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
 const LINE: f32 = 19.84;
@@ -236,4 +239,134 @@ fn engine_debug_shows_default_family_and_faces() {
     format!("{engine:?}"),
     r#"Engine { default_family: Named("Atkinson Hyperlegible"), faces: 1 }"#
   );
+}
+
+const FOX: &str = "The quick brown fox jumps over the lazy dog";
+const HEBREW: &str = "שלום עולם שלום עולם שלום";
+
+fn wrapped(engine: &mut Engine, text: &str, max_width: f32) -> Paragraph {
+  engine.paragraph(text, &style(), TextLimits::wrap(max_width))
+}
+
+fn glyph_xs(paragraph: &Paragraph, line: &Line) -> Vec<f32> {
+  paragraph
+    .runs()
+    .iter()
+    .flat_map(|run| run.glyphs())
+    .filter(|glyph| (glyph.y - line.baseline).abs() < 0.01)
+    .map(|glyph| glyph.x)
+    .collect()
+}
+
+// Lines break to fit the width: four lines at 100 px, two at 200, none wider than the width.
+#[test]
+fn line_breaking_respects_max_width() {
+  let mut engine = engine();
+
+  for (max_width, count) in [(100.0, 4), (200.0, 2)] {
+    let paragraph = wrapped(&mut engine, FOX, max_width);
+
+    assert_eq!(paragraph.lines().len(), count, "{max_width}");
+    assert!(paragraph.lines().iter().all(|line| line.width <= max_width));
+  }
+  assert_close(wrapped(&mut engine, FOX, 100.0).size().width, 84.61);
+}
+
+// Only the first max_lines lines are kept, and the size is theirs: the widest kept line by their
+// heights.
+#[test]
+fn max_lines_caps_the_paragraph() {
+  let limits = TextLimits {
+    max_width: Some(100.0),
+    max_lines: NonZeroU32::new(2),
+  };
+  let paragraph = engine().paragraph(FOX, &style(), limits);
+
+  assert_eq!(paragraph.lines().len(), 2);
+  assert_close(paragraph.size().width, 68.67);
+  assert_close(paragraph.size().height, 2.0 * LINE);
+}
+
+// A max_lines above the line count keeps every line.
+#[test]
+fn max_lines_above_the_line_count_keeps_every_line() {
+  let mut engine = engine();
+  let limits = TextLimits {
+    max_width: Some(100.0),
+    max_lines: NonZeroU32::new(10),
+  };
+
+  assert_eq!(engine.paragraph(FOX, &style(), limits), wrapped(&mut engine, FOX, 100.0));
+}
+
+// A max_width that is NaN or infinite doesn't wrap.
+#[test]
+fn unusable_max_width_does_not_wrap() {
+  let mut engine = engine();
+  let expected = engine.paragraph(FOX, &style(), TextLimits::NONE);
+
+  for max_width in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+    assert_eq!(wrapped(&mut engine, FOX, max_width), expected, "{max_width}");
+  }
+  assert_eq!(expected.lines().len(), 1);
+}
+
+// A negative max_width is 0: the text breaks at every opportunity.
+#[test]
+fn negative_max_width_breaks_everywhere() {
+  let mut engine = engine();
+  let paragraph = wrapped(&mut engine, "one two three four five", -5.0);
+
+  assert_eq!(paragraph, wrapped(&mut engine, "one two three four five", 0.0));
+  assert_eq!(paragraph.lines().len(), 5);
+}
+
+// Each line starts where the previous one ends, its baseline lies inside it, and the lines'
+// heights add up to the paragraph's. Left-to-right lines start at 0.
+#[test]
+fn lines_stack_top_to_bottom() {
+  let paragraph = wrapped(&mut engine(), FOX, 100.0);
+  let lines = paragraph.lines();
+
+  assert_eq!(lines[0].top, 0.0);
+  for pair in lines.windows(2) {
+    assert_close(pair[1].top, pair[0].top + pair[0].height);
+  }
+  for line in lines {
+    assert!(line.baseline > line.top && line.baseline <= line.top + line.height);
+    assert_close(glyph_xs(&paragraph, line).into_iter().fold(f32::MAX, f32::min), 0.0);
+  }
+  assert_close(paragraph.size().height, lines.iter().map(|line| line.height).sum());
+}
+
+// Right-to-left lines end at the paragraph's right edge, the widest line's width, not at
+// max_width: a shorter last line starts the difference in from the left.
+#[test]
+fn right_to_left_text_stays_inside_its_size() {
+  let paragraph = wrapped(&mut engine(), HEBREW, 100.0);
+  let width = paragraph.size().width;
+
+  assert_eq!(paragraph.lines().len(), 3);
+  assert_close(width, 76.42);
+  for line in paragraph.lines() {
+    let xs = glyph_xs(&paragraph, line);
+
+    assert_close(xs.iter().copied().fold(f32::MAX, f32::min), width - line.width);
+    assert!(xs.iter().all(|&x| x <= width), "{xs:?}");
+  }
+}
+
+// A word wider than max_width makes its line wider than the break width, and its glyphs still
+// stay inside the paragraph.
+#[test]
+fn overflowing_word_stays_inside_its_size() {
+  let paragraph = wrapped(&mut engine(), HEBREW, 0.0);
+
+  for line in paragraph.lines() {
+    assert!(
+      glyph_xs(&paragraph, line)
+        .iter()
+        .all(|&x| x >= -0.01 && x <= paragraph.size().width)
+    );
+  }
 }
