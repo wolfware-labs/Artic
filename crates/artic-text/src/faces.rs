@@ -1,4 +1,9 @@
 //! One [`FontData`] per face, so a face keeps one id for the engine's life.
+//!
+//! Faces are keyed by `fontique`'s blob id and face index. A blob keeps its id only while someone
+//! holds it: the table does, through each `FontData`'s bytes, and the system engine's shared source
+//! cache hands back that same blob when it maps a dropped file again. So entries are never evicted:
+//! the table holds every face the engine has drawn from, which the installed fonts bound.
 
 use artic_layout::text::FontData;
 use std::collections::HashMap;
